@@ -3,27 +3,34 @@
 // IMPORTS
 // =================================================================================================
 import { computed } from 'vue';
-import EncabezadoPdf from './EncabezadoPdf.vue'; // Componente para el encabezado del documento.
-import PieDePaginaPdf from './PieDePaginaPdf.vue'; // Componente para el pie de página del documento.
+import EncabezadoPdf from './EncabezadoPdf.vue'; // Componente modular para el encabezado del documento.
+import PieDePaginaPdf from './PieDePaginaPdf.vue'; // Componente modular para el pie de página del documento.
 
 // =================================================================================================
-// PROPS
+// PROPS (Propiedades)
 // =================================================================================================
 /**
  * @component TarjetaPdf
- * @description Componente de presentación que renderiza la estructura completa de la tarjeta de asistencia.
- * Recibe todos los datos necesarios como props y los formatea para su correcta visualización.
- * Este componente está optimizado tanto para la generación de PDF vía html2canvas como para la impresión nativa.
+ * @description Componente de presentación puro (dumb component) para el renderizado visual de la tarjeta de asistencia.
+ * Es el target de los métodos de generación de PDF (html2canvas, window.print).
  */
 const props = defineProps({
-  employee: Object,       // Objeto con los datos del empleado.
-  schedule: Object,       // Objeto con los datos del horario, incluyendo los registros.
-  months: Array,          // Array con los nombres de los meses.
-  firstFortnight: Array,  // Array de registros filtrados para la primera quincena.
-  secondFortnight: Array, // Array de registros filtrados para la segunda quincena.
-  daysInMonth: Number,    // Número de días en el mes seleccionado.
-  selectedMonth: Number,  // El mes seleccionado (numérico, 1-12).
-  selectedYear: Number    // El año seleccionado.
+  /** Objeto: Datos del empleado (emp_code, first_name, last_name, department_name). */
+  employee: Object,
+  /** Objeto: Respuesta de la API (horario, registros[]). */
+  schedule: Object,
+  /** Array: Nombres de los meses. */
+  months: Array,
+  /** Array: Registros filtrados para los días 1-15. */
+  firstFortnight: Array,
+  /** Array: Registros filtrados para los días 16-fin de mes. */
+  secondFortnight: Array,
+  /** Number: Total de días en el mes seleccionado. */
+  daysInMonth: Number,
+  /** Number: Mes seleccionado (1-12). */
+  selectedMonth: Number,
+  /** Number: Año seleccionado (ej. 2024). */
+  selectedYear: Number
 });
 
 // =================================================================================================
@@ -31,9 +38,9 @@ const props = defineProps({
 // =================================================================================================
 
 /**
- * Extrae y formatea el día de un string de fecha 'YYYY-MM-DD'.
+ * Parsea un string 'YYYY-MM-DD' y retorna el día con padding '00'.
  * @param {string} dateString - La fecha de entrada.
- * @returns {string} - El día del mes, con padding (ej. '01').
+ * @returns {string} - El día del mes (ej. '01').
  */
 const getDayFromDateString = (dateString) => {
   if (!dateString || typeof dateString !== 'string') return '';
@@ -42,9 +49,9 @@ const getDayFromDateString = (dateString) => {
 };
 
 /**
- * Recorta los segundos de un string de hora 'HH:MM:SS'.
+ * Formatea un string 'HH:MM:SS' a 'HH:MM'.
  * @param {string} timeString - La hora de entrada.
- * @returns {string} - La hora formateada como 'HH:MM'.
+ * @returns {string} - La hora formateada ('HH:MM') o un string vacío.
  */
 const formatTimeWithoutSeconds = (timeString) => {
   if (!timeString || typeof timeString !== 'string') return '';
@@ -60,8 +67,7 @@ const formatTimeWithoutSeconds = (timeString) => {
 // =================================================================================================
 
 /**
- * Calcula el número ordinal de la quincena en el año.
- * @returns {{first: string, second: string}} - Los números de la primera y segunda quincena del mes.
+ * Calcula el número ordinal de la quincena en el año (ej. 01, 02... 24).
  */
 const fortnightNumber = computed(() => {
   if (!props.selectedMonth) return { first: '', second: '' };
@@ -74,7 +80,7 @@ const fortnightNumber = computed(() => {
 });
 
 /**
- * Formatea un número de día a un string de fecha completo 'DD/MM/YYYY'.
+ * Formatea un número de día a un string de fecha 'DD/MM/YYYY'.
  * @param {number} day - El número del día.
  * @returns {string} - La fecha formateada.
  */
@@ -88,13 +94,17 @@ const formatDate = (day) => {
 </script>
 
 <template>
-  <!-- Contenedor raíz para la generación del PDF. Oculto por defecto. -->
-  <div id="pdf-content" style="position: absolute; left: -9999px; background-color: white; color: #000000;">
-    <!-- Contenedor principal que simula la hoja tamaño carta. -->
+  <!-- 
+    Contenedor raíz para la generación del PDF.
+    Posicionado off-screen para renderizado en el DOM sin ser visible.
+    Target para html2canvas y window.print().
+  -->
+  <div id="pdf-content" style="position: absolute; left: -9999px; background-color: white;">
+    <!-- Contenedor principal que simula las dimensiones de la hoja (ver CSS). -->
     <div class="pdf-card">
       <EncabezadoPdf />
 
-      <!-- Contenedor Flex para las dos columnas de quincenas. -->
+      <!-- Contenedor Flex para el layout de dos columnas de quincenas. -->
       <div class="fortnights-container">
         
         <!-- Tarjeta de la Primera Quincena -->
@@ -108,7 +118,7 @@ const formatDate = (day) => {
             <p><strong>Quincena:</strong> {{ fortnightNumber.first }} del {{ selectedYear }} del {{ formatDate(1) }} al {{ formatDate(15) }}</p>
             
             <table class="schedule-table-pdf">
-              <thead>
+              <thead class="names-columns">
                 <tr>
                   <th class="col-dia">Día</th>
                   <th class="col-hora">Entrada</th>
@@ -118,6 +128,7 @@ const formatDate = (day) => {
                 </tr>
               </thead>
               <tbody>
+                <!-- Itera sobre los registros de la primera quincena. -->
                 <tr v-for="registro in firstFortnight" :key="`fn1-${registro.dia}`">
                   <td>{{ getDayFromDateString(registro.dia) }}</td>
                   <td>{{ formatTimeWithoutSeconds(registro.checkin) }}</td>
@@ -128,6 +139,7 @@ const formatDate = (day) => {
               </tbody>
             </table>
           </div>
+          <!-- Área de firma; se alinea al final debido al flex-grow del body. -->
           <div class="signature-area">
             <p>{{ employee.first_name }} {{ employee.last_name }}</p>
           </div>
@@ -144,7 +156,7 @@ const formatDate = (day) => {
             <p><strong>Quincena:</strong> {{ fortnightNumber.second }} del {{ selectedYear }} del {{ formatDate(16) }} al {{ formatDate(daysInMonth) }}</p>
 
             <table class="schedule-table-pdf">
-              <thead>
+              <thead class="names-columns">
                 <tr>
                   <th class="col-dia">Día</th>
                   <th class="col-hora">Entrada</th>
@@ -154,6 +166,7 @@ const formatDate = (day) => {
                 </tr>
               </thead>
               <tbody>
+                <!-- Itera sobre los registros de la segunda quincena. -->
                 <tr v-for="registro in secondFortnight" :key="`fn2-${registro.dia}`">
                   <td>{{ getDayFromDateString(registro.dia) }}</td>
                   <td>{{ formatTimeWithoutSeconds(registro.checkin) }}</td>
@@ -164,8 +177,9 @@ const formatDate = (day) => {
               </tbody>
             </table>
           </div>
+          <!-- Área de firma; se alinea al final debido al flex-grow del body. -->
           <div class="signature-area">
-            <p>{{ employee.first_name }} {{ employee.last_name }}</p>
+            <p>-<!--{{ employee.first_name }} {{ employee.last_name }}--></p>
           </div>
         </div>
       </div>
@@ -176,56 +190,70 @@ const formatDate = (day) => {
 </template>
 
 <style scoped>
-/* Define las dimensiones y el layout base del contenedor de la tarjeta del PDF. */
+/*
+ * Define las dimensiones físicas de la hoja tamaño CARTA.
+ * Requerido para que la captura de html2canvas tenga las proporciones correctas.
+ * `position: relative` es el ancla para el pie de página (`position: absolute`).
+*/
 #pdf-content {
-  width: 215.9mm; /* Ancho de hoja tamaño CARTA */
-  height: 279.4mm; /* Alto de hoja tamaño CARTA */
+  width: 215.9mm;
+  height: 279.4mm;
   padding: 10mm;
   box-sizing: border-box;
   font-family: Arial, sans-serif;
   color: #000;
   position: relative;
   background-color: white;
-  border: 1px solid #ccc; /* Borde visible para facilitar el diseño en la vista de prueba. */
-  margin: 20px auto; /* Centra la hoja en la página de prueba. */
+  border: 1px solid #ccc; /* Borde de debug para la vista de /test-tarjeta */
+  margin: 20px auto; /* Centrado para la vista de /test-tarjeta */
 }
 
-/* Contenedor interno que utiliza Flexbox para distribuir verticalmente el encabezado, cuerpo y pie de página. */
+/*
+ * Contenedor flex principal. Organiza verticalmente [header, body, footer].
+ * `height: 100%` es requerido para que el `flex-grow` del body y el `position: absolute` del footer funcionen.
+*/
 .pdf-card {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-/* Contenedor para las dos tarjetas de quincena, alineadas horizontalmente. */
+/* Contenedor de las dos columnas de quincena. */
 .fortnights-container {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 20px;
+  margin-top: 10px;
 }
 
-/* Estilo individual para cada tarjeta de quincena. */
+/*
+ * Contenedor individual de cada tarjeta de quincena.
+ * Utiliza flex-direction: column para organizar verticalmente [header, body, signature].
+*/
 .fortnight-card {
   width: 49%;
   border: 1px solid #000;
   border-radius: 8px;
-  overflow: hidden; /* Asegura que el border-radius se aplique al contenido interno. */
-  font-size: 8pt;
+  overflow: hidden;
+  font-size: 8.5pt;
   display: flex;
-  flex-direction: column; /* Apila el header, body y signature verticalmente. */
+  flex-direction: column; 
 }
 
-/* Encabezado gris de cada tarjeta de quincena. */
+/* Encabezado gris de la tarjeta. */
 .fortnight-header {
-  background-color: #6c757d;
+  background-color: #51575c;
   color: white;
   font-weight: bold;
   padding: 6px 10px;
   font-size: 10pt;
 }
 
-/* Cuerpo principal de la tarjeta. `flex-grow` es clave para empujar la firma hacia abajo. */
+/*
+ * Cuerpo principal de la tarjeta.
+ * `flex-grow: 1` es la regla clave que empuja el `signature-area`
+ * hacia la parte inferior, ocupando el espacio vertical disponible.
+*/
 .fortnight-body {
   padding: 10px;
   background-color: white;
@@ -239,44 +267,47 @@ const formatDate = (day) => {
   margin-bottom: 0;
 }
 
-/* Estilos para la tabla de registros. */
+/* Estilos de la tabla de registros. */
 .schedule-table-pdf {
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
-  font-size: 7.5pt;
-  table-layout: fixed; /* Previene que el contenido de las celdas altere el ancho de las columnas. */
-}
-.schedule-table-pdf th,
-.schedule-table-pdf td {
-  border-bottom: 1px solid #d3d3d3;
-  padding: 4px;
-  text-align: center;
-  overflow-wrap: break-word; /* Permite que el texto largo salte a la siguiente línea. */
+  font-size: 8.5pt;
+  /* `table-layout: fixed` previene que el ancho de las columnas se altere por el contenido. */
+  table-layout: fixed; 
 }
 
-/* Definición de anchos de columna para optimizar el espacio. */
+.schedule-table-pdf .names-columns{
+
+  font-size: 8pt;
+
+}
+
+.schedule-table-pdf th,
+.schedule-table-pdf td {
+  border: 1px solid #2c2c2c; /* Borde de cuadrícula completa. */
+  padding: 4px;
+  text-align: center;
+  /* `overflow-wrap: break-word` fuerza el salto de línea en texto largo. */
+  overflow-wrap: break-word;
+}
+
+/* Anchos de columna fijos para optimizar el layout. */
 .schedule-table-pdf .col-dia { width: 8%; }
-.schedule-table-pdf .col-hora { width: 15%; }
+.schedule-table-pdf .col-hora { width: 17%; }
 .schedule-table-pdf .col-calif { width: 31%; }
 .schedule-table-pdf .col-obs { width: 31%; }
 
 .schedule-table-pdf th {
   font-weight: bold;
-  border-bottom-width: 2px;
 }
 
-/* Alinea el texto de las observaciones a la izquierda para mejor legibilidad. */
+/* Alineación especial para la celda de observaciones. */
 .schedule-table-pdf td.obs {
   text-align: left;
 }
 
-/* Elimina el borde inferior de la última fila de la tabla. */
-.schedule-table-pdf tr:last-child td {
-  border-bottom: none;
-}
-
-/* Contenedor para la línea y el nombre de la firma. */
+/* Contenedor del área de firma. */
 .signature-area {
   padding: 20px 10px;
 }

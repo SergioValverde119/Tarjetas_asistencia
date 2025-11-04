@@ -8,10 +8,8 @@
 </script>
 
 <template>
-  <!-- Contenedor principal del pie de página, estructurado con Flexbox. -->
-  <div class="pdf-page-footer">
-    <!-- Contenedor para el bloque de texto izquierdo (información de contacto). -->
-    <div class="footer-left">
+  <!-- Contenedor principal del pie de página, estructurado con Flexbox. --><div class="pdf-page-footer">
+    <!-- Contenedor para el bloque de texto izquierdo (información de contacto). --><div class="footer-left">
       <p>
         Amores 1322, Del Valle Centro,<br>
         Benito Juárez, 03100, Ciudad de<br>
@@ -19,9 +17,9 @@
         Tel.55513002100 EXT 2159, 2133
       </p>
     </div>
-    <!-- Contenedor para el logo derecho. -->
-    <div class="footer-right">
-      <img src="/images/logo_mujer_indigena.jpeg" alt="Ciudad Innovadora" class="logo-footer">
+    <!-- Contenedor para los logos derechos. --><div class="footer-right">
+      <!-- Logo Ciudad Innovadora --><img src="/images/logo_mujer_indigena.jpeg" alt="Ciudad Innovadora" class="logo-footer">
+      <!-- Nuevo Logo de Tenochtitlan --><img src="/images/tenochtitlan_logo.png" alt="Logo Tenochtitlan" class="logo-tenochtitlan">
     </div>
   </div>
 </template>
@@ -31,13 +29,13 @@
  * Estilo base del componente, optimizado para dos casos de uso:
  * 1. Renderizado en pantalla para la generación de PDF vía html2canvas.
  * 2. Renderizado en el diálogo de impresión del navegador.
-*/
+ */
 
 /*
  * Estilo por defecto (para pantalla y html2canvas).
  * Se posiciona de forma absoluta en la parte inferior del contenedor padre (#pdf-content),
  * que debe tener `position: relative`. Esto simula un pie de página fijo.
-*/
+ */
 .pdf-page-footer {
   position: absolute;
   bottom: 10mm;
@@ -59,17 +57,32 @@
 }
 
 .pdf-page-footer p {
-    margin: 0;
+  margin: 0;
+}
+
+/* Contenedor de los logos a la derecha, ahora con flexbox para alinear los dos logos. */
+.pdf-page-footer .footer-right {
+  display: flex;
+  align-items: flex-end; /* Alinea los logos por abajo si tienen diferentes alturas */
+  gap: 8px; /* Espacio entre los dos logos */
 }
 
 .pdf-page-footer .logo-footer {
-    width: 200px;
+  width: 200px; 
+  height: auto;
 }
+
+/* Estilo para el nuevo logo de Tenochtitlan */
+.pdf-page-footer .logo-tenochtitlan {
+  width: 100px; 
+  height: auto; 
+}
+
 
 /**
  * Sobrescribe los estilos base exclusivamente para el contexto de impresión (`window.print()`).
  * Estas reglas se activan cuando el navegador genera la vista previa de impresión.
-*/
+ */
 @media print {
   /**
    * Se cambia el posicionamiento a 'relative' para que el pie de página deje de estar

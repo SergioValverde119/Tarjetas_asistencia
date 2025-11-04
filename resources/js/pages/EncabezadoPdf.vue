@@ -50,8 +50,8 @@
 .pdf-page-header .header-right {
   display: flex;
   flex-direction: column;
-  align-items: flex-end; /* Alinea sus hijos (el bloque de texto) a la derecha. */
-  width: 65%;
+  align-items: flex-start; /* Alinea sus hijos (el bloque de texto) a la derecha. */
+  width: 49%;
 }
 
 /* Define los estilos del bloque de texto. */
