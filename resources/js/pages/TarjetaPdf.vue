@@ -280,6 +280,7 @@ const formatDate = (day) => {
 .schedule-table-pdf .names-columns{
 
   font-size: 8pt;
+  background-color: white;
 
 }
 

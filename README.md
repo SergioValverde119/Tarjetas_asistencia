@@ -1,0 +1,1 @@
+Este proyecto fue realizado unicamente con la ayuda de Dios, proporcionando el camino, la sabiduria y la paciencia.
