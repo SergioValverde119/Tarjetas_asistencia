@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
+use App\Http\Controllers\KardexController;
 
 /*
 |--------------------------------------------------------------------------
@@ -18,7 +19,8 @@ Route::get('/welcome', function () {
     ]);
 })->middleware('guest')->name('welcome');
 
-
+Route::get('/kardex', [KardexController::class, 'index'])->middleware(['auth', 'verified'])->name('kardex.index');
+Route::post('/kardex/buscar', [KardexController::class, 'buscar'])->middleware(['auth', 'verified'])->name('kardex.buscar');
 // --- REGLA #2: La Página Principal (Tu Buscador de Tarjetas) ---
 // Esta es tu página principal. Está protegida. Si un usuario no ha iniciado sesión
 // e intenta acceder, Laravel lo redirigirá automáticamente a '/login'.
