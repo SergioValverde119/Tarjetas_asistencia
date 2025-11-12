@@ -5,14 +5,14 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
-use App\Repositories\KardexRepository; // <-- 1. Importa el Repositorio
+use App\Repositories\KardexRepository;
+use App\Exports\KardexExport; // <-- ¡NUEVA IMPORTACIÓN!
+use Maatwebsite\Excel\Facades\Excel; // <-- ¡NUEVA IMPORTACIÓN!
 
 class KardexController extends Controller
 {
-    // 2. Guarda una instancia del repositorio
     protected $kardexRepo;
 
-    // 3. Pídele a Laravel que te lo "inyecte" en el constructor
     public function __construct(KardexRepository $kardexRepo)
     {
         $this->kardexRepo = $kardexRepo;
@@ -23,8 +23,6 @@ class KardexController extends Controller
      */
     public function index(Request $request)
     {
-        // El controlador ya no sabe de 'DB' ni de 'att_payloadbase'.
-        // ¡Solo coordina!
         return $this->mostrarVista($request);
     }
     
@@ -33,18 +31,41 @@ class KardexController extends Controller
      */
     public function buscar(Request $request)
     {
-        // Esta función se queda igual, es pura lógica de HTTP
+        // Esta validación ahora es solo para el POST
         $validatedData = $request->validate([
             'mes' => 'required|integer|min:1|max:12',
             'ano' => 'required|integer|min:2020|max:2030',
             'quincena' => 'required|integer|min:0|max:2',
             'perPage' => 'required|integer|in:10,20,50,200',
             'search' => 'nullable|string|max:50',
-            // --- NUEVA LÍNEA ---
-            'ocultar_inactivos' => 'nullable|boolean',
+            // 'ocultar_inactivos' ya no se necesita
         ]);
         
         return redirect()->route('kardex.index', $validatedData);
+    }
+
+    /**
+     * ¡NUEVO MÉTODO!
+     * Maneja la solicitud de exportación a Excel.
+     */
+    public function exportar(Request $request)
+    {
+        // Validamos los filtros que llegan por GET
+        $filtros = $request->validate([
+            'mes' => 'required|integer|min:1|max:12',
+            'ano' => 'required|integer|min:2020|max:2030',
+            'quincena' => 'required|integer|min:0|max:2',
+            'perPage' => 'nullable|integer',
+            'search' => 'nullable|string|max:50',
+            // 'ocultar_inactivos' ya no se necesita
+        ]);
+        
+        // Generar nombre de archivo dinámico
+        $mesNombre = Carbon::create()->month($filtros['mes'])->monthName;
+        $fileName = sprintf('Kardex_%s_%s_Q%s.xlsx', $filtros['ano'], $mesNombre, $filtros['quincena']);
+
+        // Pasamos los filtros Y el repositorio que ya tiene el controlador
+        return Excel::download(new KardexExport($filtros, $this->kardexRepo), $fileName);
     }
 
     /**
@@ -59,8 +80,7 @@ class KardexController extends Controller
             'quincena' => (int)$request->input('quincena', 0),
             'perPage' => (int)$request->input('perPage', 10),
             'search' => $request->input('search'),
-            // --- NUEVA LÍNEA ---
-            'ocultar_inactivos' => (bool)$request->input('ocultar_inactivos', false),
+            // 'ocultar_inactivos' ya no se necesita
         ];
         
         // 2. DEFINIR FECHAS
@@ -74,8 +94,6 @@ class KardexController extends Controller
         $fechaFinMes = $fechaBase->copy()->endOfMonth()->endOfDay();
         
         // --- 3. PEDIR DATOS AL REPOSITORIO ---
-        // ¡Tu controlador ahora es súper limpio!
-        
         $empleadosPaginados = $this->kardexRepo->getEmpleadosPaginados($filtros);
         $empleadoIDsEnPagina = $empleadosPaginados->pluck('id')->toArray();
 
@@ -101,12 +119,8 @@ class KardexController extends Controller
                 'quincena' => $filtros['quincena'],
                 'perPage' => $filtros['perPage'],
                 'search' => $filtros['search'] ?? '',
-                // --- NUEVA LÍNEA ---
-                'ocultar_inactivos' => $filtros['ocultar_inactivos'],
+                // 'ocultar_inactivos' ya no se necesita
             ]
         ]);
     }
-    
-    // ¡La función privada 'procesarKardex' y 'buscarPermiso' desaparecen de aquí!
-    // Ahora viven en el Repositorio.
 }

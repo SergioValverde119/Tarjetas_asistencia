@@ -1,14 +1,17 @@
 <script setup>
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { defineProps, computed } from 'vue';
-import * as kardex from '@/routes/kardex';
+import * as kardex from '@/routes/kardex'; // <-- ¡RESTAURADO!
 
 // ¡Iconos Habilitados!
 import { 
     MagnifyingGlassIcon, 
     UserIcon, 
     ChevronDownIcon,
-    DocumentTextIcon
+    DocumentTextIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    ArrowDownTrayIcon
 } from '@heroicons/vue/24/outline';
 
 // --- Props (Recibe los datos del controlador) ---
@@ -26,12 +29,13 @@ const form = useForm({
     quincena: props.filtros.quincena,
     perPage: props.filtros.perPage,
     search: props.filtros.search || '',
-    // --- NUEVA LÍNEA ---
-    ocultar_inactivos: props.filtros.ocultar_inactivos,
+    // 'ocultar_inactivos' ya no se necesita
 });
 
 // --- Listas de Filtros (Opciones para los <select>) ---
+// --- CORREGIDO: Meses como array de Objetos para el <select> ---
 const meses = [ { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' }, { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' }, { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' }, { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' } ];
+
 const anos = computed(() => { const anoActual = new Date().getFullYear(); return [anoActual, anoActual - 1, anoActual - 2]; });
 const quincenas = [ { value: 0, label: 'Mes Completo' }, { value: 1, label: '1ra Quincena (1-15)' }, { value: 2, label: '2da Quincena (16-Fin)' } ];
 const perPageOptions = [10, 20, 50, 200];
@@ -39,9 +43,58 @@ const columnasResumen = [ "Vacaciones", "Permisos", "Retardos", "Omisiones", "Fa
 
 // --- Función de Búsqueda (Envía el POST al controlador) ---
 function buscarDatos() {
+    // --- ¡RESTAURADO a Wayfinder! ---
     form.post(kardex.buscar(), {
         preserveScroll: true,
     });
+}
+
+// --- Funciones de Navegación de Mes ---
+function avanzarMes() {
+    let mes = props.filtros.mes;
+    let ano = props.filtros.ano;
+
+    if (mes === 12) {
+        mes = 1;
+        ano++;
+    } else {
+        mes++;
+    }
+    
+    form.mes = mes;
+    form.ano = ano;
+    buscarDatos();
+}
+
+function retrocederMes() {
+    let mes = props.filtros.mes;
+    let ano = props.filtros.ano;
+
+    if (mes === 1) {
+        mes = 12;
+        ano--;
+    } else {
+        mes--;
+    }
+    
+    form.mes = mes;
+    form.ano = ano;
+    buscarDatos();
+}
+
+// --- ¡NUEVA FUNCIÓN DE EXPORTAR! ---
+function exportarExcel() {
+    // Construye la URL para la descarga
+    const query = new URLSearchParams({
+        mes: form.mes,
+        ano: form.ano,
+        quincena: form.quincena,
+        perPage: form.perPage, // (El backend lo ignora pero es bueno pasarlo)
+        search: form.search || '',
+    }).toString();
+    
+    // --- ¡RESTAURADO a Wayfinder! ---
+    window.location.href = kardex.exportar() + '?' + query;
 }
 
 // --- Función de Colores (Devuelve clases de Tailwind) ---
@@ -82,7 +135,8 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
             FORMULARIO DE FILTROS
             ==================================
             -->
-            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-7 gap-4">
+            <!-- CAMBIO: lg:grid-cols-8 para el nuevo botón -->
+            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-8 gap-4">
                 
                 <!-- Buscador -->
                 <div class="lg:col-span-2">
@@ -96,36 +150,54 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
                                class="block w-full rounded-md border-gray-300 pl-10 text-base focus:border-blue-500 focus:ring-blue-500"
                                placeholder="Juan Perez o 12345" />
                     </div>
-
-                    <!-- --- NUEVO CHECKBOX --- -->
-                    <div class="mt-2 flex items-center">
-                        <input id="filtro-activos" v-model="form.ocultar_inactivos" @change="buscarDatos" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                        <label for="filtro-activos" class="ml-2 block text-sm text-gray-900">
-                            Ocultar empleados sin checadas (90 días)
-                        </label>
-                    </div>
-                    <!-- --- FIN DEL CHECKBOX --- -->
                 </div>
 
-                <!-- Mes -->
+                <!-- --- CAMBIO: Mes Híbrido (Flechas + Dropdown) --- -->
                 <div>
-                    <label for="filtro-mes" class="block text-base font-medium text-gray-700">Mes</label>
-                    <div class="relative mt-1">
-                        <select id="filtro-mes" v-model="form.mes" 
-                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                    <label for="filtro-mes" class="block text-base font-medium text-gray-700 text-center">Mes</label>
+                    <div class="relative mt-1 flex items-center justify-between rounded-md border border-gray-300 shadow-sm">
+                        <!-- Botón Izquierda -->
+                        <button 
+                            type="button"
+                            @click="retrocederMes" 
+                            :disabled="form.processing" 
+                            class="p-1 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ml-2"
+                        >
+                            <span class="sr-only">Mes anterior</span>
+                            <ChevronLeftIcon class="h-5 w-5" />
+                        </button>
+                        
+                        <!-- El Dropdown (reemplaza el <span>) -->
+                        <select 
+                            id="filtro-mes" 
+                            v-model="form.mes"
+                            @change="buscarDatos"
+                            class="block w-full appearance-none border-0 border-l border-r border-gray-300 text-center text-base font-semibold text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            style="padding-top: 0.5rem; padding-bottom: 0.5rem;"
+                        >
                             <option v-for="mes in meses" :key="mes.value" :value="mes.value">{{ mes.label }}</option>
                         </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                            <ChevronDownIcon class="h-5 w-5 text-gray-400" aria-hidden="true" />
-                        </div>
+                        
+                        <!-- Botón Derecha -->
+                        <button 
+                            type="button"
+                            @click="avanzarMes" 
+                            :disabled="form.processing" 
+                            class="p-1 rounded-full text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 mr-2"
+                        >
+                            <span class="sr-only">Mes siguiente</span>
+                            <ChevronRightIcon class="h-5 w-5" />
+                        </button>
                     </div>
                 </div>
+                <!-- --- FIN DEL CAMBIO --- -->
                 
                 <!-- Año -->
                 <div>
                     <label for="filtro-ano" class="block text-base font-medium text-gray-700">Año</label>
                     <div class="relative mt-1">
                         <select id="filtro-ano" v-model="form.ano" 
+                                @change="buscarDatos"
                                 class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="ano in anos" :key="ano" :value="ano">{{ ano }}</option>
                         </select>
@@ -140,6 +212,7 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
                     <label for="filtro-quincena" class="block text-base font-medium text-gray-700">Quincena</label>
                     <div class="relative mt-1">
                         <select id="filtro-quincena" v-model="form.quincena" 
+                                @change="buscarDatos"
                                 class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="q in quincenas" :key="q.value" :value="q.value">{{ q.label }}</option>
                         </select>
@@ -154,6 +227,7 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
                     <label for="filtro-perPage" class="block text-base font-medium text-gray-700">Mostrar</label>
                     <div class="relative mt-1">
                         <select id="filtro-perPage" v-model="form.perPage" 
+                                @change="buscarDatos"
                                 class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="pp in perPageOptions" :key="pp" :value="pp">{{ pp }}</option>
                         </select>
@@ -170,10 +244,21 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
                             class="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-blue-600 py-2 px-4 font-bold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                             :class="{ 'opacity-50 cursor-not-allowed': form.processing }">
                         <MagnifyingGlassIcon class="h-5 w-5" />
-                        <span v-if="form.processing">Buscando...</span>
-                        <span v-else>Buscar</span>
+                        <span>Buscar</span>
                     </button>
                 </div>
+
+                <!-- ¡NUEVO BOTÓN DE EXPORTAR! -->
+                <div class="flex items-end">
+                    <button @click="exportarExcel" 
+                            :disabled="form.processing" 
+                            class="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                            :class="{ 'opacity-50 cursor-not-allowed': form.processing }">
+                        <ArrowDownTrayIcon class="h-5 w-5 text-green-600" />
+                        <span>Excel</span>
+                    </button>
+                </div>
+
             </div>
 
             <!-- 
@@ -195,7 +280,7 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
 
                             <!-- Columnas Dinámicas (Días) -->
                             <th v-for="dia in rangoDeDias" :key="dia" scope="col" 
-                                class="sticky top-0 z-20 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider"
+                                class="sticky top-0 z-30 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider"
                                 style="min-width: 40px;">
                                 {{ dia }}
                             </th>

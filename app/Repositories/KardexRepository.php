@@ -7,7 +7,6 @@ use Carbon\Carbon;
 
 class KardexRepository
 {
-    // Define la conexión para no repetirla
     private $connection = 'pgsql_biotime';
 
     /**
@@ -15,43 +14,43 @@ class KardexRepository
      */
     public function getEmpleadosPaginados(array $filtros)
     {
+        // Esta consulta base es la que vamos a reutilizar
+        return $this->getBaseEmpleadosQuery($filtros)
+            ->paginate($filtros['perPage'])
+            ->withQueryString();
+    }
+
+    /**
+     * ¡NUEVO MÉTODO!
+     * Obtiene TODOS los empleados (sin paginar) para el export.
+     */
+    public function getEmpleadosTodos(array $filtros)
+    {
+        return $this->getBaseEmpleadosQuery($filtros)->get();
+    }
+
+    /**
+     * ¡NUEVO MÉTODO REFACTORIZADO!
+     * Lógica de consulta base para empleados.
+     */
+    private function getBaseEmpleadosQuery(array $filtros)
+    {
         return DB::connection($this->connection)
             ->table('personnel_employee')
-            ->select('id', 'emp_code', 'first_name', 'last_name', 'hire_date') // <-- Pedimos hire_date
+            ->select('id', 'emp_code', 'first_name', 'last_name', 'hire_date')
+            // --- ¡LA LÍNEA MÁGICA! ---
+            // Solo trae empleados que SÍ han checado en los últimos 3 meses.
+            ->where('is_truly_active', true) 
             
-            // --- AÑADIMOS LOS FILTROS DE ESTATUS ---
-            ->where('is_active', true) // Sigue siendo buena idea filtrar por los obvios
-            ->where('deleted', false)
-
-            // --- LÓGICA DEL NUEVO FILTRO INTELIGENTE ---
-            ->when($filtros['ocultar_inactivos'], function ($query) {
-                // Si el checkbox está MARCADO, solo mostramos empleados
-                // QUE SÍ TENGAN al menos una checada en los últimos 90 días.
-                // Usamos WHERE EXISTS porque es mucho más rápido que un JOIN.
-                $fechaLimite = now()->subDays(90)->toDateString();
-                
-                $query->whereExists(function ($subQuery) use ($fechaLimite) {
-                    $subQuery->select(DB::raw(1))
-                             ->from('public.iclock_transaction AS t')
-                             // Une el empleado con sus transacciones
-                             ->whereColumn('t.emp_id', 'public.personnel_employee.id')
-                             // Busca al menos una checada reciente
-                             ->where('t.punch_time', '>=', $fechaLimite);
-                             // Opcional: también puedes incluir checadas manuales si cuentan
-                             // ->orWhereExists(...) de att_manuallog
-                });
-            })
-
             ->when($filtros['search'], function ($query, $searchTerm) {
                 $searchTerm = '%' . strtolower($searchTerm) . '%';
                 $query->where(function ($q) use ($searchTerm) {
                     $q->where(DB::raw('LOWER(first_name || \' \' || last_name)'), 'LIKE', $searchTerm)
+                      ->orWhere(DB::raw('LOWER(last_name || \' \' || first_name)'), 'LIKE', $searchTerm) 
                       ->orWhere(DB::raw('CAST(emp_code AS TEXT)'), 'LIKE', $searchTerm);
                 });
             })
-            ->orderBy('emp_code')
-            ->paginate($filtros['perPage'])
-            ->withQueryString();
+            ->orderBy('emp_code');
     }
 
     /**
@@ -103,30 +102,30 @@ class KardexRepository
 
             $payloadParaEmpleado = $payloadData->get($empleado->id) ?? collect();
             $permisosParaEmpleado = $permisos->get($empleado->id) ?? collect();
-
-            // === ¡NUEVA LÍNEA! ===
-            // Convertimos la fecha de contratación a un objeto Carbon para compararla
-            $fechaContratacion = Carbon::parse($empleado->hire_date);
+            
+            // Aseguramos que la fecha de contratación se compare como fecha (sin hora)
+            $fechaContratacion = Carbon::parse($empleado->hire_date)->startOfDay();
 
             for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
                 $incidenciaDelDia = "";
-                $fechaActual = Carbon::createFromDate($ano, $mes, $dia);
+                $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
                 $fechaString = $fechaActual->toDateString();
 
-                // === ¡NUEVA REGLA DE NEGOCIO! ===
-                // Si el día que estamos revisando es ANTERIOR a la fecha de contratación...
+                // Lógica de Días Previos a la Contratación
                 if ($fechaActual->isBefore($fechaContratacion)) {
-                    $incidenciaDelDia = ""; // No es una falta, simplemente no trabajaba aquí.
+                    $incidenciaDelDia = ""; 
                     $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
-                    continue; // ... saltamos al siguiente día.
+                    continue; 
                 }
-                // ===================================
-                
+
                 $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
 
+                // Lógica de Incidencias
                 if ($fechaActual->dayOfWeek == 0 || $fechaActual->dayOfWeek == 6) {
                     $incidenciaDelDia = "Descanso";
                 } else if (!$payloadDia) {
+                    // Si no hay payload, PERO el empleado está activo (is_truly_active=true)
+                    // y no es fin de semana, ES UNA FALTA.
                     $incidenciaDelDia = "Falto";
                     $filaEmpleado['total_faltas']++;
                 } else {
