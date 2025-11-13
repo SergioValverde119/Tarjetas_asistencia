@@ -107,79 +107,85 @@ const formatDate = (day) => {
       <!-- Contenedor Flex para el layout de dos columnas de quincenas. -->
       <div class="fortnights-container">
         
-        <!-- Tarjeta de la Primera Quincena -->
-        <div class="fortnight-card">
-          <div class="fortnight-header">DATOS DEL TRABAJADOR</div>
-          <div class="fortnight-body">
-            <p><strong>Expediente:</strong> {{ employee.emp_code }}</p>
-            <p><strong>Nombre:</strong> {{ employee.first_name }} {{ employee.last_name }}</p>
-            <p><strong>Departamento:</strong> {{ employee.department_name }}</p>
-            <p><strong>Horario:</strong> {{ schedule.horario }}</p>
-            <p><strong>Quincena:</strong> {{ fortnightNumber.first }} del {{ selectedYear }} del {{ formatDate(1) }} al {{ formatDate(15) }}</p>
-            
-            <table class="schedule-table-pdf">
-              <thead class="names-columns">
-                <tr>
-                  <th class="col-dia">Día</th>
-                  <th class="col-hora">Entrada</th>
-                  <th class="col-hora">Salida</th>
-                  <th class="col-calif">Calif</th>
-                  <th class="col-obs">Observaciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- Itera sobre los registros de la primera quincena. -->
-                <tr v-for="registro in firstFortnight" :key="`fn1-${registro.dia}`">
-                  <td>{{ getDayFromDateString(registro.dia) }}</td>
-                  <td>{{ formatTimeWithoutSeconds(registro.checkin) }}</td>
-                  <td>{{ formatTimeWithoutSeconds(registro.checkout) }}</td>
-                  <td>{{ registro.calificacion }}</td>
-                  <td class="obs">{{ registro.observaciones }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <!-- Contenedor de la Primera Quincena + Firma (Nuevo) -->
+        <div class="fortnight-wrapper">
+          <!-- Tarjeta de la Primera Quincena -->
+          <div class="fortnight-card">
+            <div class="fortnight-header">DATOS DEL TRABAJADOR</div>
+            <div class="fortnight-body">
+              <p><strong>Expediente:</strong> {{ employee.emp_code }}</p>
+              <p><strong>Nombre:</strong> {{ employee.first_name }} {{ employee.last_name }}</p>
+              <p><strong>Departamento:</strong> {{ employee.department_name }}</p>
+              <p><strong>Horario:</strong> {{ schedule.horario }}</p>
+              <p><strong>Quincena:</strong> {{ fortnightNumber.first }} del {{ selectedYear }} del {{ formatDate(1) }} al {{ formatDate(15) }}</p>
+              
+              <table class="schedule-table-pdf">
+                <thead class="names-columns">
+                  <tr>
+                    <th class="col-dia">Día</th>
+                    <th class="col-hora">Entrada</th>
+                    <th class="col-hora">Salida</th>
+                    <th class="col-calif">Calif</th>
+                    <th class="col-obs">Observaciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Itera sobre los registros de la primera quincena. -->
+                  <tr v-for="registro in firstFortnight" :key="`fn1-${registro.dia}`">
+                    <td>{{ getDayFromDateString(registro.dia) }}</td>
+                    <td>{{ formatTimeWithoutSeconds(registro.checkin) }}</td>
+                    <td>{{ formatTimeWithoutSeconds(registro.checkout) }}</td>
+                    <td>{{ registro.calificacion }}</td>
+                    <td class="obs">{{ registro.observaciones }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <!-- Área de firma; se alinea al final debido al flex-grow del body. -->
-          <div class="signature-area">
+          <!-- Área de firma primer tarjeta -->
+          <div class="signature-block-bottom">
             <p>{{ employee.first_name }} {{ employee.last_name }}</p>
           </div>
         </div>
 
-        <!-- Tarjeta de la Segunda Quincena -->
-        <div class="fortnight-card">
-          <div class="fortnight-header">DATOS DEL TRABAJADOR</div>
-          <div class="fortnight-body">
-            <p><strong>Expediente:</strong> {{ employee.emp_code }}</p>
-            <p><strong>Nombre:</strong> {{ employee.first_name }} {{ employee.last_name }}</p>
-            <p><strong>Departamento:</strong> {{ employee.department_name }}</p>
-            <p><strong>Horario:</strong> {{ schedule.horario }}</p>
-            <p><strong>Quincena:</strong> {{ fortnightNumber.second }} del {{ selectedYear }} del {{ formatDate(16) }} al {{ formatDate(daysInMonth) }}</p>
+        <!-- Contenedor de la Segunda Quincena  -->
+        <div class="fortnight-wrapper">
+          <!-- Tarjeta de la Segunda Quincena -->
+          <div class="fortnight-card">
+            <div class="fortnight-header">DATOS DEL TRABAJADOR</div>
+            <div class="fortnight-body">
+              <p><strong>Expediente:</strong> {{ employee.emp_code }}</p>
+              <p><strong>Nombre:</strong> {{ employee.first_name }} {{ employee.last_name }}</p>
+              <p><strong>Departamento:</strong> {{ employee.department_name }}</p>
+              <p><strong>Horario:</strong> {{ schedule.horario }}</p>
+              <p><strong>Quincena:</strong> {{ fortnightNumber.second }} del {{ selectedYear }} del {{ formatDate(16) }} al {{ formatDate(daysInMonth) }}</p>
 
-            <table class="schedule-table-pdf">
-              <thead class="names-columns">
-                <tr>
-                  <th class="col-dia">Día</th>
-                  <th class="col-hora">Entrada</th>
-                  <th class="col-hora">Salida</th>
-                  <th class="col-calif">Calif</th>
-                  <th class="col-obs">Observaciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- Itera sobre los registros de la segunda quincena. -->
-                <tr v-for="registro in secondFortnight" :key="`fn2-${registro.dia}`">
-                  <td>{{ getDayFromDateString(registro.dia) }}</td>
-                  <td>{{ formatTimeWithoutSeconds(registro.checkin) }}</td>
-                  <td>{{ formatTimeWithoutSeconds(registro.checkout) }}</td>
-                  <td>{{ registro.calificacion }}</td>
-                  <td class="obs">{{ registro.observaciones }}</td>
-                </tr>
-              </tbody>
-            </table>
+              <table class="schedule-table-pdf">
+                <thead class="names-columns">
+                  <tr>
+                    <th class="col-dia">Día</th>
+                    <th class="col-hora">Entrada</th>
+                    <th class="col-hora">Salida</th>
+                    <th class="col-calif">Calif</th>
+                    <th class="col-obs">Observaciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Itera sobre los registros de la segunda quincena. -->
+                  <tr v-for="registro in secondFortnight" :key="`fn2-${registro.dia}`">
+                    <td>{{ getDayFromDateString(registro.dia) }}</td>
+                    <td>{{ formatTimeWithoutSeconds(registro.checkin) }}</td>
+                    <td>{{ formatTimeWithoutSeconds(registro.checkout) }}</td>
+                    <td>{{ registro.calificacion }}</td>
+                    <td class="obs">{{ registro.observaciones }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <!-- Área de firma; se alinea al final debido al flex-grow del body. -->
-          <div class="signature-area">
-            <p>-<!--{{ employee.first_name }} {{ employee.last_name }}--></p>
+          <!-- Área de firma segunda tarjeta -->
+          <div class="signature-block-bottom">
+            <p>.</p>
           </div>
         </div>
       </div>
@@ -222,22 +228,32 @@ const formatDate = (day) => {
 .fortnights-container {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: 5px;
   margin-top: 10px;
 }
 
 /*
+ * Contenedor que agrupa la tarjeta de quincena y el bloque de firma debajo. 
+*/
+.fortnight-wrapper {
+  width: 50%;
+  display: flex;
+  flex-direction: column; 
+  gap: 5px;
+}
+
+/*
  * Contenedor individual de cada tarjeta de quincena.
- * Utiliza flex-direction: column para organizar verticalmente [header, body, signature].
+ * Utiliza flex-direction: column para organizar verticalmente [header, body].
 */
 .fortnight-card {
-  width: 49%;
   border: 1px solid #000;
   border-radius: 8px;
   overflow: hidden;
   font-size: 8.5pt;
   display: flex;
-  flex-direction: column; 
+  flex-direction: column;
+  flex-grow: 1; /* Permite que las tarjetas crezcan hasta la misma altura. */
 }
 
 /* Encabezado gris de la tarjeta. */
@@ -251,8 +267,7 @@ const formatDate = (day) => {
 
 /*
  * Cuerpo principal de la tarjeta.
- * `flex-grow: 1` es la regla clave que empuja el `signature-area`
- * hacia la parte inferior, ocupando el espacio vertical disponible.
+ * `flex-grow: 1` asegura que ocupe el espacio disponible.
 */
 .fortnight-body {
   padding: 10px;
@@ -294,10 +309,10 @@ const formatDate = (day) => {
 }
 
 /* Anchos de columna fijos para optimizar el layout. */
-.schedule-table-pdf .col-dia { width: 8%; }
+.schedule-table-pdf .col-dia { width: 9%; }
 .schedule-table-pdf .col-hora { width: 17%; }
-.schedule-table-pdf .col-calif { width: 31%; }
-.schedule-table-pdf .col-obs { width: 31%; }
+.schedule-table-pdf .col-calif { width: 23%; }
+.schedule-table-pdf .col-obs { width: 43%; }
 
 .schedule-table-pdf th {
   font-weight: bold;
@@ -308,11 +323,13 @@ const formatDate = (day) => {
   text-align: left;
 }
 
-/* Contenedor del área de firma. */
-.signature-area {
-  padding: 20px 10px;
+/* Bloque de firma que va debajo de la tarjeta */
+.signature-block-bottom {
+  padding: 45px 0;
+  text-align: center;
 }
-.signature-area p {
+
+.signature-block-bottom p {
   border-top: 1px solid black;
   margin: 0 auto;
   padding-top: 5px;
