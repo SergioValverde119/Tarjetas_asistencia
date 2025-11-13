@@ -1,7 +1,7 @@
 <script setup>
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { defineProps, computed } from 'vue';
-import * as kardex from '@/routes/kardex'; // <-- ¡RESTAURADO!
+// import * as kardex from '@/routes/kardex'; // <-- ¡ELIMINADO!
 
 // ¡Iconos Habilitados!
 import { 
@@ -43,8 +43,8 @@ const columnasResumen = [ "Vacaciones", "Permisos", "Retardos", "Omisiones", "Fa
 
 // --- Función de Búsqueda (Envía el POST al controlador) ---
 function buscarDatos() {
-    // --- ¡RESTAURADO a Wayfinder! ---
-    form.post(kardex.buscar(), {
+    // --- ¡CAMBIO! Usando URL directa ---
+    form.post('/kardex/buscar', {
         preserveScroll: true,
     });
 }
@@ -93,8 +93,8 @@ function exportarExcel() {
         search: form.search || '',
     }).toString();
     
-    // --- ¡RESTAURADO a Wayfinder! ---
-    window.location.href = kardex.exportar() + '?' + query;
+    // --- ¡CAMBIO! Usando URL directa ---
+    window.location.href = '/kardex/exportar' + '?' + query;
 }
 
 // --- Función de Colores (Devuelve clases de Tailwind) ---
@@ -171,7 +171,7 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
                         <select 
                             id="filtro-mes" 
                             v-model="form.mes"
-                            @change="buscarDatos"
+                            @change="buscarDatos" 
                             class="block w-full appearance-none border-0 border-l border-r border-gray-300 text-center text-base font-semibold text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             style="padding-top: 0.5rem; padding-bottom: 0.5rem;"
                         >

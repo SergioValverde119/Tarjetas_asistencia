@@ -21,14 +21,8 @@ Route::get('/welcome', function () {
 
 Route::get('/kardex', [KardexController::class, 'index'])->middleware(['auth', 'verified'])->name('kardex.index');
 Route::post('/kardex/buscar', [KardexController::class, 'buscar'])->middleware(['auth', 'verified'])->name('kardex.buscar');
- Route::get('/kardex/exportar', [KardexController::class, 'exportar'])->middleware(['auth', 'verified'])->name('kardex.exportar');
-// --- REGLA #2: La Página Principal (Tu Buscador de Tarjetas) ---
-// Esta es tu página principal. Está protegida. Si un usuario no ha iniciado sesión
-// e intenta acceder, Laravel lo redirigirá automáticamente a '/login'.
-Route::get('/', function () {
-    // Asegúrate de que el nombre aquí sea el de tu componente de búsqueda.
-    return Inertia::render('BuscarTarjetas');
-})->middleware(['auth', 'verified'])->name('home');
+Route::get('/kardex/exportar', [KardexController::class, 'exportar'])->middleware(['auth', 'verified'])->name('kardex.exportar');
+Route::get('/', function () {return Inertia::render('BuscarTarjetas');})->middleware(['auth', 'verified'])->name('home');
 
 require __DIR__.'/settings.php';
 

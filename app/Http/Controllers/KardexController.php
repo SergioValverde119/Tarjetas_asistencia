@@ -6,8 +6,9 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
 use App\Repositories\KardexRepository;
-use App\Exports\KardexExport; // <-- ¡NUEVA IMPORTACIÓN!
-use Maatwebsite\Excel\Facades\Excel; // <-- ¡NUEVA IMPORTACIÓN!
+use App\Exports\KardexExport;
+use Maatwebsite\Excel\Facades\Excel;
+// Ya no se usa Log
 
 class KardexController extends Controller
 {
@@ -45,27 +46,34 @@ class KardexController extends Controller
     }
 
     /**
-     * ¡NUEVO MÉTODO!
      * Maneja la solicitud de exportación a Excel.
      */
     public function exportar(Request $request)
     {
-        // Validamos los filtros que llegan por GET
-        $filtros = $request->validate([
-            'mes' => 'required|integer|min:1|max:12',
-            'ano' => 'required|integer|min:2020|max:2030',
-            'quincena' => 'required|integer|min:0|max:2',
-            'perPage' => 'nullable|integer',
-            'search' => 'nullable|string|max:50',
-            // 'ocultar_inactivos' ya no se necesita
-        ]);
-        
-        // Generar nombre de archivo dinámico
-        $mesNombre = Carbon::create()->month($filtros['mes'])->monthName;
-        $fileName = sprintf('Kardex_%s_%s_Q%s.xlsx', $filtros['ano'], $mesNombre, $filtros['quincena']);
+        try {
+            // 1. Validamos los filtros
+            $filtros = $request->validate([
+                'mes' => 'required|integer|min:1|max:12',
+                'ano' => 'required|integer|min:2020|max:2030',
+                'quincena' => 'required|integer|min:0|max:2',
+                'perPage' => 'nullable|integer',
+                'search' => 'nullable|string|max:50',
+            ]);
 
-        // Pasamos los filtros Y el repositorio que ya tiene el controlador
-        return Excel::download(new KardexExport($filtros, $this->kardexRepo), $fileName);
+            // 2. Generar nombre de archivo dinámico
+            // ¡LA CORRECCIÓN IMPORTANTE! Convertir a (int) para Carbon.
+            $mesNombre = Carbon::create()->month((int)$filtros['mes'])->monthName;
+            $fileName = sprintf('Kardex_%s_%s_Q%s.xlsx', (int)$filtros['ano'], $mesNombre, (int)$filtros['quincena']);
+
+            // 3. Pasamos los filtros Y el repositorio
+            return Excel::download(new KardexExport($filtros, $this->kardexRepo), $fileName);
+
+        } catch (\Throwable $e) {
+            // Si algo falla, lo reporta al log real (storage/logs/laravel.log)
+            // y evita el error 500
+            report($e);
+            return response('Error al generar el export. Revise el log del sistema.', 500);
+        }
     }
 
     /**

@@ -8,6 +8,7 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Illuminate\Support\Carbon;
 
+// ¡ESTA ES LA ÚNICA CLASE QUE DEBE ESTAR EN ESTE ARCHIVO!
 class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize
 {
     protected $filtros;
@@ -21,10 +22,11 @@ class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize
         $this->kardexRepo = $kardexRepo;
 
         // 1. Calcular el rango de días (igual que en el controller)
-        $fechaBase = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1);
+        // ¡LA CORRECCIÓN IMPORTANTE! Convertir a (int) para Carbon.
+        $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
         $diasTotalesDelMes = $fechaBase->daysInMonth;
-        $diaInicio = ($filtros['quincena'] == 2) ? 16 : 1;
-        $diaFin = ($filtros['quincena'] == 1) ? 15 : $diasTotalesDelMes;
+        $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
+        $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $diasTotalesDelMes;
         $this->rangoDeDias = range($diaInicio, $diaFin);
 
         // 2. Construir los encabezados dinámicos
@@ -41,13 +43,13 @@ class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize
     public function collection()
     {
         // 1. Obtener TODOS los empleados (sin paginación)
-        // (Usamos el método que ya habías creado en el repositorio)
         $empleados = $this->kardexRepo->getEmpleadosTodos($this->filtros);
         $empleadoIDs = $empleados->pluck('id')->toArray();
 
         // 2. Obtener sus datos
-        $fechaInicioMes = Carbon::createFromDate($this->filtros['ano'], $this->filtros['mes'], 1)->startOfDay();
-        $fechaFinMes = Carbon::createFromDate($this->filtros['ano'], $this->filtros['mes'], 1)->endOfMonth()->endOfDay();
+        // ¡LA CORRECCIÓN IMPORTANTE! Convertir a (int) para Carbon.
+        $fechaInicioMes = Carbon::createFromDate((int)$this->filtros['ano'], (int)$this->filtros['mes'], 1)->startOfDay();
+        $fechaFinMes = Carbon::createFromDate((int)$this->filtros['ano'], (int)$this->filtros['mes'], 1)->endOfMonth()->endOfDay();
         
         $payloadData = $this->kardexRepo->getPayloadData($empleadoIDs, $fechaInicioMes, $fechaFinMes);
         $permisos = $this->kardexRepo->getPermisos($empleadoIDs, $fechaInicioMes, $fechaFinMes);
@@ -57,8 +59,8 @@ class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize
             $empleados, 
             $payloadData,
             $permisos, 
-            $this->filtros['mes'], 
-            $this->filtros['ano'], 
+            (int)$this->filtros['mes'], // ¡LA CORRECCIÓN IMPORTANTE!
+            (int)$this->filtros['ano'], // ¡LA CORRECCIÓN IMPORTANTE!
             $this->rangoDeDias[0], // diaInicio
             end($this->rangoDeDias) // diaFin
         );
