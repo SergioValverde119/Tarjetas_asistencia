@@ -127,8 +127,8 @@ const fetchSchedule = async () => {
     if (data.registros && Array.isArray(data.registros)) {
       data.registros = data.registros.map(registro => ({
         ...registro,
-        checkin: formatTimeWithoutSeconds(registro.checkin),
-        checkout: formatTimeWithoutSeconds(registro.checkout),
+        //checkin: formatTimeWithoutSeconds(registro.checkin),
+       // checkout: formatTimeWithoutSeconds(registro.checkout),
       }));
     }
     

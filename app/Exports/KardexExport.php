@@ -15,10 +15,7 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Color;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Font;
-// --- ¡NUEVAS IMPORTACIONES PARA EL FORMATO DE TABLA! ---
-use PhpOffice\PhpSpreadsheet\Worksheet\Table;
-use PhpOffice\PhpSpreadsheet\Worksheet\Table\TableStyle;
-
+// --- IMPORTACIONES DE TABLA ELIMINADAS ---
 
 class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize, WithStyles, WithEvents
 {
@@ -84,7 +81,7 @@ class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize, With
                 $excelRow[$dia] = $incidencia === '' ? '✓' : $incidencia;
             }
 
-            // --- ¡CAMBIO REVERTIDO! Se mostrará el 0. ---
+            // --- ¡CORREGIDO! Se mostrará el 0 (cero) ---
             $excelRow['total_vacaciones'] = $fila['total_vacaciones'];
             $excelRow['total_permisos'] = $fila['total_permisos'];
             $excelRow['total_retardos'] = $fila['total_retardos'];
@@ -104,9 +101,11 @@ class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize, With
 
     public function styles(Worksheet $sheet)
     {
-        // 1. Poner en negritas la fila 1 (encabezados)
+        // 1. Poner en negritas y con fondo gris la fila 1 (encabezados)
         $sheet->getStyle('1:1')->getFont()->setBold(true);
-        // (Quitamos el fondo gris, porque el formato de tabla lo pondrá)
+        $sheet->getStyle('1:1')->getFill()
+              ->setFillType(Fill::FILL_SOLID)
+              ->getStartColor()->setARGB('FFE0E0E0'); // Un gris claro
 
         // 2. Aplicar bordes a todas las celdas
         $styleArray = [
@@ -185,25 +184,8 @@ class KardexExport implements FromCollection, WithHeadings, ShouldAutoSize, With
                     }
                 }
 
-                // --- ¡NUEVO! APLICAR FORMATO DE TABLA CON FILTROS ---
+                // --- CÓDIGO DE FORMATO DE TABLA ELIMINADO ---
                 
-                // 1. Definir el rango completo de la tabla
-                $tableRange = 'A1:' . $sheet->getHighestColumn() . $sheet->getHighestRow();
-                
-                // 2. Crear el objeto Tabla
-                $table = new Table($tableRange);
-                $table->setName('Kardex'); // Nombre de la tabla
-                $table->setShowHeaderRow(true); // Indicar que la fila 1 es el encabezado
-                $table->setShowFilterButton(true); // ¡Mostrar los botones de filtro!
-                
-                // 3. Añadir un estilo de tabla (azul medio)
-                $tableStyle = new TableStyle();
-                $tableStyle->setTheme(TableStyle::TABLE_STYLE_MEDIUM9);
-                $table->setStyle($tableStyle);
-                
-                // 4. Añadir la tabla a la hoja
-                $sheet->addTable($table);
-
             },
         ];
     }

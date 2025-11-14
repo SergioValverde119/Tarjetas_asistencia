@@ -54,11 +54,12 @@ const getDayFromDateString = (dateString) => {
  * @returns {string} - La hora formateada ('HH:MM') o un string vacío.
  */
 const formatTimeWithoutSeconds = (timeString) => {
-  if (!timeString || typeof timeString !== 'string') return '';
-  const parts = timeString.split(':');
-  if (parts.length >= 2) {
-    return `${parts[0]}:${parts[1]}`;
-  }
+ 
+ // if (!timeString || typeof timeString !== 'string') return '';
+ // const parts = timeString.split(':');
+ // if (parts.length >= 2) {
+ //   return `${parts[0]}:${parts[1]}`;
+ // }
   return timeString;
 };
 
