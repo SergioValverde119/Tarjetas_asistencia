@@ -75,7 +75,8 @@ class KardexRepository
         return DB::connection($this->connection)
             ->table('att_leave')
             ->join('att_leavecategory', 'att_leave.category_id', '=', 'att_leavecategory.id')
-            ->select('employee_id', 'start_time', 'end_time', 'report_symbol')
+            // --- ¡CAMBIO! Traemos el report_symbol (la clave) ---
+            ->select('employee_id', 'start_time', 'end_time', 'report_symbol') 
             ->whereIn('employee_id', $empleadoIDs)
             ->where(function ($q) use ($fechaInicio, $fechaFin) {
                 $q->where('start_time', '<=', $fechaFin)
@@ -90,6 +91,12 @@ class KardexRepository
      */
     public function procesarKardex($empleados, $payloadData, $permisos, $mes, $ano, $diaInicio, $diaFin)
     {
+        // --- ¡NUEVA LÓGICA! ---
+        // 1. Cargar nuestro "diccionario" de reglas en memoria UNA SOLA VEZ.
+        //    (Lee de la BD default 'bd_tarjetas', donde creamos la tabla)
+        $mapaDeReglas = DB::table('mapeo_de_permisos')
+                           ->pluck('nuestra_categoria', 'biotime_report_symbol');
+        
         $filasDelKardex = [];
         foreach ($empleados as $empleado) {
             $filaEmpleado = [
@@ -131,14 +138,30 @@ class KardexRepository
                 } else {
                     if ($payloadDia->day_off > 0) {
                         $incidenciaDelDia = "Descanso";
+                    
+                    // --- ¡TODA ESTA LÓGICA ES NUEVA! ---
                     } else if ($payloadDia->leave > 0) {
                         $permiso = $this->buscarPermiso($permisosParaEmpleado, $fechaActual);
+                        // Mostramos el símbolo original (ej. '102PV')
                         $incidenciaDelDia = $permiso ? $permiso->report_symbol : "Permiso";
-                        if ($permiso && str_starts_with($permiso->report_symbol, 'V')) {
-                            $filaEmpleado['total_vacaciones']++;
+
+                        if ($permiso) {
+                            // 2. Buscamos la traducción en nuestro "diccionario" (el mapa de memoria)
+                            //    Si el símbolo es nulo o vacío, usamos 'default'
+                            $categoriaLimpia = $mapaDeReglas->get($permiso->report_symbol ?? 'default', 'OTRO'); // 'OTRO' es el default
+
+                            // 3. Contamos usando la traducción
+                            if ($categoriaLimpia === 'VACACION') {
+                                $filaEmpleado['total_vacaciones']++;
+                            } else {
+                                $filaEmpleado['total_permisos']++; // Todo lo demás
+                            }
                         } else {
+                            // Si por alguna razón no se encontró (raro), lo mandamos a permisos
                             $filaEmpleado['total_permisos']++;
                         }
+                    // --- FIN DE LA NUEVA LÓGICA ---
+
                     } else if ($payloadDia->absent > 0) {
                         $incidenciaDelDia = "Falto";
                         $filaEmpleado['total_faltas']++;

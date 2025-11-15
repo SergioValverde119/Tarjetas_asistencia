@@ -1,7 +1,8 @@
 <script setup>
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { defineProps, computed } from 'vue';
-// import * as kardex from '@/routes/kardex'; // <-- ¡ELIMINADO!
+import * as kardex from '@/routes/kardex'; // <-- ¡TU SISTEMA WAYFINDER!
+import * as reglas from '@/routes/reglas'; // <-- ¡NUEVA IMPORTACIÓN!
 
 // ¡Iconos Habilitados!
 import { 
@@ -11,7 +12,8 @@ import {
     DocumentTextIcon,
     ChevronLeftIcon,
     ChevronRightIcon,
-    ArrowDownTrayIcon
+    ArrowDownTrayIcon,
+    Cog6ToothIcon // <-- ¡NUEVO ICONO!
 } from '@heroicons/vue/24/outline';
 
 // --- Props (Recibe los datos del controlador) ---
@@ -38,13 +40,13 @@ const meses = [ { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { 
 
 const anos = computed(() => { const anoActual = new Date().getFullYear(); return [anoActual, anoActual - 1, anoActual - 2]; });
 const quincenas = [ { value: 0, label: 'Mes Completo' }, { value: 1, label: '1ra Quincena (1-15)' }, { value: 2, label: '2da Quincena (16-Fin)' } ];
-const perPageOptions = [10, 20, 50, 200];
+const perPageOptions = [10, 15, 50, 200];
 const columnasResumen = [ "Vacaciones", "Permisos", "Retardos", "Omisiones", "Faltas" ];
 
 // --- Función de Búsqueda (Envía el POST al controlador) ---
 function buscarDatos() {
-    // --- ¡CAMBIO! Usando URL directa ---
-    form.post('/kardex/buscar', {
+    // --- ¡USANDO WAYFINDER! ---
+    form.post(kardex.buscar(), {
         preserveScroll: true,
     });
 }
@@ -93,8 +95,8 @@ function exportarExcel() {
         search: form.search || '',
     }).toString();
     
-    // --- ¡CAMBIO! Usando URL directa ---
-    window.location.href = '/kardex/exportar' + '?' + query;
+    // --- ¡USANDO WAYFINDER! ---
+    window.location.href = kardex.exportar() + '?' + query;
 }
 
 // --- Función de Colores (Devuelve clases de Tailwind) ---
@@ -125,10 +127,19 @@ TEMPLATE (Todas las clases de Tailwind en el HTML)
         <!-- Contenedor Principal (Ancho w-full, sin max-w) -->
         <div class="w-full p-4 sm:p-6 lg:p-8">
             
-            <h1 class="text-3xl font-bold mb-6 text-gray-800 flex items-center gap-3">
-                <DocumentTextIcon class="w-8 h-8 text-blue-600" />
-                Kárdex de Incidencias
-            </h1>
+            <!-- ¡CAMBIO! Añadido flex justify-between para el botón -->
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-3">
+                    <DocumentTextIcon class="w-8 h-8 text-blue-600" />
+                    Kárdex de Incidencias
+                </h1>
+                
+                <!-- --- ¡NUEVO BOTÓN DE REGLAS! --- -->
+                <Link :href="reglas.index()" class="flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <Cog6ToothIcon class="h-5 w-5 text-gray-500" />
+                    <span>Reglas de Mapeo</span>
+                </Link>
+            </div>
 
             <!-- 
             ==================================

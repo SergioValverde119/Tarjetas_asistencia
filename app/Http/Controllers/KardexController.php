@@ -37,7 +37,7 @@ class KardexController extends Controller
             'mes' => 'required|integer|min:1|max:12',
             'ano' => 'required|integer|min:2020|max:2030',
             'quincena' => 'required|integer|min:0|max:2',
-            'perPage' => 'required|integer|in:10,20,50,200',
+            'perPage' => 'required|integer|in:10,15,50,200',
             'search' => 'nullable|string|max:50',
             // 'ocultar_inactivos' ya no se necesita
         ]);
