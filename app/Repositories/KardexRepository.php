@@ -111,15 +111,26 @@ class KardexRepository
             $permisosParaEmpleado = $permisos->get($empleado->id) ?? collect();
             
             // Aseguramos que la fecha de contratación se compare como fecha (sin hora)
-            $fechaContratacion = Carbon::parse($empleado->hire_date)->startOfDay();
+            $fechaContratacion = null;
+            if ($empleado->hire_date) {
+                $fechaContratacion = Carbon::parse($empleado->hire_date)->startOfDay();
+            }
 
             for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
                 $incidenciaDelDia = "";
                 $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
                 $fechaString = $fechaActual->toDateString();
 
+                // --- ¡CORRECCIÓN IMPORTANTE PARA EL FUTURO! ---
+                // Si el día es en el futuro, no hacemos nada (no es falta, ni asistencia).
+                if ($fechaActual->isFuture()) {
+                    $filaEmpleado['incidencias_diarias'][$dia] = "";
+                    continue; 
+                }
+                // -----------------------------------------------
+
                 // Lógica de Días Previos a la Contratación
-                if ($fechaActual->isBefore($fechaContratacion)) {
+                if ($fechaContratacion && $fechaActual->isBefore($fechaContratacion)) {
                     $incidenciaDelDia = ""; 
                     $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
                     continue; 
