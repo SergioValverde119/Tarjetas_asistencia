@@ -8,7 +8,6 @@ use Carbon\Carbon;
 use App\Repositories\KardexRepository;
 use App\Exports\KardexExport;
 use Maatwebsite\Excel\Facades\Excel;
-// Ya no se usa Log
 
 class KardexController extends Controller
 {
@@ -37,9 +36,9 @@ class KardexController extends Controller
             'mes' => 'required|integer|min:1|max:12',
             'ano' => 'required|integer|min:2020|max:2030',
             'quincena' => 'required|integer|min:0|max:2',
-            'perPage' => 'required|integer|in:10,15,50,200',
+            'perPage' => 'required|integer|in:10,20,50,200',
             'search' => 'nullable|string|max:50',
-            // 'ocultar_inactivos' ya no se necesita
+            'nomina' => 'nullable|integer',
         ]);
         
         return redirect()->route('kardex.index', $validatedData);
@@ -51,26 +50,25 @@ class KardexController extends Controller
     public function exportar(Request $request)
     {
         try {
-            // 1. Validamos los filtros
+            // Validamos los filtros que llegan por GET
             $filtros = $request->validate([
                 'mes' => 'required|integer|min:1|max:12',
                 'ano' => 'required|integer|min:2020|max:2030',
                 'quincena' => 'required|integer|min:0|max:2',
                 'perPage' => 'nullable|integer',
                 'search' => 'nullable|string|max:50',
+                'nomina' => 'nullable|integer',
             ]);
-
-            // 2. Generar nombre de archivo dinámico
-            // ¡LA CORRECCIÓN IMPORTANTE! Convertir a (int) para Carbon.
+            
+            // Generar nombre de archivo dinámico
             $mesNombre = Carbon::create()->month((int)$filtros['mes'])->monthName;
             $fileName = sprintf('Kardex_%s_%s_Q%s.xlsx', (int)$filtros['ano'], $mesNombre, (int)$filtros['quincena']);
 
-            // 3. Pasamos los filtros Y el repositorio
+            // Pasamos los filtros Y el repositorio que ya tiene el controlador
             return Excel::download(new KardexExport($filtros, $this->kardexRepo), $fileName);
 
         } catch (\Throwable $e) {
-            // Si algo falla, lo reporta al log real (storage/logs/laravel.log)
-            // y evita el error 500
+            // Reportamos el error al log del sistema sin mostrarlo al usuario
             report($e);
             return response('Error al generar el export. Revise el log del sistema.', 500);
         }
@@ -88,7 +86,7 @@ class KardexController extends Controller
             'quincena' => (int)$request->input('quincena', 0),
             'perPage' => (int)$request->input('perPage', 10),
             'search' => $request->input('search'),
-            // 'ocultar_inactivos' ya no se necesita
+            'nomina' => $request->input('nomina') ? (int)$request->input('nomina') : null,
         ];
         
         // 2. DEFINIR FECHAS
@@ -99,14 +97,18 @@ class KardexController extends Controller
         $rangoDeDias = range($diaInicio, $diaFin);
 
         $fechaInicioMes = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1)->startOfDay();
-        $fechaFinMes = $fechaBase->copy()->endOfMonth()->endOfDay();
+        $fechaFinMes = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1)->endOfMonth()->endOfDay();
         
         // --- 3. PEDIR DATOS AL REPOSITORIO ---
-        $empleadosPaginados = $this->kardexRepo->getEmpleadosPaginados($filtros);
-        $empleadoIDsEnPagina = $empleadosPaginados->pluck('id')->toArray();
+        
+        // Traemos la lista de nóminas para el filtro
+        $listaNominas = $this->kardexRepo->getNominas();
 
-        $payloadData = $this->kardexRepo->getPayloadData($empleadoIDsEnPagina, $fechaInicioMes, $fechaFinMes);
-        $permisos = $this->kardexRepo->getPermisos($empleadoIDsEnPagina, $fechaInicioMes, $fechaFinMes);
+        $empleadosPaginados = $this->kardexRepo->getEmpleadosPaginados($filtros);
+        $empleadoIDs = $empleadosPaginados->pluck('id')->toArray();
+
+        $payloadData = $this->kardexRepo->getPayloadData($empleadoIDs, $fechaInicioMes, $fechaFinMes);
+        $permisos = $this->kardexRepo->getPermisos($empleadoIDs, $fechaInicioMes, $fechaFinMes);
 
         // --- 4. PROCESAR DATOS (TAMBIÉN EN EL REPO) ---
         $datosKardex = $this->kardexRepo->procesarKardex(
@@ -121,13 +123,14 @@ class KardexController extends Controller
             'datosKardex' => $datosKardex, 
             'paginador' => $empleadosPaginados, 
             'rangoDeDias' => $rangoDeDias,
+            'listaNominas' => $listaNominas, 
             'filtros' => [
                 'mes' => $filtros['mes'],
                 'ano' => $filtros['ano'],
                 'quincena' => $filtros['quincena'],
                 'perPage' => $filtros['perPage'],
                 'search' => $filtros['search'] ?? '',
-                // 'ocultar_inactivos' ya no se necesita
+                'nomina' => $filtros['nomina'],
             ]
         ]);
     }

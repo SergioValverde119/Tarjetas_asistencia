@@ -42,9 +42,20 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'quote' => ['message' => trim($message), 'author' => trim($author)],
+            
             'auth' => [
                 'user' => $request->user(),
+                // Enviamos las notificaciones no leídas del usuario (si existe)
+                'notifications' => $request->user() 
+                    ? $request->user()->unreadNotifications 
+                    : [],
             ],
+
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+            ],
+
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

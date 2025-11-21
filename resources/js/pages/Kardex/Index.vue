@@ -1,67 +1,45 @@
 <script setup>
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { defineProps, computed } from 'vue';
-import * as kardex from '@/routes/kardex'; // Tu sistema de rutas
-import * as reglas from '@/routes/reglas'; // Tu sistema de rutas
-
-// Componente de Alertas (El de las tarjetas rojas)
+import * as kardex from '@/routes/kardex'; 
+import * as reglas from '@/routes/reglas'; 
 import AlertaBaja from '@/components/AlertaBaja.vue';
 
-// Iconos
 import { 
     MagnifyingGlassIcon, 
     UserIcon, 
     ChevronDownIcon,
     DocumentTextIcon,
     ArrowDownTrayIcon,
-    Cog6ToothIcon
+    Cog6ToothIcon,
+    BriefcaseIcon // <-- Icono de maletín para Nómina
 } from '@heroicons/vue/24/outline';
 
-// --- Props ---
 const props = defineProps({
     datosKardex: Array,
     paginador: Object,
     rangoDeDias: Array,
-    filtros: Object
+    filtros: Object,
+    listaNominas: Array, // Recibimos la lista (aunque no filtremos, el controller la manda)
 });
 
-// --- Formulario ---
 const form = useForm({
     mes: props.filtros.mes,
     ano: props.filtros.ano,
     quincena: props.filtros.quincena,
     perPage: props.filtros.perPage,
     search: props.filtros.search || '',
+    // nomina: props.filtros.nomina || '', // Comentado por ahora si no vas a filtrar
 });
 
-// --- Listas de Opciones ---
-const meses = [ 
-    { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' }, 
-    { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' }, 
-    { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' }, 
-    { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' } 
-];
-
-const anos = computed(() => { 
-    const anoActual = new Date().getFullYear(); 
-    return [anoActual, anoActual - 1, anoActual - 2]; 
-});
-
-const quincenas = [ 
-    { value: 0, label: 'Mes Completo' }, 
-    { value: 1, label: '1ra Quincena (1-15)' }, 
-    { value: 2, label: '2da Quincena (16-Fin)' } 
-];
-
+// ... (Listas y computed igual que antes) ...
+const meses = [ { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' }, { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' }, { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' }, { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' } ];
+const anos = computed(() => { const anoActual = new Date().getFullYear(); return [anoActual, anoActual - 1, anoActual - 2]; });
+const quincenas = [ { value: 0, label: 'Mes Completo' }, { value: 1, label: '1ra Quincena (1-15)' }, { value: 2, label: '2da Quincena (16-Fin)' } ];
 const perPageOptions = [10, 20, 50, 200];
 const columnasResumen = [ "Vacaciones", "Permisos", "Retardos", "Omisiones", "Faltas" ];
 
-// --- Funciones ---
-
 function buscarDatos() {
-    // Usando Wayfinder para la ruta
-    // Nota: Si kardex.buscar() devuelve un objeto, asegúrate de usar .url si es necesario.
-    // Aquí asumo que tu configuración de Wayfinder funciona directo o tiene toString().
     form.post(kardex.buscar(), {
         preserveScroll: true,
     });
@@ -74,15 +52,15 @@ function exportarExcel() {
         quincena: form.quincena,
         perPage: form.perPage,
         search: form.search || '',
+        // nomina: form.nomina || '',
     }).toString();
     
-    // Usando Wayfinder para la URL de exportación
     window.location.href = kardex.exportar() + '?' + query;
 }
 
 function getColorForIncidencia(incidencia) {
     if (!incidencia || incidencia.trim() === '') {
-        return 'bg-green-100 text-green-800'; // Asistencia (Verde)
+        return 'bg-green-100 text-green-800';
     }
     switch (incidencia) {
         case 'Descanso': return 'bg-gray-200 text-gray-600';
@@ -90,7 +68,7 @@ function getColorForIncidencia(incidencia) {
         case 'R': return 'bg-orange-200 text-orange-800';
         case 'Sin Entrada':
         case 'Sin Salida': return 'bg-yellow-200 text-yellow-800';
-        default: return 'bg-blue-200 text-blue-800'; // Vacaciones, Permisos, etc.
+        default: return 'bg-blue-200 text-blue-800'; 
     }
 }
 </script>
@@ -99,30 +77,26 @@ function getColorForIncidencia(incidencia) {
     <div>
         <Head title="Kárdex de Incidencias" />
 
-        <!-- Contenedor Principal -->
         <div class="w-full p-4 sm:p-6 lg:p-8">
             
-            <!-- Encabezado -->
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-3">
                     <DocumentTextIcon class="w-8 h-8 text-blue-600" />
                     Kárdex de Incidencias
                 </h1>
                 
-                <!-- Botón Ir a Reglas -->
                 <Link :href="reglas.index()" class="flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                     <Cog6ToothIcon class="h-5 w-5 text-gray-500" />
                     <span>Reglas de Mapeo</span>
                 </Link>
             </div>
 
-            <!-- Sección de Alertas de Baja (Se muestra solo si hay alertas) -->
             <AlertaBaja />
 
             <!-- Filtros -->
             <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-8 gap-4">
                 
-                <!-- Buscador -->
+                <!-- Buscador (2 cols) -->
                 <div class="lg:col-span-2">
                     <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar (Nombre o ID)</label>
                     <div class="relative mt-1 rounded-md shadow-sm">
@@ -136,7 +110,7 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <!-- Mes (Lista Simple) -->
+                <!-- Mes -->
                 <div>
                     <label for="filtro-mes" class="block text-base font-medium text-gray-700">Mes</label>
                     <div class="relative mt-1">
@@ -219,60 +193,65 @@ function getColorForIncidencia(incidencia) {
                 </div>
             </div>
 
-            <!-- Tabla con Doble Sticky -->
+            <!-- Tabla -->
             <div class="mt-8 rounded-lg shadow-lg overflow-auto border border-gray-200" style="max-height: 75vh;">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-100">
                         <tr>
-                            <!-- Columnas Fijas: ID y Nombre -->
+                            <!-- Columna ID -->
                             <th scope="col" class="sticky top-0 left-0 z-30 bg-gray-100 px-2 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider" style="min-width: 70px;">
                                 ID
                             </th>
+                            
+                            <!-- Columna Nombre (Ajustada) -->
                             <th scope="col" class="sticky top-0 left-[70px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider" style="min-width: 200px;">
                                 Nombre
                             </th>
 
-                            <!-- Columnas Dinámicas (Días) -->
+                            <!-- ¡NUEVA COLUMNA NÓMINA! (Sticky) -->
+                            <!-- Nota: left-[270px] es 70px (ID) + 200px (Nombre) -->
+                            <th scope="col" class="sticky top-0 left-[270px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider" style="min-width: 150px;">
+                                Nómina
+                            </th>
+
+                            <!-- Días -->
                             <th v-for="dia in rangoDeDias" :key="dia" scope="col" 
                                 class="sticky top-0 z-20 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider"
                                 style="min-width: 40px;">
                                 {{ dia }}
                             </th>
 
-                            <!-- Columnas Fijas (Resumen) -->
+                            <!-- Resumen -->
                             <th v-for="(col, index) in columnasResumen" :key="col" scope="col" 
                                 class="sticky top-0 right-0 z-30 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider"
-                                :style="{ 
-                                    minWidth: '90px', 
-                                    right: 
-                                        col === 'Faltas' ? '0px' : 
-                                        col === 'Omisiones' ? '90px' : 
-                                        col === 'Retardos' ? '180px' : 
-                                        col === 'Permisos' ? '270px' : '360px' 
-                                }">
+                                :style="{ minWidth: '90px', right: col === 'Faltas' ? '0px' : col === 'Omisiones' ? '90px' : col === 'Retardos' ? '180px' : col === 'Permisos' ? '270px' : '360px' }">
                                 {{ col }}
                             </th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        <!-- Estado Vacío -->
                         <tr v-if="datosKardex.length === 0">
-                            <td :colspan="rangoDeDias.length + 7" class="px-6 py-10 whitespace-nowrap text-base text-gray-500 text-center">
+                            <td :colspan="rangoDeDias.length + 8" class="px-6 py-10 whitespace-nowrap text-base text-gray-500 text-center">
                                 <div class="flex flex-col items-center justify-center">
                                     <MagnifyingGlassIcon class="w-12 h-12 text-gray-400" />
                                     <span class="mt-2 text-lg font-medium">No se encontraron resultados</span>
-                                    <span class="text-base text-gray-400">Intenta ajustar tus filtros de búsqueda.</span>
+                                    <span class="text-base text-gray-400">Intenta ajustar tus filtros.</span>
                                 </div>
                             </td>
                         </tr>
-                        
-                        <!-- Filas de Datos -->
                         <tr v-for="fila in datosKardex" :key="fila.emp_code" class="group transition-colors hover:bg-gray-50">
+                            <!-- ID -->
                             <td class="sticky left-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base font-medium text-gray-900 transition-colors group-hover:bg-gray-50">
                                 {{ fila.emp_code }}
                             </td>
+                            <!-- Nombre -->
                             <td class="sticky left-[70px] z-10 bg-white px-3 py-2 whitespace-nowrap text-base text-gray-800 transition-colors group-hover:bg-gray-50">
                                 {{ fila.nombre }}
+                            </td>
+
+                            <!-- ¡NUEVA COLUMNA NÓMINA! -->
+                            <td class="sticky left-[270px] z-10 bg-white px-3 py-2 whitespace-nowrap text-sm text-gray-600 transition-colors group-hover:bg-gray-50">
+                                {{ fila.nomina || 'Sin Asignar' }}
                             </td>
                             
                             <!-- Días -->
