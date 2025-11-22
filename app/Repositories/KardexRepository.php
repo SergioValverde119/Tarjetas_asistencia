@@ -9,15 +9,12 @@ class KardexRepository
 {
     private $connection = 'pgsql_biotime';
 
-    /**
-     * Obtiene la lista de Áreas para usarla en el dropdown de "Tipo de Nómina"
-     */
     public function getNominas()
     {
         return DB::connection($this->connection)
             ->table('personnel_area')
             ->where('area_name', '!=', 'Default (Reservado)')
-            ->where('area_name', '!=', 'SEDUVI') // <-- Opcional: También la quitamos del dropdown
+            ->where('area_name', '!=', 'SEDUVI') 
             ->orderBy('area_name')
             ->get(['id', 'area_name']);
     }
@@ -34,9 +31,6 @@ class KardexRepository
         return $this->getBaseEmpleadosQuery($filtros)->get();
     }
 
-    /**
-     * Lógica base corregida para mostrar MÚLTIPLES áreas por empleado (Sin SEDUVI)
-     */
     private function getBaseEmpleadosQuery(array $filtros)
     {
         return DB::connection($this->connection)
@@ -48,9 +42,6 @@ class KardexRepository
                 'personnel_employee.first_name', 
                 'personnel_employee.last_name', 
                 'personnel_employee.hire_date',
-                
-                // --- ¡AQUÍ ESTÁ EL CAMBIO! ---
-                // Concatenamos las áreas PERO filtramos 'SEDUVI'
                 DB::raw("(
                     SELECT STRING_AGG(pa.area_name, ', ')
                     FROM personnel_employee_area pea
@@ -61,7 +52,6 @@ class KardexRepository
             )
             ->where('personnel_employee.is_truly_active', true)
             
-            // Filtro por Nómina (Área)
             ->when($filtros['nomina'] ?? null, function ($query, $nominaId) {
                 $query->whereExists(function ($subQuery) use ($nominaId) {
                     $subQuery->select(DB::raw(1))
@@ -151,12 +141,16 @@ class KardexRepository
 
                 $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
 
-                if ($fechaActual->dayOfWeek == 0 || $fechaActual->dayOfWeek == 6) {
+                // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+                
+                if (!$payloadDia) {
+                    // Si BioTime no generó registro, asumimos que NO HABÍA TURNO (Descanso).
+                    // Ya no asumimos "Falta" solo por no tener datos.
+                    // Esto arregla los turnos rotativos y de fin de semana.
                     $incidenciaDelDia = "Descanso";
-                } else if (!$payloadDia) {
-                    $incidenciaDelDia = "Falto";
-                    $filaEmpleado['total_faltas']++;
                 } else {
+                    // Si SÍ hay registro, leemos lo que BioTime calculó
+                    
                     if ($payloadDia->day_off > 0) {
                         $incidenciaDelDia = "Descanso";
                     } else if ($payloadDia->leave > 0) {
@@ -174,6 +168,7 @@ class KardexRepository
                             $filaEmpleado['total_permisos']++;
                         }
                     } else if ($payloadDia->absent > 0) {
+                        // Solo marcamos Falta si BioTime explícitamente dice "absent > 0"
                         $incidenciaDelDia = "Falto";
                         $filaEmpleado['total_faltas']++;
                     } else if ($payloadDia->clock_in == null) {
@@ -187,6 +182,8 @@ class KardexRepository
                         $filaEmpleado['total_retardos']++;
                     }
                 }
+                // ---------------------------------
+
                 $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
             }
             $filasDelKardex[] = $filaEmpleado;

@@ -3,6 +3,7 @@ import { Head, useForm, Link } from '@inertiajs/vue3';
 import { defineProps, computed } from 'vue';
 import * as kardex from '@/routes/kardex'; 
 import * as reglas from '@/routes/reglas'; 
+
 import AlertaBaja from '@/components/AlertaBaja.vue';
 
 import { 
@@ -12,7 +13,7 @@ import {
     DocumentTextIcon,
     ArrowDownTrayIcon,
     Cog6ToothIcon,
-    BriefcaseIcon // <-- Icono de maletín para Nómina
+    BriefcaseIcon
 } from '@heroicons/vue/24/outline';
 
 const props = defineProps({
@@ -20,7 +21,7 @@ const props = defineProps({
     paginador: Object,
     rangoDeDias: Array,
     filtros: Object,
-    listaNominas: Array, // Recibimos la lista (aunque no filtremos, el controller la manda)
+    listaNominas: Array,
 });
 
 const form = useForm({
@@ -29,11 +30,11 @@ const form = useForm({
     quincena: props.filtros.quincena,
     perPage: props.filtros.perPage,
     search: props.filtros.search || '',
-    // nomina: props.filtros.nomina || '', // Comentado por ahora si no vas a filtrar
+    nomina: props.filtros.nomina || '',
 });
 
-// ... (Listas y computed igual que antes) ...
 const meses = [ { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' }, { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' }, { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' }, { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' } ];
+
 const anos = computed(() => { const anoActual = new Date().getFullYear(); return [anoActual, anoActual - 1, anoActual - 2]; });
 const quincenas = [ { value: 0, label: 'Mes Completo' }, { value: 1, label: '1ra Quincena (1-15)' }, { value: 2, label: '2da Quincena (16-Fin)' } ];
 const perPageOptions = [10, 20, 50, 200];
@@ -52,7 +53,7 @@ function exportarExcel() {
         quincena: form.quincena,
         perPage: form.perPage,
         search: form.search || '',
-        // nomina: form.nomina || '',
+        nomina: form.nomina || '',
     }).toString();
     
     window.location.href = kardex.exportar() + '?' + query;
@@ -94,11 +95,10 @@ function getColorForIncidencia(incidencia) {
             <AlertaBaja />
 
             <!-- Filtros -->
-            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-8 gap-4">
+            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-9 gap-4">
                 
-                <!-- Buscador (2 cols) -->
                 <div class="lg:col-span-2">
-                    <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar (Nombre o ID)</label>
+                    <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar</label>
                     <div class="relative mt-1 rounded-md shadow-sm">
                         <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                             <UserIcon class="h-5 w-5 text-gray-400" aria-hidden="true" />
@@ -106,11 +106,27 @@ function getColorForIncidencia(incidencia) {
                         <input type="text" id="filtro-search" v-model="form.search"
                                @keyup.enter="buscarDatos"
                                class="block w-full rounded-md border-gray-300 pl-10 text-base focus:border-blue-500 focus:ring-blue-500"
-                               placeholder="Juan Perez o 12345" />
+                               placeholder="Nombre o ID..." />
                     </div>
                 </div>
 
-                <!-- Mes -->
+                <div class="lg:col-span-2">
+                    <label for="filtro-nomina" class="block text-base font-medium text-gray-700">Tipo Nómina</label>
+                    <div class="relative mt-1">
+                        <select id="filtro-nomina" v-model="form.nomina" 
+                                @change="buscarDatos"
+                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">Todas</option>
+                            <option v-for="nom in listaNominas" :key="nom.id" :value="nom.id">
+                                {{ nom.area_name }}
+                            </option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                            <BriefcaseIcon class="h-5 w-5 text-gray-400" aria-hidden="true" />
+                        </div>
+                    </div>
+                </div>
+
                 <div>
                     <label for="filtro-mes" class="block text-base font-medium text-gray-700">Mes</label>
                     <div class="relative mt-1">
@@ -125,7 +141,6 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
                 
-                <!-- Año -->
                 <div>
                     <label for="filtro-ano" class="block text-base font-medium text-gray-700">Año</label>
                     <div class="relative mt-1">
@@ -140,7 +155,6 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <!-- Quincena -->
                 <div>
                     <label for="filtro-quincena" class="block text-base font-medium text-gray-700">Quincena</label>
                     <div class="relative mt-1">
@@ -155,7 +169,6 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <!-- Por Página -->
                 <div>
                     <label for="filtro-perPage" class="block text-base font-medium text-gray-700">Mostrar</label>
                     <div class="relative mt-1">
@@ -170,68 +183,73 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <!-- Botón Buscar -->
                 <div class="flex items-end">
                     <button @click="buscarDatos" 
                             :disabled="form.processing" 
                             class="flex w-full items-center justify-center gap-2 rounded-md border border-transparent bg-blue-600 py-2 px-4 font-bold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                             :class="{ 'opacity-50 cursor-not-allowed': form.processing }">
                         <MagnifyingGlassIcon class="h-5 w-5" />
-                        <span>Buscar</span>
+                        <span class="hidden xl:inline">Buscar</span>
                     </button>
                 </div>
 
-                <!-- Botón Excel -->
                 <div class="flex items-end">
                     <button @click="exportarExcel" 
                             :disabled="form.processing" 
                             class="flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                             :class="{ 'opacity-50 cursor-not-allowed': form.processing }">
                         <ArrowDownTrayIcon class="h-5 w-5 text-green-600" />
-                        <span>Excel</span>
+                        <span class="hidden xl:inline">Excel</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Tabla -->
+            <!-- Tabla con Doble Sticky -->
             <div class="mt-8 rounded-lg shadow-lg overflow-auto border border-gray-200" style="max-height: 75vh;">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-100">
+                <table class="min-w-full border-separate border-spacing-0">
+                    <thead>
                         <tr>
-                            <!-- Columna ID -->
-                            <th scope="col" class="sticky top-0 left-0 z-30 bg-gray-100 px-2 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider" style="min-width: 70px;">
+                            <!-- 
+                                Columnas Fijas Izquierda (Estándar) 
+                                bg-gray-100, text-gray-600, border-gray-300
+                            -->
+                            <th scope="col" class="sticky top-0 left-0 z-30 bg-gray-100 px-2 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300" style="min-width: 70px;">
                                 ID
                             </th>
-                            
-                            <!-- Columna Nombre (Ajustada) -->
-                            <th scope="col" class="sticky top-0 left-[70px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider" style="min-width: 200px;">
+                            <th scope="col" class="sticky top-0 left-[70px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300" style="min-width: 200px;">
                                 Nombre
                             </th>
-
-                            <!-- ¡NUEVA COLUMNA NÓMINA! (Sticky) -->
-                            <!-- Nota: left-[270px] es 70px (ID) + 200px (Nombre) -->
-                            <th scope="col" class="sticky top-0 left-[270px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider" style="min-width: 150px;">
+                             <th scope="col" class="sticky top-0 left-[270px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300" style="min-width: 150px;">
                                 Nómina
                             </th>
 
-                            <!-- Días -->
-                            <th v-for="dia in rangoDeDias" :key="dia" scope="col" 
-                                class="sticky top-0 z-20 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider"
-                                style="min-width: 40px;">
-                                {{ dia }}
+                            <!-- 
+                                Columnas de Calendario (Días)
+                                bg-gray-800 (Oscuro), Texto Blanco, Días en Cian
+                            -->
+                            <th v-for="dia in rangoDeDias" :key="dia.num" scope="col" 
+                                class="sticky top-0 z-20 bg-gray-800 px-2 py-3 text-center border-b border-gray-600 border-r border-gray-700"
+                                style="min-width: 50px;">
+                                <div class="flex flex-col items-center">
+                                    <span class="text-sm font-bold text-white">{{ dia.num }}</span>
+                                    <span class="text-[10px] font-bold text-cyan-400 uppercase mt-0.5">{{ dia.nombre }}</span>
+                                </div>
                             </th>
 
-                            <!-- Resumen -->
+                            <!-- 
+                                Columnas Fijas Derecha (Resumen) (Estándar)
+                                bg-gray-100, text-gray-600, border-gray-300
+                            -->
                             <th v-for="(col, index) in columnasResumen" :key="col" scope="col" 
-                                class="sticky top-0 right-0 z-30 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider"
+                                class="sticky top-0 right-0 z-30 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300"
                                 :style="{ minWidth: '90px', right: col === 'Faltas' ? '0px' : col === 'Omisiones' ? '90px' : col === 'Retardos' ? '180px' : col === 'Permisos' ? '270px' : '360px' }">
                                 {{ col }}
                             </th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
+                    <tbody class="bg-white">
                         <tr v-if="datosKardex.length === 0">
-                            <td :colspan="rangoDeDias.length + 8" class="px-6 py-10 whitespace-nowrap text-base text-gray-500 text-center">
+                            <td :colspan="rangoDeDias.length + 8" class="px-6 py-10 whitespace-nowrap text-base text-gray-500 text-center border-b border-gray-200">
                                 <div class="flex flex-col items-center justify-center">
                                     <MagnifyingGlassIcon class="w-12 h-12 text-gray-400" />
                                     <span class="mt-2 text-lg font-medium">No se encontraron resultados</span>
@@ -239,40 +257,36 @@ function getColorForIncidencia(incidencia) {
                                 </div>
                             </td>
                         </tr>
-                        <tr v-for="fila in datosKardex" :key="fila.emp_code" class="group transition-colors hover:bg-gray-50">
-                            <!-- ID -->
-                            <td class="sticky left-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base font-medium text-gray-900 transition-colors group-hover:bg-gray-50">
+                        <tr v-for="fila in datosKardex" :key="fila.emp_code" class="group hover:bg-gray-50">
+                            <td class="sticky left-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base font-medium text-gray-900 border-b border-gray-200 group-hover:bg-gray-50">
                                 {{ fila.emp_code }}
                             </td>
-                            <!-- Nombre -->
-                            <td class="sticky left-[70px] z-10 bg-white px-3 py-2 whitespace-nowrap text-base text-gray-800 transition-colors group-hover:bg-gray-50">
+                            <td class="sticky left-[70px] z-10 bg-white px-3 py-2 whitespace-nowrap text-base text-gray-800 border-b border-gray-200 group-hover:bg-gray-50">
                                 {{ fila.nombre }}
                             </td>
-
-                            <!-- ¡NUEVA COLUMNA NÓMINA! -->
-                            <td class="sticky left-[270px] z-10 bg-white px-3 py-2 whitespace-nowrap text-sm text-gray-600 transition-colors group-hover:bg-gray-50">
+                            <td class="sticky left-[270px] z-10 bg-white px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-b border-gray-200 group-hover:bg-gray-50">
                                 {{ fila.nomina || 'Sin Asignar' }}
                             </td>
                             
-                            <!-- Días -->
-                            <td v-for="dia in rangoDeDias" :key="dia" 
-                                class="px-2 py-2 whitespace-nowrap text-sm font-semibold text-center"
-                                :class="getColorForIncidencia(fila.incidencias_diarias[dia])">
-                                {{ fila.incidencias_diarias[dia] || '✓' }}
+                            <td v-for="dia in rangoDeDias" :key="dia.num" 
+                                class="px-2 py-2 whitespace-nowrap text-sm font-semibold text-center border-b border-r border-gray-100"
+                                :class="[
+                                    getColorForIncidencia(fila.incidencias_diarias[dia.num]),
+                                    dia.esFin ? 'brightness-95' : '' 
+                                ]">
+                                {{ fila.incidencias_diarias[dia.num] || '✓' }}
                             </td>
 
-                            <!-- Resumen -->
-                            <td class="sticky right-[360px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold transition-colors group-hover:bg-gray-50">{{ fila.total_vacaciones || 0 }}</td>
-                            <td class="sticky right-[270px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold transition-colors group-hover:bg-gray-50">{{ fila.total_permisos || 0 }}</td>
-                            <td class="sticky right-[180px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-orange-600 text-center font-bold transition-colors group-hover:bg-gray-50">{{ fila.total_retardos || 0 }}</td>
-                            <td class="sticky right-[90px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-yellow-600 text-center font-bold transition-colors group-hover:bg-gray-50">{{ fila.total_omisiones || 0 }}</td>
-                            <td class="sticky right-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-red-600 text-center font-bold transition-colors group-hover:bg-gray-50">{{ fila.total_faltas || 0 }}</td>
+                            <td class="sticky right-[360px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_vacaciones || 0 }}</td>
+                            <td class="sticky right-[270px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_permisos || 0 }}</td>
+                            <td class="sticky right-[180px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-orange-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_retardos || 0 }}</td>
+                            <td class="sticky right-[90px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-yellow-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_omisiones || 0 }}</td>
+                            <td class="sticky right-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-red-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_faltas || 0 }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             
-            <!-- Paginación -->
             <div v-if="paginador.data.length > 0" class="flex flex-col sm:flex-row justify-between items-center mt-6">
                 <div class="text-base text-gray-700 mb-2 sm:mb-0">
                     Mostrando desde <span class="font-bold">{{ paginador.from }}</span> hasta <span class="font-bold">{{ paginador.to }}</span> de <span class="font-bold">{{ paginador.total }}</span> resultados
