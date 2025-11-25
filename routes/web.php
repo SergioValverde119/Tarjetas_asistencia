@@ -5,6 +5,7 @@ use Inertia\Inertia;
 use App\Http\Controllers\KardexController;
 use App\Http\Controllers\ReglasController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\EmpleadoController;
 
 /*
 |--------------------------------------------------------------------------
@@ -12,25 +13,22 @@ use App\Http\Controllers\NotificationController;
 |--------------------------------------------------------------------------
 */
 
-// --- PÚBLICO ---
+// --- PÚBLICO: Página de Bienvenida ---
 Route::get('/welcome', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
     ]);
 })->middleware('guest')->name('welcome');
 
+// --- TU PÁGINA PRINCIPAL (Restaurada) ---
+// Al entrar a la raíz, mostramos el Buscador de Tarjetas
 Route::get('/', function () {
-    return redirect()->route('kardex.index');
+    return Inertia::render('BuscarTarjetas');
 })->middleware(['auth', 'verified'])->name('home');
 
 
-// --- PRIVADO (GRUPO PRINCIPAL) ---
-// CAMBIO: Usamos el middleware estándar de Laravel, más simple y seguro.
+// --- GRUPO DE MÓDULOS (Protegidos con Login) ---
 Route::middleware(['auth', 'verified'])->group(function () {
-
-    Route::get('/dashboard', function () {
-        return Inertia::render('Dashboard');
-    })->name('dashboard');
 
     // --- MÓDULO KÁRDEX ---
     Route::prefix('kardex')->name('kardex.')->group(function () {
@@ -51,6 +49,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/read-all', [NotificationController::class, 'markAllAsRead'])->name('readAll');
     });
 
+    Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
+
+
 });
 
+// --- CORRECCIÓN: Usamos settings.php en lugar de auth.php ---
 require __DIR__.'/settings.php';

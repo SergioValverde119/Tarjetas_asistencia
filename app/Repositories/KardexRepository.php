@@ -35,7 +35,6 @@ class KardexRepository
     {
         return DB::connection($this->connection)
             ->table('personnel_employee')
-            
             ->select(
                 'personnel_employee.id', 
                 'personnel_employee.emp_code', 
@@ -44,20 +43,28 @@ class KardexRepository
                 'personnel_employee.hire_date',
                 DB::raw("(
                     SELECT STRING_AGG(pa.area_name, ', ')
-                    FROM personnel_employee_area pea
-                    JOIN personnel_area pa ON pea.area_id = pa.id
+                    FROM public.personnel_employee_area pea
+                    JOIN public.personnel_area pa ON pea.area_id = pa.id
                     WHERE pea.employee_id = personnel_employee.id
                     AND pa.area_name != 'SEDUVI' 
                 ) as nomina")
             )
+            
+            // --- ¡CORRECCIÓN: FILTRO ESTRICTO! ---
+            // 1. Debe estar habilitado en BioTime (quita bajas oficiales)
+            ->where('personnel_employee.enable_att', true)
+            
+            // 2. Debe tener actividad reciente (quita fantasmas como Elvis)
+            // Quitamos el "OR status=0" que estaba dejando pasar a los fantasmas.
             ->where('personnel_employee.is_truly_active', true)
+            // -------------------------------------
             
             ->when($filtros['nomina'] ?? null, function ($query, $nominaId) {
                 $query->whereExists(function ($subQuery) use ($nominaId) {
                     $subQuery->select(DB::raw(1))
-                             ->from('personnel_employee_area')
-                             ->whereColumn('personnel_employee_area.employee_id', 'personnel_employee.id')
-                             ->where('personnel_employee_area.area_id', $nominaId);
+                             ->from('public.personnel_employee_area')
+                             ->whereColumn('public.personnel_employee_area.employee_id', 'personnel_employee.id')
+                             ->where('public.personnel_employee_area.area_id', $nominaId);
                 });
             })
             
@@ -69,7 +76,6 @@ class KardexRepository
                       ->orWhere(DB::raw('CAST(personnel_employee.emp_code AS TEXT)'), 'LIKE', $searchTerm);
                 });
             })
-            
             ->orderBy('personnel_employee.emp_code');
     }
 
@@ -124,33 +130,30 @@ class KardexRepository
             }
 
             for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
-                $incidenciaDelDia = "";
+                $incidenciaDelDia = ""; 
+                
                 $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
                 $fechaString = $fechaActual->toDateString();
 
-                if ($fechaActual->isFuture()) {
-                    $filaEmpleado['incidencias_diarias'][$dia] = "";
+                // 1. Días Futuros = Vacío
+                if ($fechaActual->greaterThanOrEqualTo(Carbon::today())) {
+                    $filaEmpleado['incidencias_diarias'][$dia] = null;
                     continue; 
                 }
 
+                // 2. Días antes de contratación = Vacío
                 if ($fechaContratacion && $fechaActual->isBefore($fechaContratacion)) {
-                    $incidenciaDelDia = ""; 
-                    $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
+                    $filaEmpleado['incidencias_diarias'][$dia] = null;
                     continue; 
                 }
 
                 $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
 
-                // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
-                
+                // --- LÓGICA DE INCIDENCIAS ---
                 if (!$payloadDia) {
-                    // Si BioTime no generó registro, asumimos que NO HABÍA TURNO (Descanso).
-                    // Ya no asumimos "Falta" solo por no tener datos.
-                    // Esto arregla los turnos rotativos y de fin de semana.
+                    // Si no hay registro en BioTime, asumimos DESCANSO.
                     $incidenciaDelDia = "Descanso";
                 } else {
-                    // Si SÍ hay registro, leemos lo que BioTime calculó
-                    
                     if ($payloadDia->day_off > 0) {
                         $incidenciaDelDia = "Descanso";
                     } else if ($payloadDia->leave > 0) {
@@ -168,7 +171,6 @@ class KardexRepository
                             $filaEmpleado['total_permisos']++;
                         }
                     } else if ($payloadDia->absent > 0) {
-                        // Solo marcamos Falta si BioTime explícitamente dice "absent > 0"
                         $incidenciaDelDia = "Falto";
                         $filaEmpleado['total_faltas']++;
                     } else if ($payloadDia->clock_in == null) {
@@ -180,10 +182,11 @@ class KardexRepository
                     } else if ($payloadDia->late > 0) {
                         $incidenciaDelDia = "R";
                         $filaEmpleado['total_retardos']++;
+                    } else {
+                        $incidenciaDelDia = "OK"; 
                     }
                 }
-                // ---------------------------------
-
+                
                 $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
             }
             $filasDelKardex[] = $filaEmpleado;

@@ -287,7 +287,7 @@ const formatDate = (day) => {
 .schedule-table-pdf {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 10px;
+  margin-top: 6px;
   font-size: 8.5pt;
   /* `table-layout: fixed` previene que el ancho de las columnas se altere por el contenido. */
   table-layout: fixed; 
@@ -305,6 +305,7 @@ const formatDate = (day) => {
   border: 1px solid #2c2c2c; /* Borde de cuadrícula completa. */
   padding: 4px;
   text-align: center;
+  line-height: 1.3;  /*Interlineado dentro de las celdas. */
   /* `overflow-wrap: break-word` fuerza el salto de línea en texto largo. */
   overflow-wrap: break-word;
 }
@@ -312,8 +313,8 @@ const formatDate = (day) => {
 /* Anchos de columna fijos para optimizar el layout. */
 .schedule-table-pdf .col-dia { width: 9%; }
 .schedule-table-pdf .col-hora { width: 17%; }
-.schedule-table-pdf .col-calif { width: 23%; }
-.schedule-table-pdf .col-obs { width: 43%; }
+.schedule-table-pdf .col-calif { width: 15%; }
+.schedule-table-pdf .col-obs { width: 52%; }
 
 .schedule-table-pdf th {
   font-weight: bold;
@@ -326,7 +327,7 @@ const formatDate = (day) => {
 
 /* Bloque de firma que va debajo de la tarjeta */
 .signature-block-bottom {
-  padding: 45px 0;
+  padding: 90px 0;
   text-align: center;
 }
 

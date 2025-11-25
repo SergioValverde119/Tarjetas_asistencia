@@ -60,16 +60,22 @@ function exportarExcel() {
 }
 
 function getColorForIncidencia(incidencia) {
-    if (!incidencia || incidencia.trim() === '') {
-        return 'bg-green-100 text-green-800';
+    // Si es NULL (futuro o pre-contrato), fondo blanco
+    if (incidencia === null || incidencia === '') {
+        return 'bg-white';
     }
+    // Si es OK (asistencia), verde
+    if (incidencia === 'OK') {
+        return 'bg-green-100 text-green-800 font-bold';
+    }
+    
     switch (incidencia) {
         case 'Descanso': return 'bg-gray-200 text-gray-600';
-        case 'Falto': return 'bg-red-200 text-red-800';
-        case 'R': return 'bg-orange-200 text-orange-800';
+        case 'Falto': return 'bg-red-200 text-red-800 font-bold';
+        case 'R': return 'bg-orange-200 text-orange-800 font-bold';
         case 'Sin Entrada':
-        case 'Sin Salida': return 'bg-yellow-200 text-yellow-800';
-        default: return 'bg-blue-200 text-blue-800'; 
+        case 'Sin Salida': return 'bg-yellow-200 text-yellow-800 font-bold';
+        default: return 'bg-blue-200 text-blue-800 font-bold'; 
     }
 }
 </script>
@@ -95,9 +101,10 @@ function getColorForIncidencia(incidencia) {
             <AlertaBaja />
 
             <!-- Filtros -->
-            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-9 gap-4">
+            <!-- Grid ajustado a 10 columnas para que quepa todo en una fila en pantallas muy anchas -->
+            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 md:grid-cols-5 xl:grid-cols-10 gap-4">
                 
-                <div class="lg:col-span-2">
+                <div class="md:col-span-2 xl:col-span-2">
                     <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar</label>
                     <div class="relative mt-1 rounded-md shadow-sm">
                         <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -110,7 +117,7 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <div class="lg:col-span-2">
+                <div class="md:col-span-2 xl:col-span-2">
                     <label for="filtro-nomina" class="block text-base font-medium text-gray-700">Tipo Nómina</label>
                     <div class="relative mt-1">
                         <select id="filtro-nomina" v-model="form.nomina" 
@@ -204,29 +211,21 @@ function getColorForIncidencia(incidencia) {
                 </div>
             </div>
 
-            <!-- Tabla con Doble Sticky -->
+            <!-- Tabla -->
             <div class="mt-8 rounded-lg shadow-lg overflow-auto border border-gray-200" style="max-height: 75vh;">
                 <table class="min-w-full border-separate border-spacing-0">
-                    <thead>
+                    <thead class="bg-gray-800 text-white">
                         <tr>
-                            <!-- 
-                                Columnas Fijas Izquierda (Estándar) 
-                                bg-gray-100, text-gray-600, border-gray-300
-                            -->
-                            <th scope="col" class="sticky top-0 left-0 z-30 bg-gray-100 px-2 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300" style="min-width: 70px;">
+                            <th scope="col" class="sticky top-0 left-0 z-30 bg-gray-800 px-2 py-3 text-left text-sm font-semibold text-white uppercase tracking-wider border-b border-gray-600" style="min-width: 70px;">
                                 ID
                             </th>
-                            <th scope="col" class="sticky top-0 left-[70px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300" style="min-width: 200px;">
+                            <th scope="col" class="sticky top-0 left-[70px] z-30 bg-gray-800 px-3 py-3 text-left text-sm font-semibold text-white uppercase tracking-wider border-b border-gray-600" style="min-width: 200px;">
                                 Nombre
                             </th>
-                             <th scope="col" class="sticky top-0 left-[270px] z-30 bg-gray-100 px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300" style="min-width: 150px;">
+                             <th scope="col" class="sticky top-0 left-[270px] z-30 bg-gray-800 px-3 py-3 text-left text-sm font-semibold text-white uppercase tracking-wider border-b border-gray-600" style="min-width: 150px;">
                                 Nómina
                             </th>
 
-                            <!-- 
-                                Columnas de Calendario (Días)
-                                bg-gray-800 (Oscuro), Texto Blanco, Días en Cian
-                            -->
                             <th v-for="dia in rangoDeDias" :key="dia.num" scope="col" 
                                 class="sticky top-0 z-20 bg-gray-800 px-2 py-3 text-center border-b border-gray-600 border-r border-gray-700"
                                 style="min-width: 50px;">
@@ -236,12 +235,8 @@ function getColorForIncidencia(incidencia) {
                                 </div>
                             </th>
 
-                            <!-- 
-                                Columnas Fijas Derecha (Resumen) (Estándar)
-                                bg-gray-100, text-gray-600, border-gray-300
-                            -->
                             <th v-for="(col, index) in columnasResumen" :key="col" scope="col" 
-                                class="sticky top-0 right-0 z-30 bg-gray-100 px-2 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wider border-b border-gray-300"
+                                class="sticky top-0 right-0 z-30 bg-gray-800 px-2 py-3 text-center text-sm font-semibold text-white uppercase tracking-wider border-b border-gray-600"
                                 :style="{ minWidth: '90px', right: col === 'Faltas' ? '0px' : col === 'Omisiones' ? '90px' : col === 'Retardos' ? '180px' : col === 'Permisos' ? '270px' : '360px' }">
                                 {{ col }}
                             </th>
@@ -274,7 +269,7 @@ function getColorForIncidencia(incidencia) {
                                     getColorForIncidencia(fila.incidencias_diarias[dia.num]),
                                     dia.esFin ? 'brightness-95' : '' 
                                 ]">
-                                {{ fila.incidencias_diarias[dia.num] || '✓' }}
+                                {{ fila.incidencias_diarias[dia.num] === 'OK' ? '✓' : (fila.incidencias_diarias[dia.num] || '') }}
                             </td>
 
                             <td class="sticky right-[360px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_vacaciones || 0 }}</td>
