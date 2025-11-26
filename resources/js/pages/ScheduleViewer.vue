@@ -57,11 +57,12 @@ const getDayFromDateString = (dateString) => {
  * @returns {string} - La hora formateada sin segundos.
  */
 const formatTimeWithoutSeconds = (timeString) => {
-  if (!timeString || typeof timeString !== 'string') return '';
-  const parts = timeString.split(':');
-  if (parts.length >= 2) {
-    return `${parts[0]}:${parts[1]}`;
-  }
+ 
+ // if (!timeString || typeof timeString !== 'string') return '';
+ // const parts = timeString.split(':');
+ // if (parts.length >= 2) {
+ //   return `${parts[0]}:${parts[1]}`;
+ // }
   return timeString;
 };
 
@@ -83,24 +84,48 @@ const autoResizeTextarea = (event) => {
 // Calcula el número total de días en el mes y año seleccionados.
 const daysInMonth = computed(() => new Date(selectedYear.value, selectedMonth.value, 0).getDate());
 
+/**
+ * Aplica la lógica de 'J' (Justificado) y formatea los registros para pasarlos al PDF.
+ * Este es el array que deben usar los props del componente TarjetaPdf.
+ */
+const processedRegistros = computed(() => {
+    if (!schedule.value.registros || !Array.isArray(schedule.value.registros)) return [];
+    
+    return schedule.value.registros.map(registro => {
+        // Verifica si hay texto en 'observaciones'
+        const hasObservation = registro.observaciones && registro.observaciones.trim().length > 0;
+        
+        let displayCalificacion = registro.calificacion;
+
+        // Lógica para el PDF: Si la calificación es 'DESC' Y hay texto en 'observaciones', se cambia a 'J'.
+        if (registro.calificacion === 'DESC' && hasObservation) {
+            displayCalificacion = 'J';
+        }
+        
+        return {
+            ...registro,
+            // Propiedad para la calificación visible en el PDF. Mantiene 'calificacion' original editable en la vista.
+            displayCalificacion: displayCalificacion,
+        };
+    });
+});
+
 // Filtra y devuelve solo los registros de la primera quincena (días 1-15).
 const firstFortnight = computed(() => {
-  if (!schedule.value.registros || !Array.isArray(schedule.value.registros)) return [];
-  return schedule.value.registros.filter(registro => {
-    if (!registro || typeof registro.dia === 'undefined') return false;
-    const diaNum = getDayFromDateString(registro.dia);
-    return !isNaN(diaNum) && diaNum <= 15;
-  });
+    return processedRegistros.value.filter(registro => {
+        if (!registro || typeof registro.dia === 'undefined') return false;
+        const diaNum = getDayFromDateString(registro.dia);
+        return !isNaN(diaNum) && diaNum <= 15;
+    });
 });
 
 // Filtra y devuelve solo los registros de la segunda quincena (días 16 en adelante).
 const secondFortnight = computed(() => {
-  if (!schedule.value.registros || !Array.isArray(schedule.value.registros)) return [];
-  return schedule.value.registros.filter(registro => {
-    if (!registro || typeof registro.dia === 'undefined') return false;
-    const diaNum = getDayFromDateString(registro.dia);
-    return !isNaN(diaNum) && diaNum > 15;
-  });
+    return processedRegistros.value.filter(registro => {
+        if (!registro || typeof registro.dia === 'undefined') return false;
+        const diaNum = getDayFromDateString(registro.dia);
+        return !isNaN(diaNum) && diaNum > 15;
+    });
 });
 
 
@@ -148,6 +173,7 @@ const fetchSchedule = async () => {
   } catch (error) {
     console.error('Error al obtener el horario:', error);
     schedule.value = { horario: '', registros: [] };
+    // Revierto el comentario anterior para usar el nombre completo de la propiedad de error
   } finally {
     loading.value = false;
   }
@@ -250,7 +276,17 @@ onMounted(fetchSchedule);
 
     <div v-else-if="schedule.registros && schedule.registros.length > 0">
       <div class="schedule-table-visible">
-        <h3 class="text-lg font-semibold text-gray-700">Horario: {{ schedule.horario }}</h3>
+        <h3 class="text-lg font-semibold text-gray-700">Horario: {{ schedule.horario ?? 'Cargando...' }}</h3>
+        
+        <!-- BLOQUE DE DEBUG JSON (Muestra la estructura de datos procesada para análisis) -->
+        <!-- Las siguientes líneas se usan para depurar la estructura de datos del horario -->
+        <!--
+        <details class="debug-data-viewer mb-4 p-2 border border-gray-300 rounded-md">
+            <summary class="font-semibold text-sm cursor-pointer text-indigo-700 hover:text-indigo-900">Ver Estructura de Registros Procesados (JSON)</summary>
+            <pre class="bg-gray-100 p-4 rounded-md overflow-x-auto text-xs">{{ JSON.stringify(processedRegistros, null, 2) }}</pre>
+        </details>
+        -->
+        
         <div class="table-wrapper">
           <table>
             <thead>
@@ -263,6 +299,7 @@ onMounted(fetchSchedule);
               </tr>
             </thead>
             <tbody>
+                <!-- Usamos schedule.registros para la interfaz editable -->
               <tr v-for="registro in schedule.registros" :key="registro.dia">
                 <td class="text-center">{{ getDayFromDateString(registro.dia) }}</td>
                 <td><textarea v-model="registro.checkin" @input="autoResizeTextarea" rows="1" class="editable-textarea"></textarea></td>
@@ -273,6 +310,7 @@ onMounted(fetchSchedule);
             </tbody>
           </table>
         </div>
+        <!-- COMENTARIO: Se elimina el texto visible sobre la lógica de conversión de 'DESC' a 'J' -->
       </div>
       <div class="download-buttons">
         <button @click="generatePDF" :disabled="generandoPdf" class="download-button">
@@ -288,6 +326,7 @@ onMounted(fetchSchedule);
     </div>
     <div v-else class="no-records">
       <p>No se encontraron registros de asistencia para el mes y año seleccionados.</p>
+      
     </div>
   </div>
 
@@ -342,6 +381,10 @@ onMounted(fetchSchedule);
   background-color: white;
   border-radius: 12px;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  
+  /* ELIMINADO: Se quita el scroll del contenedor principal */
+  /* max-height: 80vh; */ 
+  /* overflow-y: auto; */
 }
 .header {
   display: flex;
@@ -398,6 +441,9 @@ onMounted(fetchSchedule);
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     margin-top: 16px;
+    /* NUEVO: Altura máxima y scroll vertical para la tabla */
+    max-height: 50vh; 
+    overflow-y: auto;
 }
 table {
   width: 100%;
@@ -413,6 +459,10 @@ th {
     font-weight: 600;
     color: #374151;
     text-align: center;
+    /* Mantiene el encabezado de la tabla pegado al hacer scroll */
+    position: sticky;
+    top: 0; 
+    z-index: 10;
 }
 td {
     color: #4b5563;

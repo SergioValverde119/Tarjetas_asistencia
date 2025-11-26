@@ -49,16 +49,11 @@ class KardexRepository
                     AND pa.area_name != 'SEDUVI' 
                 ) as nomina")
             )
-            
-            // --- ¡CORRECCIÓN: FILTRO ESTRICTO! ---
-            // 1. Debe estar habilitado en BioTime (quita bajas oficiales)
             ->where('personnel_employee.enable_att', true)
-            
-            // 2. Debe tener actividad reciente (quita fantasmas como Elvis)
-            // Quitamos el "OR status=0" que estaba dejando pasar a los fantasmas.
-            ->where('personnel_employee.is_truly_active', true)
-            // -------------------------------------
-            
+            ->where(function($query) {
+                $query->where('personnel_employee.is_truly_active', true)
+                      ->orWhere('personnel_employee.status', 0); 
+            })
             ->when($filtros['nomina'] ?? null, function ($query, $nominaId) {
                 $query->whereExists(function ($subQuery) use ($nominaId) {
                     $subQuery->select(DB::raw(1))
@@ -67,7 +62,6 @@ class KardexRepository
                              ->where('public.personnel_employee_area.area_id', $nominaId);
                 });
             })
-            
             ->when($filtros['search'], function ($query, $searchTerm) {
                 $searchTerm = '%' . strtolower($searchTerm) . '%';
                 $query->where(function ($q) use ($searchTerm) {
@@ -110,9 +104,16 @@ class KardexRepository
         $mapaDeReglas = DB::table('mapeo_de_permisos')
                            ->pluck('nuestra_categoria', 'biotime_report_symbol');
         
+        $empleados = collect($empleados);
         $filasDelKardex = [];
+        
+        // --- LOG DEPURACIÓN (Limitado a 1 empleado para no saturar) ---
+        $logLimit = 1;
+        $logsCount = 0;
+
         foreach ($empleados as $empleado) {
             $filaEmpleado = [
+                'id' => $empleado->id, 
                 'emp_code' => $empleado->emp_code,
                 'nombre' => $empleado->first_name . ' ' . $empleado->last_name,
                 'nomina' => $empleado->nomina, 
@@ -129,31 +130,45 @@ class KardexRepository
                 $fechaContratacion = Carbon::parse($empleado->hire_date)->startOfDay();
             }
 
+            if ($logsCount < $logLimit) {
+                error_log(">>> [DEBUG] Procesando empleado: " . $empleado->first_name);
+            }
+
             for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
                 $incidenciaDelDia = ""; 
                 
                 $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
                 $fechaString = $fechaActual->toDateString();
 
-                // 1. Días Futuros = Vacío
+                if ($logsCount < $logLimit) {
+                    // Imprimimos qué día es para ver si coincide con el calendario
+                    $diaSemana = $fechaActual->locale('es')->dayName; // Lun, Mar...
+                    error_log("    Día $dia ($fechaString - $diaSemana):");
+                }
+
                 if ($fechaActual->greaterThanOrEqualTo(Carbon::today())) {
                     $filaEmpleado['incidencias_diarias'][$dia] = null;
+                    if ($logsCount < $logLimit) error_log("      -> Futuro/Hoy (NULL)");
                     continue; 
                 }
 
-                // 2. Días antes de contratación = Vacío
                 if ($fechaContratacion && $fechaActual->isBefore($fechaContratacion)) {
                     $filaEmpleado['incidencias_diarias'][$dia] = null;
+                    if ($logsCount < $logLimit) error_log("      -> Pre-contrato (NULL)");
                     continue; 
                 }
 
                 $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
 
-                // --- LÓGICA DE INCIDENCIAS ---
                 if (!$payloadDia) {
                     // Si no hay registro en BioTime, asumimos DESCANSO.
                     $incidenciaDelDia = "Descanso";
+                    if ($logsCount < $logLimit) error_log("      -> Sin Payload -> DESCANSO");
                 } else {
+                    if ($logsCount < $logLimit) {
+                        error_log("      -> Payload: absent={$payloadDia->absent}, leave={$payloadDia->leave}, clock_in={$payloadDia->clock_in}");
+                    }
+
                     if ($payloadDia->day_off > 0) {
                         $incidenciaDelDia = "Descanso";
                     } else if ($payloadDia->leave > 0) {
@@ -187,9 +202,11 @@ class KardexRepository
                     }
                 }
                 
+                if ($logsCount < $logLimit) error_log("      -> Resultado: $incidenciaDelDia");
                 $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
             }
             $filasDelKardex[] = $filaEmpleado;
+            $logsCount++;
         }
         return $filasDelKardex;
     }

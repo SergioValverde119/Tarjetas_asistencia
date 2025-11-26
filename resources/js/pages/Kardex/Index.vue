@@ -3,6 +3,7 @@ import { Head, useForm, Link } from '@inertiajs/vue3';
 import { defineProps, computed } from 'vue';
 import * as kardex from '@/routes/kardex'; 
 import * as reglas from '@/routes/reglas'; 
+import * as empleado from '@/routes/empleado'; 
 
 import AlertaBaja from '@/components/AlertaBaja.vue';
 
@@ -41,7 +42,7 @@ const perPageOptions = [10, 20, 50, 200];
 const columnasResumen = [ "Vacaciones", "Permisos", "Retardos", "Omisiones", "Faltas" ];
 
 function buscarDatos() {
-    form.post(kardex.buscar(), {
+    form.post(kardex.buscar().url, {
         preserveScroll: true,
     });
 }
@@ -56,15 +57,13 @@ function exportarExcel() {
         nomina: form.nomina || '',
     }).toString();
     
-    window.location.href = kardex.exportar() + '?' + query;
+    window.location.href = kardex.exportar().url + '?' + query;
 }
 
 function getColorForIncidencia(incidencia) {
-    // Si es NULL (futuro o pre-contrato), fondo blanco
-    if (incidencia === null || incidencia === '') {
-        return 'bg-white';
+    if (!incidencia || incidencia.trim() === '') {
+        return 'bg-white'; 
     }
-    // Si es OK (asistencia), verde
     if (incidencia === 'OK') {
         return 'bg-green-100 text-green-800 font-bold';
     }
@@ -92,7 +91,7 @@ function getColorForIncidencia(incidencia) {
                     Kárdex de Incidencias
                 </h1>
                 
-                <Link :href="reglas.index()" class="flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                <Link :href="reglas.index().url" class="flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                     <Cog6ToothIcon class="h-5 w-5 text-gray-500" />
                     <span>Reglas de Mapeo</span>
                 </Link>
@@ -101,10 +100,9 @@ function getColorForIncidencia(incidencia) {
             <AlertaBaja />
 
             <!-- Filtros -->
-            <!-- Grid ajustado a 10 columnas para que quepa todo en una fila en pantallas muy anchas -->
-            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 md:grid-cols-5 xl:grid-cols-10 gap-4">
+            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-9 gap-4">
                 
-                <div class="md:col-span-2 xl:col-span-2">
+                <div class="lg:col-span-2">
                     <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar</label>
                     <div class="relative mt-1 rounded-md shadow-sm">
                         <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -117,7 +115,7 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <div class="md:col-span-2 xl:col-span-2">
+                <div class="lg:col-span-2">
                     <label for="filtro-nomina" class="block text-base font-medium text-gray-700">Tipo Nómina</label>
                     <div class="relative mt-1">
                         <select id="filtro-nomina" v-model="form.nomina" 
@@ -211,7 +209,7 @@ function getColorForIncidencia(incidencia) {
                 </div>
             </div>
 
-            <!-- Tabla -->
+            <!-- Tabla con Doble Sticky -->
             <div class="mt-8 rounded-lg shadow-lg overflow-auto border border-gray-200" style="max-height: 75vh;">
                 <table class="min-w-full border-separate border-spacing-0">
                     <thead class="bg-gray-800 text-white">
@@ -227,7 +225,7 @@ function getColorForIncidencia(incidencia) {
                             </th>
 
                             <th v-for="dia in rangoDeDias" :key="dia.num" scope="col" 
-                                class="sticky top-0 z-20 bg-gray-800 px-2 py-3 text-center border-b border-gray-600 border-r border-gray-700"
+                                class="sticky top-0 z-20 bg-gray-800 px-2 py-3 text-center border-b border-gray-600 border-r border-gray-600"
                                 style="min-width: 50px;">
                                 <div class="flex flex-col items-center">
                                     <span class="text-sm font-bold text-white">{{ dia.num }}</span>
@@ -254,10 +252,16 @@ function getColorForIncidencia(incidencia) {
                         </tr>
                         <tr v-for="fila in datosKardex" :key="fila.emp_code" class="group hover:bg-gray-50">
                             <td class="sticky left-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base font-medium text-gray-900 border-b border-gray-200 group-hover:bg-gray-50">
-                                {{ fila.emp_code }}
+                                <!-- CAMBIO: Color Sky-500 (Azul Cielo Pastel) -->
+                                <Link :href="empleado.show({ id: fila.id }).url" class="text-sky-500 hover:text-sky-700 hover:underline font-bold">
+                                    {{ fila.emp_code }}
+                                </Link>
                             </td>
                             <td class="sticky left-[70px] z-10 bg-white px-3 py-2 whitespace-nowrap text-base text-gray-800 border-b border-gray-200 group-hover:bg-gray-50">
-                                {{ fila.nombre }}
+                                <!-- CAMBIO: Color Sky-500 -->
+                                <Link :href="empleado.show({ id: fila.id }).url" class="text-sky-500 hover:text-sky-700 hover:underline font-semibold">
+                                    {{ fila.nombre }}
+                                </Link>
                             </td>
                             <td class="sticky left-[270px] z-10 bg-white px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-b border-gray-200 group-hover:bg-gray-50">
                                 {{ fila.nomina || 'Sin Asignar' }}
