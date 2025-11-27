@@ -2,39 +2,40 @@
 import { ref, computed } from 'vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import * as kardex from '@/routes/kardex'; 
-import * as empleadoRoutes from '@/routes/empleado'; 
 import { 
     UserCircleIcon, 
     BuildingOfficeIcon, 
     BriefcaseIcon,
     CalendarDaysIcon,
     PhoneIcon,
+    EnvelopeIcon, // <-- Nuevo icono de Email
     IdentificationIcon,
     ArrowLeftIcon,
     CurrencyDollarIcon,
     TableCellsIcon,
     ViewColumnsIcon,
+    ClockIcon,
     ChevronDownIcon,
-    ClockIcon // Nuevo icono para Horario
+    InformationCircleIcon
 } from '@heroicons/vue/24/outline';
 
 const props = defineProps({
     empleado: Object,
     stats: Object,
     fechaActual: String,
+    calendario: Array,
+    filtros: Object,
+    horario: Object, // <-- Nuevo prop
+    catalogoPermisos: Object, // <-- Nuevo prop (Diccionario de claves)
 });
-
-const urlParams = new URLSearchParams(window.location.search);
-const currentMonth = urlParams.get('mes') ? parseInt(urlParams.get('mes')) - 1 : new Date().getMonth();
-const currentYear = urlParams.get('ano') ? parseInt(urlParams.get('ano')) : new Date().getFullYear();
 
 const form = useForm({
-    mes: currentMonth + 1,
-    ano: currentYear
+    mes: props.filtros.mes,
+    ano: props.filtros.ano
 });
 
-// Estado para el modo de vista: 'weekly', 'monthly', 'schedule'
 const viewMode = ref('monthly'); 
+const loading = ref(false);
 
 const meses = [ 
     { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' }, 
@@ -49,12 +50,14 @@ const anos = computed(() => {
 });
 
 const cambiarFecha = () => {
-    router.get(route('empleado.show', props.empleado.id), {
+    router.get(`/empleado/${props.empleado.id}`, {
         mes: form.mes,
         ano: form.ano
     }, {
         preserveScroll: true,
         preserveState: true,
+        onStart: () => loading.value = true,
+        onFinish: () => loading.value = false,
     });
 };
 
@@ -65,84 +68,95 @@ const getIncidencia = (dia) => {
     return props.stats.incidencias_diarias[dia] || '';
 };
 
-// --- Corrección Lógica Días del Mes (Versión Robusta) ---
+// --- Lógica para Tooltip de Permisos ---
+const mostrarDetallePermiso = (simbolo) => {
+    // Si es un permiso (no es OK, ni Falta, ni Descanso, etc.)
+    const palabrasReservadas = ['OK', 'Descanso', 'Falto', 'R', 'Sin Entrada', 'Sin Salida', 'Sin Turno'];
+    
+    if (simbolo && !palabrasReservadas.includes(simbolo)) {
+        // Buscamos el significado en el catálogo
+        const significado = props.catalogoPermisos[simbolo] || 'Permiso Desconocido';
+        alert(`Clave: ${simbolo}\nConcepto: ${significado}`);
+    }
+};
+// ---------------------------------------
+
+// --- Procesamiento de Horario ---
+const diasHorario = computed(() => {
+    if (!props.horario || !props.horario.dias) return [];
+    
+    // Mapeamos los índices de BioTime (0=Dom) a nombres
+    // BioTime devuelve un array de objetos con day_index, in_time, out_time
+    const dias = [];
+    for (let i = 1; i <= 7; i++) {
+        // Ajuste: BioTime 0=Dom. Queremos empezar en Lunes (1) y terminar en Domingo (0)
+        const dayIndex = i === 7 ? 0 : i; // 1..6, 0
+        const diaConfig = props.horario.dias.find(d => d.day_index === dayIndex);
+        
+        dias.push({
+            nombre: diasSemana[dayIndex],
+            activo: !!diaConfig,
+            entrada: diaConfig ? diaConfig.in_time.substring(0, 5) : '-',
+            salida: diaConfig ? diaConfig.out_time.substring(0, 5) : '-'
+        });
+    }
+    return dias;
+});
+// --------------------------------
+
+// Días del Mes
 const diasDelMes = computed(() => {
     const days = [];
-    // Usamos el año y mes seleccionados en el formulario (mes 0-11 para JS Date)
     const year = form.ano; 
     const month = form.mes - 1; 
     
-    // Crear fecha del primer día del mes. 
-    // Usamos hora 12:00 para evitar problemas de cambio de horario de verano/invierno
     const firstDayOfMonth = new Date(year, month, 1, 12, 0, 0);
-    
-    // Obtener el día de la semana (0=Dom, 1=Lun, etc.)
     const firstDayIndex = firstDayOfMonth.getDay(); 
-    
-    // Total de días en el mes (día 0 del mes siguiente = último día de este mes)
     const totalDays = new Date(year, month + 1, 0).getDate();
+    const today = new Date();
 
-    // Rellenar vacíos iniciales
-    // Esto alinea el día 1 con su columna correcta (Dom, Lun, etc.)
     for (let i = 0; i < firstDayIndex; i++) {
         days.push({ type: 'empty', id: `empty-${i}` });
     }
 
-    // Rellenar días reales
-    const today = new Date();
     for (let i = 1; i <= totalDays; i++) {
         days.push({
             type: 'day',
             id: i,
             day: i,
             incidencia: getIncidencia(i),
-            // Es hoy solo si coincide año, mes y día con la fecha real actual
             isToday: i === today.getDate() && month === today.getMonth() && year === today.getFullYear()
         });
     }
     return days;
 });
 
-// Días de la Semana (Calculados para mostrar la semana actual real)
+// Días de la Semana
 const diasDeLaSemana = computed(() => {
     const days = [];
     const today = new Date();
-    // Fecha base para calcular la semana actual
-    // Si estamos viendo el mes actual, usamos 'today'. Si no, usamos el día 1 del mes seleccionado.
     
     const selectedMonth = form.mes - 1;
     const selectedYear = form.ano;
     const isCurrentRealMonth = selectedMonth === today.getMonth() && selectedYear === today.getFullYear();
     
-    let referenceDate;
-
-    if (isCurrentRealMonth) {
-        // Si es el mes actual, usamos hoy como referencia
-        referenceDate = new Date(today);
-    } else {
-        // Si es otro mes, usamos el día 1 de ese mes
-        referenceDate = new Date(selectedYear, selectedMonth, 1, 12, 0, 0);
-    }
-
-    // Calcular el Domingo de esta semana
-    const dayIndex = referenceDate.getDay(); // 0 = Domingo
+    let referenceDate = isCurrentRealMonth ? new Date(today) : new Date(selectedYear, selectedMonth, 1, 12, 0, 0);
+    
     const startOfWeek = new Date(referenceDate);
-    startOfWeek.setDate(referenceDate.getDate() - dayIndex);
+    startOfWeek.setDate(referenceDate.getDate() - referenceDate.getDay());
 
     for (let i = 0; i < 7; i++) {
         const d = new Date(startOfWeek);
         d.setDate(startOfWeek.getDate() + i);
         
-        // Solo mostramos datos si el día pertenece al mes seleccionado
-        const belongsToMonth = d.getMonth() === selectedMonth;
+        const isLoadedMonth = d.getMonth() === selectedMonth;
         
         days.push({
             day: d.getDate(),
             name: diasSemana[d.getDay()],
-            fullDate: d.toLocaleDateString(),
-            incidencia: belongsToMonth ? getIncidencia(d.getDate()) : null,
-            isToday: d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear(),
-            isLoadedMonth: belongsToMonth
+            incidencia: isLoadedMonth ? getIncidencia(d.getDate()) : null,
+            isToday: d.getDate() === today.getDate() && d.getMonth() === today.getMonth(),
+            isLoadedMonth: isLoadedMonth
         });
     }
     return days;
@@ -157,20 +171,22 @@ const getIniciales = (nombre, apellido) => {
 const getStatusColor = (valor, tipo) => {
     if (tipo === 'faltas') return valor > 0 ? 'text-red-600' : 'text-gray-900';
     if (tipo === 'retardos') return valor > 2 ? 'text-orange-600' : 'text-gray-900';
+    if (tipo === 'omisiones') return valor > 0 ? 'text-yellow-600' : 'text-gray-900';
     return 'text-gray-900';
 };
 
 const getBgColor = (incidencia) => {
-    if (!incidencia) return 'bg-white border-gray-100';
-    if (incidencia === 'OK') return 'bg-green-50 border-green-200 text-green-800';
+    if (!incidencia) return 'bg-white border-gray-100'; 
+    if (incidencia === 'OK') return 'bg-green-100 border-green-200 text-green-800 font-bold'; 
     
     switch (incidencia) {
-        case 'Descanso': return 'bg-gray-50 border-gray-200 text-gray-400';
-        case 'Falto': return 'bg-red-50 border-red-200 text-red-800 font-bold';
-        case 'R': return 'bg-orange-50 border-orange-200 text-orange-800 font-bold';
+        case 'Descanso': return 'bg-gray-200 border-gray-300 text-gray-600 font-medium';
+        case 'Falto': return 'bg-red-200 border-red-300 text-red-800 font-bold';
+        case 'R': return 'bg-orange-200 border-orange-300 text-orange-800 font-bold';
         case 'Sin Entrada':
-        case 'Sin Salida': return 'bg-yellow-50 border-yellow-200 text-yellow-800 font-bold';
-        default: return 'bg-blue-50 border-blue-200 text-blue-800 font-bold'; 
+        case 'Sin Salida': return 'bg-yellow-200 border-yellow-300 text-yellow-800 font-bold';
+        case 'Sin Turno': return 'bg-gray-600 border-gray-700 text-white font-bold';
+        default: return 'bg-blue-200 border-blue-300 text-blue-800 font-bold cursor-pointer hover:bg-blue-300'; // Cursor pointer para permisos
     }
 };
 </script>
@@ -181,7 +197,6 @@ const getBgColor = (incidencia) => {
 
         <div class="max-w-7xl mx-auto py-10 sm:px-6 lg:px-8">
             
-            <!-- Botón Volver -->
             <div class="mb-6">
                 <Link :href="kardex.index().url" class="flex items-center text-gray-500 hover:text-blue-600 transition-colors font-medium">
                     <ArrowLeftIcon class="w-5 h-5 mr-1" />
@@ -189,7 +204,6 @@ const getBgColor = (incidencia) => {
                 </Link>
             </div>
 
-            <!-- Encabezado del Perfil -->
             <div class="bg-white overflow-hidden shadow-lg rounded-xl mb-8 border border-gray-100">
                 <div class="p-8">
                     <div class="flex flex-col md:flex-row items-center md:items-start gap-8">
@@ -203,6 +217,7 @@ const getBgColor = (incidencia) => {
                                 </span>
                             </div>
                         </div>
+
                         <div class="text-center md:text-left flex-1 w-full">
                             <div class="flex flex-col md:flex-row justify-between items-start">
                                 <div>
@@ -210,7 +225,7 @@ const getBgColor = (incidencia) => {
                                         {{ empleado.first_name }} {{ empleado.last_name }}
                                     </h1>
                                     <p class="text-sm text-gray-500 mt-1 flex items-center justify-center md:justify-start gap-2">
-                                        <span>ID de Empleado:</span>
+                                        <span>ID:</span>
                                         <span class="font-mono text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                                             {{ empleado.emp_code }}
                                         </span>
@@ -252,11 +267,11 @@ const getBgColor = (incidencia) => {
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
-                <!-- Columna Izquierda: Resumen -->
+                <!-- Izquierda: Resumen y Datos -->
                 <div class="lg:col-span-1 space-y-8">
                     <div class="bg-white shadow-lg rounded-xl border border-gray-100 overflow-hidden">
                         <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                            <h3 class="text-base font-semibold text-gray-900">Resumen</h3>
+                            <h3 class="text-base font-semibold text-gray-900">Resumen Mensual</h3>
                             <div class="text-xs text-gray-500 bg-white px-2 py-1 rounded border border-gray-200">
                                 {{ meses[form.mes - 1].label }} {{ form.ano }}
                             </div>
@@ -271,25 +286,40 @@ const getBgColor = (incidencia) => {
                                 <span class="text-2xl font-bold" :class="getStatusColor(stats.total_retardos, 'retardos')">{{ stats.total_retardos }}</span>
                             </div>
                             <div class="px-6 py-4 flex justify-between items-center">
+                                <span class="text-sm font-medium text-gray-600">Omisiones</span>
+                                <span class="text-2xl font-bold" :class="getStatusColor(stats.total_omisiones, 'omisiones')">{{ stats.total_omisiones }}</span>
+                            </div>
+                            <div class="px-6 py-4 flex justify-between items-center">
                                 <span class="text-sm font-medium text-gray-600">Vacaciones</span>
                                 <span class="text-2xl font-bold text-blue-600">{{ stats.total_vacaciones }}</span>
+                            </div>
+                            <div class="px-6 py-4 flex justify-between items-center">
+                                <span class="text-sm font-medium text-gray-600">Permisos</span>
+                                <span class="text-2xl font-bold text-gray-800">{{ stats.total_permisos }}</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Datos Personales -->
                     <div class="bg-white shadow-lg rounded-xl border border-gray-100 overflow-hidden">
                          <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                             <h3 class="text-base font-semibold text-gray-900">Datos Personales</h3>
                         </div>
                         <div class="px-6 py-4 space-y-4">
                             <div>
-                                <dt class="text-xs text-gray-500 uppercase font-semibold">Fecha de Contratación</dt>
+                                <dt class="text-xs text-gray-500 uppercase font-semibold">Contratación</dt>
                                 <dd class="text-sm font-medium text-gray-900 mt-1">{{ empleado.hire_date || 'No registrada' }}</dd>
                             </div>
                             <div>
                                 <dt class="text-xs text-gray-500 uppercase font-semibold">Cumpleaños</dt>
                                 <dd class="text-sm font-medium text-gray-900 mt-1">{{ empleado.birthday ? new Date(empleado.birthday).toLocaleDateString() : 'No registrado' }}</dd>
+                            </div>
+                            <!-- EMAIL AGREGADO -->
+                            <div>
+                                <dt class="text-xs text-gray-500 uppercase font-semibold">Correo Electrónico</dt>
+                                <dd class="text-sm font-medium text-gray-900 mt-1 flex items-center gap-2">
+                                    <EnvelopeIcon class="w-4 h-4 text-gray-400" />
+                                    {{ empleado.email || 'No registrado' }}
+                                </dd>
                             </div>
                             <div>
                                 <dt class="text-xs text-gray-500 uppercase font-semibold">Celular</dt>
@@ -306,86 +336,75 @@ const getBgColor = (incidencia) => {
                     </div>
                 </div>
 
-                <!-- Columna Derecha: Visualizador -->
+                <!-- Derecha: Calendario -->
                 <div class="lg:col-span-2">
-                    <div class="bg-white shadow-lg rounded-xl border border-gray-100 overflow-hidden h-full flex flex-col">
+                    <div class="bg-white shadow-lg rounded-xl border border-gray-100 overflow-hidden h-full flex flex-col relative">
                         
-                        <!-- Header con Controles -->
+                        <div v-if="loading" class="absolute inset-0 bg-white/80 z-50 flex items-center justify-center backdrop-blur-sm transition-opacity duration-300">
+                            <ArrowPathIcon class="w-8 h-8 text-blue-500 animate-spin" />
+                        </div>
+
                         <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
                             <h3 class="text-base font-semibold text-gray-900 flex items-center gap-2">
                                 <CalendarDaysIcon class="w-5 h-5 text-blue-500" />
                                 Asistencia
                             </h3>
                             
-                            <!-- Controles de Fecha (Solo visible en Mensual) -->
-                            <div v-if="viewMode === 'monthly'" class="flex items-center gap-2 transition-opacity duration-300">
-                                <select v-model="form.mes" @change="cambiarFecha" class="block w-32 rounded-md border-gray-300 py-1.5 text-sm focus:border-blue-500 focus:ring-blue-500 shadow-sm">
+                            <div v-if="viewMode === 'monthly'" class="flex items-center gap-2">
+                                <select v-model="form.mes" @change="cambiarFecha" class="block w-32 rounded-md border-gray-300 py-1.5 text-sm focus:border-blue-500 focus:ring-blue-500 shadow-sm cursor-pointer">
                                     <option v-for="mes in meses" :key="mes.value" :value="mes.value">{{ mes.label }}</option>
                                 </select>
-                                <select v-model="form.ano" @change="cambiarFecha" class="block w-24 rounded-md border-gray-300 py-1.5 text-sm focus:border-blue-500 focus:ring-blue-500 shadow-sm">
+                                <select v-model="form.ano" @change="cambiarFecha" class="block w-24 rounded-md border-gray-300 py-1.5 text-sm focus:border-blue-500 focus:ring-blue-500 shadow-sm cursor-pointer">
                                     <option v-for="ano in anos" :key="ano" :value="ano">{{ ano }}</option>
                                 </select>
                             </div>
 
-                            <!-- Switch Vista -->
                             <div class="flex bg-gray-200 rounded-lg p-1">
                                 <button @click="viewMode = 'weekly'" class="px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1" :class="viewMode === 'weekly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
-                                    <ViewColumnsIcon class="w-3 h-3" />
-                                    Semana
+                                    <ViewColumnsIcon class="w-3 h-3" /> Semana
                                 </button>
                                 <button @click="viewMode = 'monthly'" class="px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1" :class="viewMode === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
-                                    <TableCellsIcon class="w-3 h-3" />
-                                    Mes
+                                    <TableCellsIcon class="w-3 h-3" /> Mes
                                 </button>
                                 <button @click="viewMode = 'schedule'" class="px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1" :class="viewMode === 'schedule' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
-                                    <ClockIcon class="w-3 h-3" />
-                                    Horario
+                                    <ClockIcon class="w-3 h-3" /> Horario
                                 </button>
                             </div>
                         </div>
 
                         <div class="p-6 flex-1">
                             
-                            <!-- VISTA SEMANAL (Rectángulos Alargados) -->
-                            <div v-if="viewMode === 'weekly'" class="space-y-2">
-                                <div v-for="dia in diasDeLaSemana" :key="dia.day" 
+                            <!-- VISTA SEMANAL -->
+                            <div v-if="viewMode === 'weekly'" class="space-y-3">
+                                <div v-for="dia in diasDeLaSemana" :key="dia.name" 
                                      class="flex items-center rounded-lg border p-3 transition-all hover:bg-gray-50"
                                      :class="[
-                                         getBgColor(dia.incidencia),
+                                         dia.type === 'empty' ? 'opacity-40 bg-gray-50' : getBgColor(dia.incidencia),
                                          dia.isToday ? 'ring-2 ring-blue-400 ring-offset-1' : ''
                                      ]"
+                                     @click="mostrarDetallePermiso(dia.incidencia)"
                                 >
-                                    <!-- Fecha -->
-                                    <div class="w-16 text-center border-r border-gray-200 pr-3 mr-3">
-                                        <div class="text-xs font-bold text-gray-500 uppercase">{{ dia.name }}</div>
-                                        <div class="text-xl font-bold text-gray-800">{{ dia.day }}</div>
+                                    <div class="w-20 text-center border-r border-gray-200 pr-3 mr-3 flex flex-col justify-center">
+                                        <span class="text-xs font-bold text-gray-500 uppercase">{{ dia.name }}</span>
+                                        <span v-if="dia.type !== 'empty'" class="text-xl font-bold text-gray-800">{{ dia.day }}</span>
                                     </div>
                                     
-                                    <!-- Estado -->
-                                    <div class="flex-1">
+                                    <div class="flex-1" v-if="dia.type !== 'empty'">
                                         <div v-if="dia.incidencia === 'OK'" class="flex items-center text-green-700 font-bold">
-                                            <span class="text-lg mr-2">✓</span> Asistencia
+                                            <span class="text-xl mr-2">✓</span> Asistencia Correcta
                                         </div>
-                                        <div v-else-if="dia.incidencia" class="font-bold uppercase text-sm">
-                                            {{ dia.incidencia }}
-                                        </div>
-                                        <div v-else-if="!dia.isLoadedMonth" class="text-gray-400 text-sm italic">
-                                            Datos de otro mes
-                                        </div>
-                                        <div v-else class="text-gray-400 text-sm">
-                                            -
-                                        </div>
+                                        <div v-else-if="dia.incidencia" class="font-bold uppercase text-sm">{{ dia.incidencia }}</div>
+                                        <div v-else-if="!dia.isLoadedMonth" class="text-gray-400 text-sm italic">Fuera del mes seleccionado</div>
+                                        <div v-else class="text-gray-400 text-sm">-</div>
                                     </div>
+                                    <div v-else class="flex-1 text-gray-400 text-xs italic">Fuera del mes</div>
                                 </div>
-                                <p class="text-center text-xs text-gray-400 mt-4">Mostrando semana actual</p>
                             </div>
 
-                            <!-- VISTA MENSUAL (Calendario Cuadrado) -->
+                            <!-- VISTA MENSUAL -->
                             <div v-else-if="viewMode === 'monthly'">
                                 <div class="grid grid-cols-7 gap-2">
-                                    <div v-for="d in diasSemana" :key="d" class="text-center text-xs font-bold text-gray-400 uppercase pb-2">
-                                        {{ d }}
-                                    </div>
+                                    <div v-for="d in diasSemana" :key="d" class="text-center text-xs font-bold text-gray-400 uppercase pb-2">{{ d }}</div>
                                     
                                     <div 
                                         v-for="dia in diasDelMes" 
@@ -393,8 +412,11 @@ const getBgColor = (incidencia) => {
                                         class="aspect-square rounded-lg flex flex-col items-center justify-center text-xs relative border transition-all hover:z-10 hover:scale-105 cursor-default"
                                         :class="[
                                             dia.type === 'empty' ? 'border-transparent bg-transparent' : getBgColor(dia.incidencia),
-                                            dia.isToday ? 'ring-2 ring-blue-400 ring-offset-1' : ''
+                                            dia.isToday ? 'ring-2 ring-blue-400 ring-offset-1' : '',
+                                            // Cursor pointer solo si es un permiso clickeable
+                                            (dia.incidencia && !['OK','Falto','Descanso','Sin Entrada','Sin Salida'].includes(dia.incidencia)) ? 'cursor-pointer hover:shadow-md' : ''
                                         ]"
+                                        @click="dia.type === 'day' ? mostrarDetallePermiso(dia.incidencia) : null"
                                     >
                                         <template v-if="dia.type === 'day'">
                                             <span class="absolute top-1 left-1.5 text-[10px] font-semibold opacity-60">{{ dia.day }}</span>
@@ -407,10 +429,48 @@ const getBgColor = (incidencia) => {
                                 </div>
                             </div>
 
-                             <!-- VISTA HORARIO (Placeholder) -->
-                             <div v-else-if="viewMode === 'schedule'" class="flex flex-col items-center justify-center h-64 text-gray-400">
-                                <ClockIcon class="w-12 h-12 mb-2 opacity-50" />
-                                <p>Configuración de horarios próximamente...</p>
+                             <!-- VISTA HORARIO (AHORA SÍ CON DATOS) -->
+                             <div v-else-if="viewMode === 'schedule'">
+                                <div v-if="horario" class="space-y-4">
+                                    <div class="flex items-center gap-2 mb-4">
+                                        <div class="p-2 bg-blue-100 rounded-full text-blue-600">
+                                            <ClockIcon class="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h4 class="text-sm text-gray-500 uppercase font-bold">Turno Actual</h4>
+                                            <p class="text-lg font-bold text-gray-800">{{ horario.nombre }}</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                        <table class="min-w-full divide-y divide-gray-200">
+                                            <thead class="bg-gray-50">
+                                                <tr>
+                                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Día</th>
+                                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Entrada</th>
+                                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Salida</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-200 bg-white">
+                                                <tr v-for="dia in diasHorario" :key="dia.nombre" :class="dia.activo ? '' : 'bg-gray-50 text-gray-400'">
+                                                    <td class="px-4 py-3 text-sm font-medium">{{ dia.nombre }}</td>
+                                                    <td class="px-4 py-3 text-sm text-center">
+                                                        <span v-if="dia.activo" class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-mono">{{ dia.entrada }}</span>
+                                                        <span v-else>-</span>
+                                                    </td>
+                                                    <td class="px-4 py-3 text-sm text-center">
+                                                        <span v-if="dia.activo" class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-mono">{{ dia.salida }}</span>
+                                                        <span v-else>-</span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div v-else class="flex flex-col items-center justify-center h-64 text-gray-400">
+                                    <ClockIcon class="w-16 h-16 mb-3 opacity-30" />
+                                    <p class="font-medium">Este empleado no tiene un turno asignado vigente.</p>
+                                </div>
                             </div>
 
                         </div>

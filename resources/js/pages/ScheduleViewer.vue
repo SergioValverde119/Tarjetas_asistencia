@@ -41,6 +41,19 @@ const months = [
 // =================================================================================================
 
 /**
+ * Maneja errores de carga de imágenes, reemplazando la imagen con un placeholder.
+ * ESTO ES CLAVE PARA LA VISTA DE IMPRESIÓN, donde las rutas relativas pueden fallar.
+ * @param {Event} event - El evento de error de la imagen.
+ */
+const handleImageError = (event) => {
+    // Placeholder simple con texto "LOGO" en caso de que la ruta /images/... falle.
+    const placeholderUrl = "https://placehold.co/90x90/D1D5DB/4B5563?text=LOGO";
+    event.target.onerror = null; // Evita bucles infinitos de error
+    event.target.src = placeholderUrl;
+    event.target.style.filter = 'grayscale(100%)'; // Estilo para destacar que es un placeholder
+};
+
+/**
  * Extrae el número del día de un string de fecha en formato 'YYYY-MM-DD'.
  * @param {string} dateString - La fecha completa.
  * @returns {number | string} - El número del día, o un string vacío si la entrada es inválida.
@@ -204,7 +217,13 @@ const generatePDF = async () => {
 
   } catch (error) {
     console.error("Error al generar el PDF:", error);
-    alert("Hubo un error al generar el PDF. Revisa la consola.");
+    // Reemplazado por una solución no-alert
+    const message = "Hubo un error al generar el PDF. Revisa la consola para más detalles.";
+    const errorBox = document.createElement('div');
+    errorBox.textContent = message;
+    errorBox.style.cssText = "position: fixed; top: 20px; right: 20px; background: #fee2e2; color: #991b1b; padding: 10px; border-radius: 5px; z-index: 9999;";
+    document.body.appendChild(errorBox);
+    setTimeout(() => document.body.removeChild(errorBox), 5000);
   } finally {
     generandoPdf.value = false;
   }
@@ -252,12 +271,12 @@ onMounted(fetchSchedule);
 <template>
   <div class="schedule-card">
     <div class="header">
-      <img src="/images/logo_cdmx.jpeg" alt="Logo CDMX" class="logo">
+      <img src="/images/logo_cdmx.jpeg" alt="Logo CDMX" class="logo" @error="handleImageError">
       <div class="header-text">
           <h2 class="font-bold text-2xl text-gray-800">{{ employee.first_name }} {{ employee.last_name }}</h2>
           <p class="text-sm text-gray-500">Expediente: {{ employee.emp_code }} | Departamento: {{ employee.department_name }}</p>
       </div>
-      <img src="/images/logo_mujer_indigena.jpeg" alt="Logo Mujer Indígena" class="logo">
+      <img src="/images/logo_mujer_indigena.jpeg" alt="Logo Mujer Indígena" class="logo" @error="handleImageError">
     </div>
 
     <div class="controls">
@@ -268,6 +287,7 @@ onMounted(fetchSchedule);
       </select>
       <input type="number" v-model="selectedYear" class="control-input year-input" />
       <button @click="fetchSchedule" class="control-button">Cargar Horario</button>
+      
     </div>
 
     <div v-if="loading" class="loading-indicator">
@@ -277,15 +297,6 @@ onMounted(fetchSchedule);
     <div v-else-if="schedule.registros && schedule.registros.length > 0">
       <div class="schedule-table-visible">
         <h3 class="text-lg font-semibold text-gray-700">Horario: {{ schedule.horario ?? 'Cargando...' }}</h3>
-        
-        <!-- BLOQUE DE DEBUG JSON (Muestra la estructura de datos procesada para análisis) -->
-        <!-- Las siguientes líneas se usan para depurar la estructura de datos del horario -->
-        <!--
-        <details class="debug-data-viewer mb-4 p-2 border border-gray-300 rounded-md">
-            <summary class="font-semibold text-sm cursor-pointer text-indigo-700 hover:text-indigo-900">Ver Estructura de Registros Procesados (JSON)</summary>
-            <pre class="bg-gray-100 p-4 rounded-md overflow-x-auto text-xs">{{ JSON.stringify(processedRegistros, null, 2) }}</pre>
-        </details>
-        -->
         
         <div class="table-wrapper">
           <table>
@@ -310,7 +321,6 @@ onMounted(fetchSchedule);
             </tbody>
           </table>
         </div>
-        <!-- COMENTARIO: Se elimina el texto visible sobre la lógica de conversión de 'DESC' a 'J' -->
       </div>
       <div class="download-buttons">
         <button @click="generatePDF" :disabled="generandoPdf" class="download-button">
@@ -326,7 +336,6 @@ onMounted(fetchSchedule);
     </div>
     <div v-else class="no-records">
       <p>No se encontraron registros de asistencia para el mes y año seleccionados.</p>
-      
     </div>
   </div>
 
@@ -367,6 +376,12 @@ onMounted(fetchSchedule);
     size: letter;
     margin: 10mm;
   }
+
+    
+    #pdf-content * {
+        -webkit-print-color-adjust: exact !important; /* Chrome, Safari, Edge */
+        color-adjust: exact !important; /* Estándar */
+    }
 }
 </style>
 

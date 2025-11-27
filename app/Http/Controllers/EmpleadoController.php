@@ -19,12 +19,8 @@ class EmpleadoController extends Controller
 
     public function show($id)
     {
-        error_log(">>> [EMPLEADO] 1. Iniciando show() para ID: " . $id);
-
         try {
             // 1. Buscar datos generales del empleado
-            error_log(">>> [EMPLEADO] 2. Consultando datos generales en BioTime...");
-            
             $empleado = DB::connection('pgsql_biotime')
                 ->table('personnel_employee as e')
                 ->leftJoin('personnel_department as d', 'e.department_id', '=', 'd.id')
@@ -32,9 +28,8 @@ class EmpleadoController extends Controller
                 ->select(
                     'e.id', 'e.emp_code', 'e.first_name', 'e.last_name', 
                     'e.hire_date', 'e.birthday', 'e.mobile', 'e.ssn', 'e.photo',
+                    'e.email', 
                     'd.dept_name', 'p.position_name',
-                    // --- ¡ESTA ES LA LÍNEA QUE FALTABA! ---
-                    // Agregamos la misma subconsulta que en el repositorio para traer la nómina
                     DB::raw("(
                         SELECT STRING_AGG(pa.area_name, ', ')
                         FROM public.personnel_employee_area pea
@@ -47,58 +42,71 @@ class EmpleadoController extends Controller
                 ->first();
 
             if (!$empleado) {
-                error_log("!!! [EMPLEADO ERROR] Empleado no encontrado en BD.");
                 abort(404, 'Empleado no encontrado');
             }
-            error_log(">>> [EMPLEADO] 3. Empleado encontrado: " . $empleado->first_name);
 
             // 2. Calcular Kárdex del MES ACTUAL
             $hoy = Carbon::now();
-            $inicioMes = $hoy->copy()->startOfMonth();
-            $finMes = $hoy->copy()->endOfMonth();
+            $mes = request('mes') ? (int)request('mes') : $hoy->month;
+            $ano = request('ano') ? (int)request('ano') : $hoy->year;
             
-            error_log(">>> [EMPLEADO] 4. Rango de fechas: " . $inicioMes->toDateString() . " a " . $finMes->toDateString());
-
-            // Llamadas al repositorio
-            error_log(">>> [EMPLEADO] 5. Obteniendo Payload y Permisos...");
+            $inicioMes = Carbon::createFromDate($ano, $mes, 1)->startOfDay();
+            $finMes = Carbon::createFromDate($ano, $mes, 1)->endOfMonth()->endOfDay();
+            
             $payloadData = $this->kardexRepo->getPayloadData([$empleado->id], $inicioMes, $finMes);
             $permisos = $this->kardexRepo->getPermisos([$empleado->id], $inicioMes, $finMes);
+            // --- ELIMINADO: getChecadasCrudas ---
             
-            error_log(">>> [EMPLEADO] 6. Procesando Kárdex (procesarKardex)...");
-            
-            // IMPORTANTE: procesarKardex espera un array o colección de empleados
-            // Le pasamos un array con un solo objeto
+            // Procesamos el Kárdex
             $kardexProcesado = $this->kardexRepo->procesarKardex(
                 [$empleado], 
                 $payloadData,
                 $permisos,
-                $hoy->month,
-                $hoy->year,
+                // --- ELIMINADO: $checadasCrudas ---
+                $mes,
+                $ano,
                 1, // Día 1
-                $hoy->daysInMonth // Último día
+                $finMes->day // Último día
             );
 
-            if (empty($kardexProcesado)) {
-                throw new \Exception("procesarKardex devolvió un array vacío.");
-            }
-
-            // Extraemos el único registro procesado
             $stats = $kardexProcesado[0];
-            error_log(">>> [EMPLEADO] 7. Estadísticas calculadas. Faltas: " . $stats['total_faltas']);
 
-            error_log(">>> [EMPLEADO] 8. Renderizando vista 'Empleado/Show'...");
+            // --- CALENDARIO ---
+            $calendario = [];
+            $primerDiaSemana = $inicioMes->dayOfWeek; 
+            for ($i = 0; $i < $primerDiaSemana; $i++) {
+                $calendario[] = ['type' => 'empty', 'id' => "empty-$i"];
+            }
+            for ($day = 1; $day <= $finMes->day; $day++) {
+                $fechaDia = Carbon::createFromDate($ano, $mes, $day);
+                $calendario[] = [
+                    'type' => 'day',
+                    'id' => $day,
+                    'day' => $day,
+                    'incidencia' => $stats['incidencias_diarias'][$day] ?? '',
+                    'isToday' => $fechaDia->isToday(),
+                    'diaSemana' => $fechaDia->dayOfWeek 
+                ];
+            }
             
+            // Datos Extra
+            $horario = $this->kardexRepo->getHorarioActual($empleado->id);
+            $catalogoPermisos = $this->kardexRepo->getCatalogoPermisos();
+
+            $fechaTitulo = Carbon::createFromDate($ano, $mes, 1)->isoFormat('MMMM YYYY');
+
             return Inertia::render('Empleado/Show', [
                 'empleado' => $empleado,
                 'stats' => $stats,
-                'fechaActual' => $hoy->isoFormat('MMMM YYYY'), // Ej: "Noviembre 2025"
+                'fechaActual' => ucfirst($fechaTitulo),
+                'calendario' => $calendario,
+                'filtros' => ['mes' => $mes, 'ano' => $ano],
+                'horario' => $horario,
+                'catalogoPermisos' => $catalogoPermisos,
             ]);
 
         } catch (\Throwable $e) {
-            error_log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-            error_log('>>> [EMPLEADO ERROR FATAL]: ' . $e->getMessage());
-            error_log('>>> Archivo: ' . $e->getFile() . ' línea ' . $e->getLine());
-            error_log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+            report($e);
             throw $e;
         }
     }

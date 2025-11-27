@@ -18,17 +18,11 @@ class KardexController extends Controller
         $this->kardexRepo = $kardexRepo;
     }
 
-    /**
-     * Muestra la página de visualización web del Kardex.
-     */
     public function index(Request $request)
     {
         return $this->mostrarVista($request);
     }
     
-    /**
-     * Recibe los filtros del formulario y redirige a index con los parámetros.
-     */
     public function buscar(Request $request)
     {
         $validatedData = $request->validate([
@@ -43,9 +37,6 @@ class KardexController extends Controller
         return redirect()->route('kardex.index', $validatedData);
     }
 
-    /**
-     * Genera y descarga el archivo Excel.
-     */
     public function exportar(Request $request)
     {
         try {
@@ -58,26 +49,19 @@ class KardexController extends Controller
                 'nomina' => 'nullable|integer',
             ]);
             
-            // Generamos el nombre del archivo
             $mesNombre = Carbon::create()->month((int)$filtros['mes'])->monthName;
             $fileName = sprintf('Kardex_%s_%s_Q%s.xlsx', (int)$filtros['ano'], $mesNombre, (int)$filtros['quincena']);
 
-            // Descargamos el Excel usando la clase Export y el Repositorio
             return Excel::download(new KardexExport($filtros, $this->kardexRepo), $fileName);
 
         } catch (\Throwable $e) {
-            // Si falla la exportación, registramos el error pero no rompemos la página visible
             report($e);
-            return response('Error al generar el export. Por favor intente de nuevo.', 500);
+            return response('Error al generar el export. Revise el log del sistema.', 500);
         }
     }
 
-    /**
-     * Lógica central para preparar los datos de la vista.
-     */
     private function mostrarVista(Request $request)
     {
-        // 1. Preparar Filtros
         $filtros = [
             'mes' => (int)$request->input('mes', date('m')),
             'ano' => (int)$request->input('ano', date('Y')),
@@ -87,13 +71,11 @@ class KardexController extends Controller
             'nomina' => $request->input('nomina') ? (int)$request->input('nomina') : null,
         ];
         
-        // 2. Calcular Fechas
         $fechaBase = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1);
         $diasTotalesDelMes = $fechaBase->daysInMonth;
         $diaInicio = ($filtros['quincena'] == 2) ? 16 : 1;
         $diaFin = ($filtros['quincena'] == 1) ? 15 : $diasTotalesDelMes;
         
-        // Generamos el array de días con nombre (Lun, Mar) para la cabecera de la tabla
         $nombresDias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
         $rangoDeDias = [];
 
@@ -109,16 +91,13 @@ class KardexController extends Controller
         $fechaInicioMes = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1)->startOfDay();
         $fechaFinMes = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1)->endOfMonth()->endOfDay();
         
-        // 3. Consultas a Base de Datos (Vía Repositorio)
-        
-        // Lista de nóminas para el dropdown
+        // Consultas al Repositorio
         $listaNominas = $this->kardexRepo->getNominas();
+        $catalogoPermisos = $this->kardexRepo->getCatalogoPermisos();
 
-        // Empleados paginados
         $empleadosPaginados = $this->kardexRepo->getEmpleadosPaginados($filtros);
         $empleadoIDs = $empleadosPaginados->pluck('id')->toArray();
 
-        // Detalles (Asistencias y Permisos)
         $payloadData = collect();
         $permisos = collect();
         
@@ -127,7 +106,7 @@ class KardexController extends Controller
             $permisos = $this->kardexRepo->getPermisos($empleadoIDs, $fechaInicioMes, $fechaFinMes);
         }
 
-        // 4. Procesamiento de Lógica de Negocio (Cruce de datos)
+        // PROCESAMIENTO (Ya sin checadas crudas)
         $datosKardex = $this->kardexRepo->procesarKardex(
             $empleadosPaginados->items(), 
             $payloadData,
@@ -135,12 +114,12 @@ class KardexController extends Controller
             $filtros['mes'], $filtros['ano'], $diaInicio, $diaFin
         );
         
-        // 5. Renderizado
         return Inertia::render('Kardex/Index', [
             'datosKardex' => $datosKardex, 
             'paginador' => $empleadosPaginados, 
             'rangoDeDias' => $rangoDeDias,
-            'listaNominas' => $listaNominas, 
+            'listaNominas' => $listaNominas,
+            'catalogoPermisos' => $catalogoPermisos,
             'filtros' => [
                 'mes' => $filtros['mes'],
                 'ano' => $filtros['ano'],

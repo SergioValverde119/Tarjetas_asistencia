@@ -14,7 +14,8 @@ import {
     DocumentTextIcon,
     ArrowDownTrayIcon,
     Cog6ToothIcon,
-    BriefcaseIcon
+    BriefcaseIcon,
+    UserMinusIcon
 } from '@heroicons/vue/24/outline';
 
 const props = defineProps({
@@ -23,6 +24,7 @@ const props = defineProps({
     rangoDeDias: Array,
     filtros: Object,
     listaNominas: Array,
+    catalogoPermisos: Object, // <-- Nuevo prop
 });
 
 const form = useForm({
@@ -60,9 +62,20 @@ function exportarExcel() {
     window.location.href = kardex.exportar().url + '?' + query;
 }
 
+// --- Lógica del Tooltip ---
+const mostrarDetallePermiso = (simbolo) => {
+    const palabrasReservadas = ['OK', 'Descanso', 'Falto', 'R', 'Sin Entrada', 'Sin Salida', 'Sin Turno'];
+    
+    // Solo mostramos el detalle si es un permiso real
+    if (simbolo && !palabrasReservadas.includes(simbolo)) {
+        const significado = props.catalogoPermisos[simbolo] || 'Permiso Desconocido';
+        alert(`Clave: ${simbolo}\nConcepto: ${significado}`);
+    }
+};
+
 function getColorForIncidencia(incidencia) {
     if (!incidencia || incidencia.trim() === '') {
-        return 'bg-white'; 
+        return 'bg-white';
     }
     if (incidencia === 'OK') {
         return 'bg-green-100 text-green-800 font-bold';
@@ -74,7 +87,10 @@ function getColorForIncidencia(incidencia) {
         case 'R': return 'bg-orange-200 text-orange-800 font-bold';
         case 'Sin Entrada':
         case 'Sin Salida': return 'bg-yellow-200 text-yellow-800 font-bold';
-        default: return 'bg-blue-200 text-blue-800 font-bold'; 
+        
+        // Si no es ninguno de los anteriores, es un permiso.
+        // Le agregamos 'cursor-pointer' y hover para indicar que se puede hacer click.
+        default: return 'bg-blue-200 text-blue-800 font-bold cursor-pointer hover:bg-blue-300 hover:shadow-inner transition-colors'; 
     }
 }
 </script>
@@ -85,24 +101,32 @@ function getColorForIncidencia(incidencia) {
 
         <div class="w-full p-4 sm:p-6 lg:p-8">
             
-            <div class="flex justify-between items-center mb-6">
-                <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-3">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 flex items-center gap-3">
                     <DocumentTextIcon class="w-8 h-8 text-blue-600" />
                     Kárdex de Incidencias
                 </h1>
                 
-                <Link :href="reglas.index().url" class="flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    <Cog6ToothIcon class="h-5 w-5 text-gray-500" />
-                    <span>Reglas de Mapeo</span>
-                </Link>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 py-2 px-4 font-bold text-gray-400 shadow-sm cursor-not-allowed opacity-75" title="Próximamente">
+                        <UserMinusIcon class="h-5 w-5 text-gray-400" />
+                        <span>Sin Horario</span>
+                    </button>
+
+                    <Link :href="reglas.index().url" class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        <Cog6ToothIcon class="h-5 w-5 text-gray-500" />
+                        <span>Reglas</span>
+                    </Link>
+                </div>
             </div>
 
             <AlertaBaja />
 
             <!-- Filtros -->
-            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 lg:grid-cols-9 gap-4">
+            <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-9 gap-4">
                 
-                <div class="lg:col-span-2">
+                <!-- Buscador (2 cols) -->
+                <div class="sm:col-span-2 xl:col-span-2">
                     <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar</label>
                     <div class="relative mt-1 rounded-md shadow-sm">
                         <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -115,7 +139,7 @@ function getColorForIncidencia(incidencia) {
                     </div>
                 </div>
 
-                <div class="lg:col-span-2">
+                <div class="sm:col-span-2 xl:col-span-2">
                     <label for="filtro-nomina" class="block text-base font-medium text-gray-700">Tipo Nómina</label>
                     <div class="relative mt-1">
                         <select id="filtro-nomina" v-model="form.nomina" 
@@ -242,24 +266,22 @@ function getColorForIncidencia(incidencia) {
                     </thead>
                     <tbody class="bg-white">
                         <tr v-if="datosKardex.length === 0">
-                            <td :colspan="rangoDeDias.length + 8" class="px-6 py-10 whitespace-nowrap text-base text-gray-500 text-center border-b border-gray-200">
+                            <td :colspan="rangoDeDias.length + 8" class="px-6 py-10 whitespace-nowrap text-sm text-gray-500 text-center border-b border-gray-200">
                                 <div class="flex flex-col items-center justify-center">
                                     <MagnifyingGlassIcon class="w-12 h-12 text-gray-400" />
                                     <span class="mt-2 text-lg font-medium">No se encontraron resultados</span>
-                                    <span class="text-base text-gray-400">Intenta ajustar tus filtros.</span>
+                                    <span class="text-sm text-gray-400">Intenta ajustar tus filtros.</span>
                                 </div>
                             </td>
                         </tr>
                         <tr v-for="fila in datosKardex" :key="fila.emp_code" class="group hover:bg-gray-50">
-                            <td class="sticky left-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base font-medium text-gray-900 border-b border-gray-200 group-hover:bg-gray-50">
-                                <!-- CAMBIO: Color Sky-500 (Azul Cielo Pastel) -->
-                                <Link :href="empleado.show({ id: fila.id }).url" class="text-sky-500 hover:text-sky-700 hover:underline font-bold">
+                            <td class="sticky left-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-sm font-medium text-gray-900 border-b border-gray-200 group-hover:bg-gray-50">
+                                <Link :href="empleado.show({ id: fila.id }).url" class="text-sky-500 hover:text-sky-700 hover:font-bold">
                                     {{ fila.emp_code }}
                                 </Link>
                             </td>
-                            <td class="sticky left-[70px] z-10 bg-white px-3 py-2 whitespace-nowrap text-base text-gray-800 border-b border-gray-200 group-hover:bg-gray-50">
-                                <!-- CAMBIO: Color Sky-500 -->
-                                <Link :href="empleado.show({ id: fila.id }).url" class="text-sky-500 hover:text-sky-700 hover:underline font-semibold">
+                            <td class="sticky left-[70px] z-10 bg-white px-3 py-2 whitespace-nowrap text-sm text-gray-800 border-b border-gray-200 group-hover:bg-gray-50">
+                                <Link :href="empleado.show({ id: fila.id }).url" class="text-sky-500 hover:text-sky-700 hover:font-bold">
                                     {{ fila.nombre }}
                                 </Link>
                             </td>
@@ -268,26 +290,28 @@ function getColorForIncidencia(incidencia) {
                             </td>
                             
                             <td v-for="dia in rangoDeDias" :key="dia.num" 
-                                class="px-2 py-2 whitespace-nowrap text-sm font-semibold text-center border-b border-r border-gray-100"
+                                class="px-2 py-2 whitespace-nowrap text-sm font-semibold text-center border-b border-r border-gray-100 cursor-default"
                                 :class="[
                                     getColorForIncidencia(fila.incidencias_diarias[dia.num]),
                                     dia.esFin ? 'brightness-95' : '' 
-                                ]">
+                                ]"
+                                @click="mostrarDetallePermiso(fila.incidencias_diarias[dia.num])"
+                            >
                                 {{ fila.incidencias_diarias[dia.num] === 'OK' ? '✓' : (fila.incidencias_diarias[dia.num] || '') }}
                             </td>
 
-                            <td class="sticky right-[360px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_vacaciones || 0 }}</td>
-                            <td class="sticky right-[270px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_permisos || 0 }}</td>
-                            <td class="sticky right-[180px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-orange-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_retardos || 0 }}</td>
-                            <td class="sticky right-[90px] z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-yellow-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_omisiones || 0 }}</td>
-                            <td class="sticky right-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-base text-red-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_faltas || 0 }}</td>
+                            <td class="sticky right-[360px] z-10 bg-white px-2 py-2 whitespace-nowrap text-sm text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_vacaciones || 0 }}</td>
+                            <td class="sticky right-[270px] z-10 bg-white px-2 py-2 whitespace-nowrap text-sm text-gray-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_permisos || 0 }}</td>
+                            <td class="sticky right-[180px] z-10 bg-white px-2 py-2 whitespace-nowrap text-sm text-orange-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_retardos || 0 }}</td>
+                            <td class="sticky right-[90px] z-10 bg-white px-2 py-2 whitespace-nowrap text-sm text-yellow-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_omisiones || 0 }}</td>
+                            <td class="sticky right-0 z-10 bg-white px-2 py-2 whitespace-nowrap text-sm text-red-600 text-center font-bold border-b border-gray-200 group-hover:bg-gray-50">{{ fila.total_faltas || 0 }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             
             <div v-if="paginador.data.length > 0" class="flex flex-col sm:flex-row justify-between items-center mt-6">
-                <div class="text-base text-gray-700 mb-2 sm:mb-0">
+                <div class="text-sm text-gray-700 mb-2 sm:mb-0">
                     Mostrando desde <span class="font-bold">{{ paginador.from }}</span> hasta <span class="font-bold">{{ paginador.to }}</span> de <span class="font-bold">{{ paginador.total }}</span> resultados
                 </div>
                 <nav v-if="paginador.links.length > 3" class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
@@ -296,13 +320,13 @@ function getColorForIncidencia(incidencia) {
                             v-if="link.url"
                             :href="link.url"
                             v-html="link.label"
-                            class="relative inline-flex items-center px-4 py-2 border text-base font-medium transition-colors bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                            class="relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-colors bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
                             :class="{ 'z-10 bg-blue-50 border-blue-500 text-blue-600': link.active, 'rounded-l-md': index === 0, 'rounded-r-md': index === paginador.links.length - 1 }"
                         />
                         <span
                             v-else
                             v-html="link.label"
-                            class="relative inline-flex items-center px-4 py-2 border bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed text-base font-medium"
+                            class="relative inline-flex items-center px-4 py-2 border bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed text-sm font-medium"
                             :class="{ 'rounded-l-md': index === 0, 'rounded-r-md': index === paginador.links.length - 1 }"
                         />
                     </template>
