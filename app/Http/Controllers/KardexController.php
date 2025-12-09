@@ -32,6 +32,8 @@ class KardexController extends Controller
             'perPage' => 'required|integer|in:10,20,50,200',
             'search' => 'nullable|string|max:50',
             'nomina' => 'nullable|integer',
+            // --- NUEVO FILTRO ---
+            'sin_horario' => 'nullable|boolean',
         ]);
         
         return redirect()->route('kardex.index', $validatedData);
@@ -47,6 +49,8 @@ class KardexController extends Controller
                 'perPage' => 'nullable|integer',
                 'search' => 'nullable|string|max:50',
                 'nomina' => 'nullable|integer',
+                // --- NUEVO FILTRO ---
+                'sin_horario' => 'nullable|boolean',
             ]);
             
             $mesNombre = Carbon::create()->month((int)$filtros['mes'])->monthName;
@@ -69,6 +73,8 @@ class KardexController extends Controller
             'perPage' => (int)$request->input('perPage', 10),
             'search' => $request->input('search'),
             'nomina' => $request->input('nomina') ? (int)$request->input('nomina') : null,
+            // --- NUEVO FILTRO ---
+            'sin_horario' => filter_var($request->input('sin_horario'), FILTER_VALIDATE_BOOLEAN),
         ];
         
         $fechaBase = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1);
@@ -91,7 +97,6 @@ class KardexController extends Controller
         $fechaInicioMes = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1)->startOfDay();
         $fechaFinMes = Carbon::createFromDate($filtros['ano'], $filtros['mes'], 1)->endOfMonth()->endOfDay();
         
-        // Consultas al Repositorio
         $listaNominas = $this->kardexRepo->getNominas();
         $catalogoPermisos = $this->kardexRepo->getCatalogoPermisos();
 
@@ -106,7 +111,6 @@ class KardexController extends Controller
             $permisos = $this->kardexRepo->getPermisos($empleadoIDs, $fechaInicioMes, $fechaFinMes);
         }
 
-        // PROCESAMIENTO (Ya sin checadas crudas)
         $datosKardex = $this->kardexRepo->procesarKardex(
             $empleadosPaginados->items(), 
             $payloadData,
@@ -127,6 +131,8 @@ class KardexController extends Controller
                 'perPage' => $filtros['perPage'],
                 'search' => $filtros['search'] ?? '',
                 'nomina' => $filtros['nomina'],
+                // --- PASAMOS EL ESTADO AL VUE ---
+                'sin_horario' => $filtros['sin_horario'],
             ]
         ]);
     }

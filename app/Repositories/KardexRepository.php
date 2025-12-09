@@ -9,9 +9,6 @@ class KardexRepository
 {
     private $connection = 'pgsql_biotime';
 
-    /**
-     * Obtiene la lista de Áreas para usarla en el dropdown de "Tipo de Nómina"
-     */
     public function getNominas()
     {
         return DB::connection($this->connection)
@@ -22,9 +19,6 @@ class KardexRepository
             ->get(['id', 'area_name']);
     }
 
-    /**
-     * Obtiene el catálogo de permisos para los tooltips del perfil.
-     */
     public function getCatalogoPermisos()
     {
         return DB::connection($this->connection)
@@ -44,11 +38,19 @@ class KardexRepository
         return $this->getBaseEmpleadosQuery($filtros)->get();
     }
 
-    /**
-     * Consulta Principal con DOBLE FILTRO
-     */
     private function getBaseEmpleadosQuery(array $filtros)
     {
+        // Calculamos las fechas del periodo seleccionado para filtrar los horarios
+        $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
+        $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
+        $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $fechaBase->daysInMonth;
+        
+        $inicioPeriodo = $fechaBase->copy()->day($diaInicio)->format('Y-m-d');
+        $finPeriodo = $fechaBase->copy()->day($diaFin)->format('Y-m-d');
+
+        // Verificamos si el filtro "sin_horario" está activo
+        $mostrarSinHorario = isset($filtros['sin_horario']) && filter_var($filtros['sin_horario'], FILTER_VALIDATE_BOOLEAN);
+
         return DB::connection($this->connection)
             ->table('personnel_employee')
             ->select(
@@ -66,20 +68,37 @@ class KardexRepository
                 ) as nomina")
             )
             
-            // --- DOBLE FILTRO DE ACTIVOS (ESTRICTO / AND) ---
-            
-            // 1. Filtro de BioTime (Si enable_att es false, es baja oficial)
+            // --- CORRECCIÓN: FILTRO ESTRICTO ---
+            // 1. Debe estar habilitado en BioTime (quita bajas oficiales)
             ->where('personnel_employee.enable_att', true)
             
-            // 2. Filtro Nuestro:
-            //    - O el robot dice que viene (is_truly_active = true)
-            //    - O el estatus es "Normal" (status = 0) para rescatar a los que no checan pero siguen activos
-            ->where(function($query) {
-                $query->where('personnel_employee.is_truly_active', true)
-                      ->orWhere('personnel_employee.status', 0); 
+            // 2. Debe tener actividad reciente (quita fantasmas)
+            // Quitamos el "OR status=0" para que sea estricto con el robot.
+            ->where('personnel_employee.is_truly_active', true)
+            // -----------------------------------
+
+            ->where(function ($query) use ($mostrarSinHorario, $inicioPeriodo, $finPeriodo) {
+                if ($mostrarSinHorario) {
+                    // Si el botón está activo: Buscamos los que NO tienen horario
+                    $query->whereNotExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
+                        $subQuery->select(DB::raw(1))
+                                ->from('public.att_attschedule as s')
+                                ->whereColumn('s.employee_id', 'personnel_employee.id')
+                                ->where('s.end_date', '>=', $inicioPeriodo)
+                                ->where('s.start_date', '<=', $finPeriodo);
+                    });
+                } else {
+                    // Si el botón está apagado (Default): Buscamos los que SÍ tienen horario
+                    $query->whereExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
+                        $subQuery->select(DB::raw(1))
+                                ->from('public.att_attschedule as s')
+                                ->whereColumn('s.employee_id', 'personnel_employee.id')
+                                ->where('s.end_date', '>=', $inicioPeriodo)
+                                ->where('s.start_date', '<=', $finPeriodo);
+                    });
+                }
             })
-            // ------------------------------------------------
-            
+
             ->when($filtros['nomina'] ?? null, function ($query, $nominaId) {
                 $query->whereExists(function ($subQuery) use ($nominaId) {
                     $subQuery->select(DB::raw(1))
@@ -97,7 +116,6 @@ class KardexRepository
                       ->orWhere(DB::raw('CAST(personnel_employee.emp_code AS TEXT)'), 'LIKE', $searchTerm);
                 });
             })
-            
             ->orderBy('personnel_employee.emp_code');
     }
 
@@ -117,7 +135,7 @@ class KardexRepository
         return DB::connection($this->connection)
             ->table('att_leave')
             ->join('att_leavecategory', 'att_leave.category_id', '=', 'att_leavecategory.id')
-            ->select('employee_id', 'start_time', 'end_time', 'report_symbol')
+            ->select('employee_id', 'start_time', 'end_time', 'report_symbol', 'att_leave.category_id') // <-- Incluimos category_id
             ->whereIn('employee_id', $empleadoIDs)
             ->where(function ($q) use ($fechaInicio, $fechaFin) {
                 $q->where('start_time', '<=', $fechaFin)
@@ -127,12 +145,8 @@ class KardexRepository
             ->groupBy('employee_id');
     }
 
-    /**
-     * Obtiene el horario detallado del empleado para la vista de perfil.
-     */
     public function getHorarioActual($empleadoId)
     {
-        // 1. Buscamos el turno asignado actualmente
         $turnoAsignado = DB::connection($this->connection)
             ->table('att_attschedule as s')
             ->join('att_attshift as sh', 's.shift_id', '=', 'sh.id')
@@ -144,17 +158,11 @@ class KardexRepository
 
         if (!$turnoAsignado) return null;
 
-        // 2. Buscamos los detalles (Horas)
         $detalles = DB::connection($this->connection)
             ->table('att_shiftdetail as sd')
             ->join('att_timeinterval as ti', 'sd.time_interval_id', '=', 'ti.id')
             ->where('sd.shift_id', $turnoAsignado->id)
-            ->select(
-                'sd.day_index', 
-                'sd.in_time', 
-                'sd.out_time',
-                'ti.duration'
-            )
+            ->select('sd.day_index', 'sd.in_time', 'sd.out_time', 'ti.duration')
             ->orderBy('sd.day_index')
             ->get();
 
@@ -166,8 +174,9 @@ class KardexRepository
     
     public function procesarKardex($empleados, $payloadData, $permisos, $mes, $ano, $diaInicio, $diaFin)
     {
+        // Cargamos las reglas usando el ID como clave
         $mapaDeReglas = DB::table('mapeo_de_permisos')
-                           ->pluck('nuestra_categoria', 'biotime_report_symbol');
+                           ->pluck('nuestra_categoria', 'biotime_id');
         
         $empleados = collect($empleados);
 
@@ -197,13 +206,11 @@ class KardexRepository
                 $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
                 $fechaString = $fechaActual->toDateString();
 
-                // 1. Futuro = Vacío
                 if ($fechaActual->greaterThanOrEqualTo(Carbon::today())) {
                     $filaEmpleado['incidencias_diarias'][$dia] = null;
                     continue; 
                 }
 
-                // 2. Antes de contrato = Vacío
                 if ($fechaContratacion && $fechaActual->isBefore($fechaContratacion)) {
                     $filaEmpleado['incidencias_diarias'][$dia] = null;
                     continue; 
@@ -211,9 +218,7 @@ class KardexRepository
 
                 $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
 
-                // --- LÓGICA DE INCIDENCIAS ---
                 if (!$payloadDia) {
-                    // Si no hay registro en BioTime, asumimos DESCANSO.
                     $incidenciaDelDia = "Descanso";
                 } else {
                     if ($payloadDia->day_off > 0) {
@@ -223,7 +228,9 @@ class KardexRepository
                         $incidenciaDelDia = $permiso ? $permiso->report_symbol : "Permiso";
 
                         if ($permiso) {
-                            $categoriaLimpia = $mapaDeReglas->get($permiso->report_symbol ?? 'default', 'OTRO'); 
+                            // --- BUSCAMOS POR ID ---
+                            $categoriaLimpia = $mapaDeReglas->get($permiso->category_id, 'OTRO'); 
+                            
                             if ($categoriaLimpia === 'VACACION') {
                                 $filaEmpleado['total_vacaciones']++;
                             } else {
@@ -235,24 +242,17 @@ class KardexRepository
                     } else if ($payloadDia->absent > 0) {
                         $incidenciaDelDia = "Falto";
                         $filaEmpleado['total_faltas']++;
-                    } else if ($payloadDia->clock_in == null && $payloadDia->clock_out == null && $payloadDia->absent == 0) {
-                         // Caso "OTRO"
-                         $incidenciaDelDia = "Descanso";
-                    } else if ($payloadDia->clock_in != null) {
-                        if ($payloadDia->late > 0) {
-                            $incidenciaDelDia = "R";
-                            $filaEmpleado['total_retardos']++;
-                        } else if ($payloadDia->clock_out == null) {
-                            $incidenciaDelDia = "Sin Salida";
-                            $filaEmpleado['total_omisiones']++;
-                        } else {
-                            $incidenciaDelDia = "OK"; 
-                        }
-                    } else if ($payloadDia->clock_in == null && $payloadDia->clock_out != null) {
+                    } else if ($payloadDia->clock_in == null) {
                         $incidenciaDelDia = "Sin Entrada";
                         $filaEmpleado['total_omisiones']++;
+                    } else if ($payloadDia->clock_out == null) {
+                        $incidenciaDelDia = "Sin Salida";
+                        $filaEmpleado['total_omisiones']++;
+                    } else if ($payloadDia->late > 0) {
+                        $incidenciaDelDia = "R";
+                        $filaEmpleado['total_retardos']++;
                     } else {
-                        $incidenciaDelDia = "Descanso";
+                        $incidenciaDelDia = "OK"; 
                     }
                 }
                 

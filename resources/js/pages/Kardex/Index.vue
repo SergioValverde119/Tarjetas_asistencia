@@ -24,7 +24,7 @@ const props = defineProps({
     rangoDeDias: Array,
     filtros: Object,
     listaNominas: Array,
-    catalogoPermisos: Object, // <-- Nuevo prop
+    catalogoPermisos: Object,
 });
 
 const form = useForm({
@@ -34,7 +34,15 @@ const form = useForm({
     perPage: props.filtros.perPage,
     search: props.filtros.search || '',
     nomina: props.filtros.nomina || '',
+    // --- NUEVO CAMPO ---
+    sin_horario: props.filtros.sin_horario || false,
 });
+
+// --- Función para alternar el filtro ---
+function toggleSinHorario() {
+    form.sin_horario = !form.sin_horario;
+    buscarDatos();
+}
 
 const meses = [ { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' }, { value: 3, label: 'Marzo' }, { value: 4, label: 'Abril' }, { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' }, { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' }, { value: 9, label: 'Septiembre' }, { value: 10, label: 'Octubre' }, { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' } ];
 
@@ -57,16 +65,16 @@ function exportarExcel() {
         perPage: form.perPage,
         search: form.search || '',
         nomina: form.nomina || '',
+        // --- AGREGAMOS AL EXPORT ---
+        sin_horario: form.sin_horario ? '1' : '0',
     }).toString();
     
     window.location.href = kardex.exportar().url + '?' + query;
 }
 
-// --- Lógica del Tooltip ---
+// ... (Lógica de tooltips y colores sigue igual) ...
 const mostrarDetallePermiso = (simbolo) => {
     const palabrasReservadas = ['OK', 'Descanso', 'Falto', 'R', 'Sin Entrada', 'Sin Salida', 'Sin Turno'];
-    
-    // Solo mostramos el detalle si es un permiso real
     if (simbolo && !palabrasReservadas.includes(simbolo)) {
         const significado = props.catalogoPermisos[simbolo] || 'Permiso Desconocido';
         alert(`Clave: ${simbolo}\nConcepto: ${significado}`);
@@ -80,16 +88,12 @@ function getColorForIncidencia(incidencia) {
     if (incidencia === 'OK') {
         return 'bg-green-100 text-green-800 font-bold';
     }
-    
     switch (incidencia) {
         case 'Descanso': return 'bg-gray-200 text-gray-600';
         case 'Falto': return 'bg-red-200 text-red-800 font-bold';
         case 'R': return 'bg-orange-200 text-orange-800 font-bold';
         case 'Sin Entrada':
         case 'Sin Salida': return 'bg-yellow-200 text-yellow-800 font-bold';
-        
-        // Si no es ninguno de los anteriores, es un permiso.
-        // Le agregamos 'cursor-pointer' y hover para indicar que se puede hacer click.
         default: return 'bg-blue-200 text-blue-800 font-bold cursor-pointer hover:bg-blue-300 hover:shadow-inner transition-colors'; 
     }
 }
@@ -108,9 +112,18 @@ function getColorForIncidencia(incidencia) {
                 </h1>
                 
                 <div class="flex gap-2 w-full sm:w-auto">
-                    <button class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 py-2 px-4 font-bold text-gray-400 shadow-sm cursor-not-allowed opacity-75" title="Próximamente">
-                        <UserMinusIcon class="h-5 w-5 text-gray-400" />
-                        <span>Sin Horario</span>
+                    <!-- Botón "Sin Horario" ACTIVADO -->
+                    <button 
+                        @click="toggleSinHorario"
+                        class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border py-2 px-4 font-bold shadow-sm transition-all"
+                        :class="form.sin_horario 
+                            ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700' // Estilo Activo
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50' // Estilo Inactivo
+                        "
+                        title="Mostrar empleados sin horario asignado"
+                    >
+                        <UserMinusIcon class="h-5 w-5" :class="form.sin_horario ? 'text-white' : 'text-gray-500'" />
+                        <span>{{ form.sin_horario ? 'Viendo Sin Horario' : 'Sin Horario' }}</span>
                     </button>
 
                     <Link :href="reglas.index().url" class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
@@ -120,31 +133,31 @@ function getColorForIncidencia(incidencia) {
                 </div>
             </div>
 
+            <!-- ... (Resto del template sin cambios: Alerta, Filtros, Tabla) ... -->
             <AlertaBaja />
 
             <!-- Filtros -->
             <div class="my-4 p-4 bg-white rounded-lg shadow-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-9 gap-4">
                 
-                <!-- Buscador (2 cols) -->
                 <div class="sm:col-span-2 xl:col-span-2">
-                    <label for="filtro-search" class="block text-base font-medium text-gray-700">Buscar</label>
+                    <label for="filtro-search" class="block text-sm font-medium text-gray-700">Buscar</label>
                     <div class="relative mt-1 rounded-md shadow-sm">
                         <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                             <UserIcon class="h-5 w-5 text-gray-400" aria-hidden="true" />
                         </div>
                         <input type="text" id="filtro-search" v-model="form.search"
                                @keyup.enter="buscarDatos"
-                               class="block w-full rounded-md border-gray-300 pl-10 text-base focus:border-blue-500 focus:ring-blue-500"
+                               class="block w-full rounded-md border-gray-300 pl-10 text-sm focus:border-blue-500 focus:ring-blue-500"
                                placeholder="Nombre o ID..." />
                     </div>
                 </div>
 
                 <div class="sm:col-span-2 xl:col-span-2">
-                    <label for="filtro-nomina" class="block text-base font-medium text-gray-700">Tipo Nómina</label>
+                    <label for="filtro-nomina" class="block text-sm font-medium text-gray-700">Tipo Nómina</label>
                     <div class="relative mt-1">
                         <select id="filtro-nomina" v-model="form.nomina" 
                                 @change="buscarDatos"
-                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">Todas</option>
                             <option v-for="nom in listaNominas" :key="nom.id" :value="nom.id">
                                 {{ nom.area_name }}
@@ -157,11 +170,11 @@ function getColorForIncidencia(incidencia) {
                 </div>
 
                 <div>
-                    <label for="filtro-mes" class="block text-base font-medium text-gray-700">Mes</label>
+                    <label for="filtro-mes" class="block text-sm font-medium text-gray-700">Mes</label>
                     <div class="relative mt-1">
                         <select id="filtro-mes" v-model="form.mes" 
                                 @change="buscarDatos"
-                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="mes in meses" :key="mes.value" :value="mes.value">{{ mes.label }}</option>
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -171,11 +184,11 @@ function getColorForIncidencia(incidencia) {
                 </div>
                 
                 <div>
-                    <label for="filtro-ano" class="block text-base font-medium text-gray-700">Año</label>
+                    <label for="filtro-ano" class="block text-sm font-medium text-gray-700">Año</label>
                     <div class="relative mt-1">
                         <select id="filtro-ano" v-model="form.ano" 
                                 @change="buscarDatos"
-                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="ano in anos" :key="ano" :value="ano">{{ ano }}</option>
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -185,11 +198,11 @@ function getColorForIncidencia(incidencia) {
                 </div>
 
                 <div>
-                    <label for="filtro-quincena" class="block text-base font-medium text-gray-700">Quincena</label>
+                    <label for="filtro-quincena" class="block text-sm font-medium text-gray-700">Quincena</label>
                     <div class="relative mt-1">
                         <select id="filtro-quincena" v-model="form.quincena" 
                                 @change="buscarDatos"
-                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="q in quincenas" :key="q.value" :value="q.value">{{ q.label }}</option>
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -199,11 +212,11 @@ function getColorForIncidencia(incidencia) {
                 </div>
 
                 <div>
-                    <label for="filtro-perPage" class="block text-base font-medium text-gray-700">Mostrar</label>
+                    <label for="filtro-perPage" class="block text-sm font-medium text-gray-700">Mostrar</label>
                     <div class="relative mt-1">
                         <select id="filtro-perPage" v-model="form.perPage" 
                                 @change="buscarDatos"
-                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-base focus:border-blue-500 focus:ring-blue-500">
+                                class="block w-full appearance-none rounded-md border-gray-300 py-2 px-3 pr-10 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500">
                             <option v-for="pp in perPageOptions" :key="pp" :value="pp">{{ pp }}</option>
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
@@ -233,7 +246,7 @@ function getColorForIncidencia(incidencia) {
                 </div>
             </div>
 
-            <!-- Tabla con Doble Sticky -->
+            <!-- Tabla -->
             <div class="mt-8 rounded-lg shadow-lg overflow-auto border border-gray-200" style="max-height: 75vh;">
                 <table class="min-w-full border-separate border-spacing-0">
                     <thead class="bg-gray-800 text-white">
