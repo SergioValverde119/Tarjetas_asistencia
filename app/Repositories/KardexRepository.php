@@ -40,7 +40,6 @@ class KardexRepository
 
     private function getBaseEmpleadosQuery(array $filtros)
     {
-        // Calculamos las fechas del periodo seleccionado para filtrar los horarios
         $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
         $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
         $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $fechaBase->daysInMonth;
@@ -48,7 +47,6 @@ class KardexRepository
         $inicioPeriodo = $fechaBase->copy()->day($diaInicio)->format('Y-m-d');
         $finPeriodo = $fechaBase->copy()->day($diaFin)->format('Y-m-d');
 
-        // Verificamos si el filtro "sin_horario" está activo
         $mostrarSinHorario = isset($filtros['sin_horario']) && filter_var($filtros['sin_horario'], FILTER_VALIDATE_BOOLEAN);
 
         return DB::connection($this->connection)
@@ -67,19 +65,13 @@ class KardexRepository
                     AND pa.area_name != 'SEDUVI' 
                 ) as nomina")
             )
-            
-            // --- CORRECCIÓN: FILTRO ESTRICTO ---
-            // 1. Debe estar habilitado en BioTime (quita bajas oficiales)
             ->where('personnel_employee.enable_att', true)
-            
-            // 2. Debe tener actividad reciente (quita fantasmas)
-            // Quitamos el "OR status=0" para que sea estricto con el robot.
-            ->where('personnel_employee.is_truly_active', true)
-            // -----------------------------------
-
+            ->where(function($query) {
+                $query->where('personnel_employee.is_truly_active', true)
+                      ->orWhere('personnel_employee.status', 0); 
+            })
             ->where(function ($query) use ($mostrarSinHorario, $inicioPeriodo, $finPeriodo) {
                 if ($mostrarSinHorario) {
-                    // Si el botón está activo: Buscamos los que NO tienen horario
                     $query->whereNotExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
                         $subQuery->select(DB::raw(1))
                                 ->from('public.att_attschedule as s')
@@ -88,7 +80,6 @@ class KardexRepository
                                 ->where('s.start_date', '<=', $finPeriodo);
                     });
                 } else {
-                    // Si el botón está apagado (Default): Buscamos los que SÍ tienen horario
                     $query->whereExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
                         $subQuery->select(DB::raw(1))
                                 ->from('public.att_attschedule as s')
@@ -98,7 +89,6 @@ class KardexRepository
                     });
                 }
             })
-
             ->when($filtros['nomina'] ?? null, function ($query, $nominaId) {
                 $query->whereExists(function ($subQuery) use ($nominaId) {
                     $subQuery->select(DB::raw(1))
@@ -107,7 +97,6 @@ class KardexRepository
                              ->where('public.personnel_employee_area.area_id', $nominaId);
                 });
             })
-            
             ->when($filtros['search'], function ($query, $searchTerm) {
                 $searchTerm = '%' . strtolower($searchTerm) . '%';
                 $query->where(function ($q) use ($searchTerm) {
@@ -135,7 +124,7 @@ class KardexRepository
         return DB::connection($this->connection)
             ->table('att_leave')
             ->join('att_leavecategory', 'att_leave.category_id', '=', 'att_leavecategory.id')
-            ->select('employee_id', 'start_time', 'end_time', 'report_symbol', 'att_leave.category_id') // <-- Incluimos category_id
+            ->select('employee_id', 'start_time', 'end_time', 'report_symbol', 'att_leave.category_id') 
             ->whereIn('employee_id', $empleadoIDs)
             ->where(function ($q) use ($fechaInicio, $fechaFin) {
                 $q->where('start_time', '<=', $fechaFin)
@@ -174,22 +163,40 @@ class KardexRepository
     
     public function procesarKardex($empleados, $payloadData, $permisos, $mes, $ano, $diaInicio, $diaFin)
     {
-        // Cargamos las reglas usando el ID como clave
+        // 1. Cargar el mapa (Relación ID -> Categoría)
         $mapaDeReglas = DB::table('mapeo_de_permisos')
                            ->pluck('nuestra_categoria', 'biotime_id');
         
+        // 2. Obtener todas las categorías únicas que existen en la BD para inicializar contadores
+        // (Esto nos prepara para el futuro: si agregas SINDICATO, aquí aparecerá)
+        $categoriasPosibles = $mapaDeReglas->unique()->values()->all();
+        // Aseguramos que existan las básicas aunque no estén en la BD aún
+        $categoriasPosibles = array_unique(array_merge($categoriasPosibles, ['VACACION', 'OTRO']));
+
         $empleados = collect($empleados);
 
         $filasDelKardex = [];
         foreach ($empleados as $empleado) {
+            
+            // Inicializamos contadores fijos (los de siempre)
+            $contadoresFijos = [
+                'total_retardos' => 0, 
+                'total_omisiones' => 0, 
+                'total_faltas' => 0,
+            ];
+
+            // Inicializamos contadores dinámicos (basados en las reglas)
+            $contadoresDinamicos = [];
+            foreach ($categoriasPosibles as $cat) {
+                $contadoresDinamicos[$cat] = 0;
+            }
+
             $filaEmpleado = [
                 'id' => $empleado->id, 
                 'emp_code' => $empleado->emp_code,
                 'nombre' => $empleado->first_name . ' ' . $empleado->last_name,
                 'nomina' => $empleado->nomina, 
                 'incidencias_diarias' => [],
-                'total_retardos' => 0, 'total_omisiones' => 0, 'total_faltas' => 0,
-                'total_vacaciones' => 0, 'total_permisos' => 0,
             ];
 
             $payloadParaEmpleado = $payloadData->get($empleado->id) ?? collect();
@@ -228,29 +235,33 @@ class KardexRepository
                         $incidenciaDelDia = $permiso ? $permiso->report_symbol : "Permiso";
 
                         if ($permiso) {
-                            // --- BUSCAMOS POR ID ---
-                            $categoriaLimpia = $mapaDeReglas->get($permiso->category_id, 'OTRO'); 
+                            // --- LÓGICA DINÁMICA ---
+                            // Buscamos qué categoría es este permiso en la BD
+                            $categoria = $mapaDeReglas->get($permiso->category_id, 'OTRO');
                             
-                            if ($categoriaLimpia === 'VACACION') {
-                                $filaEmpleado['total_vacaciones']++;
+                            // Incrementamos el contador de esa categoría específica
+                            if (isset($contadoresDinamicos[$categoria])) {
+                                $contadoresDinamicos[$categoria]++;
                             } else {
-                                $filaEmpleado['total_permisos']++; 
+                                // Si por alguna razón la categoría no estaba inicializada
+                                $contadoresDinamicos[$categoria] = 1;
                             }
                         } else {
-                            $filaEmpleado['total_permisos']++;
+                            // Si no encontramos regla, va a 'OTRO' o un genérico
+                            $contadoresDinamicos['OTRO']++;
                         }
                     } else if ($payloadDia->absent > 0) {
                         $incidenciaDelDia = "Falto";
-                        $filaEmpleado['total_faltas']++;
+                        $contadoresFijos['total_faltas']++;
                     } else if ($payloadDia->clock_in == null) {
                         $incidenciaDelDia = "Sin Entrada";
-                        $filaEmpleado['total_omisiones']++;
+                        $contadoresFijos['total_omisiones']++;
                     } else if ($payloadDia->clock_out == null) {
                         $incidenciaDelDia = "Sin Salida";
-                        $filaEmpleado['total_omisiones']++;
+                        $contadoresFijos['total_omisiones']++;
                     } else if ($payloadDia->late > 0) {
                         $incidenciaDelDia = "R";
-                        $filaEmpleado['total_retardos']++;
+                        $contadoresFijos['total_retardos']++;
                     } else {
                         $incidenciaDelDia = "OK"; 
                     }
@@ -258,6 +269,31 @@ class KardexRepository
                 
                 $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
             }
+
+            // --- ASIGNACIÓN FINAL (La Promesa) ---
+            // Aquí traducimos lo dinámico a lo estático que espera la vista
+            
+            // 1. Vacaciones: Directo de su categoría
+            $filaEmpleado['total_vacaciones'] = $contadoresDinamicos['VACACION'] ?? 0;
+            
+            // 2. Permisos: Sumamos TODO lo que no sea vacación
+            // (Incapacidad, Permiso Goce, Permiso Sin Goce, etc.)
+            $totalOtrosPermisos = 0;
+            foreach ($contadoresDinamicos as $cat => $val) {
+                if ($cat !== 'VACACION') {
+                    $totalOtrosPermisos += $val;
+                }
+            }
+            $filaEmpleado['total_permisos'] = $totalOtrosPermisos;
+
+            // 3. Los fijos
+            $filaEmpleado['total_faltas'] = $contadoresFijos['total_faltas'];
+            $filaEmpleado['total_retardos'] = $contadoresFijos['total_retardos'];
+            $filaEmpleado['total_omisiones'] = $contadoresFijos['total_omisiones'];
+            
+            // Opcional: Pasamos el desglose completo por si el frontend lo quiere usar después
+            $filaEmpleado['desglose_permisos'] = $contadoresDinamicos;
+
             $filasDelKardex[] = $filaEmpleado;
         }
         return $filasDelKardex;

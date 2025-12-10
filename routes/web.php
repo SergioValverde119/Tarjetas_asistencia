@@ -13,21 +13,16 @@ use App\Http\Controllers\EmpleadoController;
 |--------------------------------------------------------------------------
 */
 
-// --- PÚBLICO: Página de Bienvenida ---
 Route::get('/welcome', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
     ]);
 })->middleware('guest')->name('welcome');
 
-// --- TU PÁGINA PRINCIPAL (Restaurada) ---
-// Al entrar a la raíz, mostramos el Buscador de Tarjetas
 Route::get('/', function () {
     return Inertia::render('BuscarTarjetas');
 })->middleware(['auth', 'verified'])->name('home');
 
-
-// --- GRUPO DE MÓDULOS (Protegidos con Login) ---
 Route::middleware(['auth', 'verified'])->group(function () {
 
     // --- MÓDULO KÁRDEX ---
@@ -37,10 +32,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
     });
 
-    // --- MÓDULO REGLAS ---
+    // --- MÓDULO REGLAS Y POLÍTICAS ---
     Route::prefix('reglas')->name('reglas.')->group(function () {
+        // Vista Principal y Guardado de Mapeo
         Route::get('/', [ReglasController::class, 'index'])->name('index');
         Route::post('/', [ReglasController::class, 'store'])->name('store');
+        
+        // Nuevas Rutas de Gestión
+        Route::post('/category', [ReglasController::class, 'storeCategory'])->name('category.store');
+        Route::post('/policy', [ReglasController::class, 'storePolicy'])->name('policy.store');
+        Route::delete('/policy/{id}', [ReglasController::class, 'deletePolicy'])->name('policy.delete');
     });
 
     // --- MÓDULO NOTIFICACIONES ---
@@ -50,9 +51,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
-
-
 });
 
-// --- CORRECCIÓN: Usamos settings.php en lugar de auth.php ---
 require __DIR__.'/settings.php';
