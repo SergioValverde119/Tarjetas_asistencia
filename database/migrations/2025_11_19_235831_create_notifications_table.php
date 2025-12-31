@@ -1,64 +1,31 @@
 <?php
 
-namespace App\Notifications;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
-use Illuminate\Notifications\Notification;
-
-class AlertaFaltasCriticas extends Notification
+return new class extends Migration
 {
-    use Queueable;
-
-    protected $empleado;
-    protected $cantidadFaltas;
-    protected $periodo;
-
     /**
-     * Recibimos los datos del empleado infractor.
+     * Run the migrations.
      */
-    public function __construct($empleado, $cantidadFaltas, $periodo)
+    public function up(): void
     {
-        $this->empleado = $empleado;
-        $this->cantidadFaltas = $cantidadFaltas;
-        $this->periodo = $periodo;
+        Schema::create('notifications', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('type');
+            $table->morphs('notifiable'); // Esto crea notifiable_id y notifiable_type
+            $table->text('data');
+            $table->timestamp('read_at')->nullable();
+            $table->timestamps();
+        });
     }
 
     /**
-     * ¿Por qué canales enviamos esto?
+     * Reverse the migrations.
      */
-    public function via(object $notifiable): array
+    public function down(): void
     {
-        // 'database' guarda la alerta en la tabla notifications.
-        // 'mail' envía un correo electrónico.
-        return ['database']; // Agrega 'mail' aquí si tienes configurado el correo.
+        Schema::dropIfExists('notifications');
     }
-
-    /**
-     * Formato para el Correo Electrónico
-     */
-    public function toMail(object $notifiable): MailMessage
-    {
-        return (new MailMessage)
-                    ->subject('⚠️ Alerta de Asistencia: ' . $this->empleado['nombre'])
-                    ->greeting('Atención Administrador')
-                    ->line("El empleado {$this->empleado['nombre']} ({$this->empleado['emp_code']}) ha acumulado {$this->cantidadFaltas} faltas en la quincena {$this->periodo}.")
-                    ->action('Ver Kárdex', url('/kardex'))
-                    ->line('Se requiere su atención inmediata.');
-    }
-
-    /**
-     * Formato para guardar en la Base de Datos (Para la campanita)
-     */
-    public function toArray(object $notifiable): array
-    {
-        return [
-            'titulo' => 'Límite de Faltas Excedido',
-            'mensaje' => "{$this->empleado['nombre']} tiene {$this->cantidadFaltas} faltas.",
-            'emp_code' => $this->empleado['emp_code'],
-            'faltas' => $this->cantidadFaltas,
-            'fecha_alerta' => now()->toDateString(),
-        ];
-    }
-}
+};
