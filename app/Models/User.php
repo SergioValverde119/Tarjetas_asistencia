@@ -20,9 +20,11 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
-        'username', // <--- ¡IMPORTANTE! Agregado para permitir el login con RFC
+        'username', 
+        'biotime_id',
         'email',
         'password',
+        'emp_code',
     ];
 
     /**
