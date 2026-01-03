@@ -153,7 +153,7 @@ const secondFortnight = computed(() => {
 const fetchSchedule = async () => {
   loading.value = true;
   try {
-    const response = await axios.post(`http://10.37.1.6:5000/api/schedules`, {
+    const response = await axios.post('/api/internal/schedules', {
       emp_id: props.employee.id,
       month: selectedMonth.value,
       year: selectedYear.value

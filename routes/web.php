@@ -6,7 +6,7 @@ use App\Http\Controllers\KardexController;
 use App\Http\Controllers\ReglasController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\EmpleadoController;
-
+use App\Http\Controllers\TarjetaController;
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -23,7 +23,14 @@ Route::get('/', function () {
     return Inertia::render('BuscarTarjetas');
 })->middleware(['auth', 'verified'])->name('home');
 
+
+
+
 Route::middleware(['auth', 'verified'])->group(function () {
+
+    // Rutas para el módulo de Tarjetas de Asistencia
+    Route::get('/api/internal/users', [TarjetaController::class, 'getUsers']);
+    Route::post('/api/internal/schedules', [TarjetaController::class, 'getSchedule']);
 
     // --- MÓDULO KÁRDEX ---
     Route::prefix('kardex')->name('kardex.')->group(function () {

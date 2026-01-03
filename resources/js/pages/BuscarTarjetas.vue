@@ -33,7 +33,7 @@ const selectedEmployee = ref(null);
  */
 onMounted(async () => {
   try {
-    const response = await axios.get(`http://10.37.1.6:5000/api/users`);
+    const response = await axios.get('/api/internal/users');
     employees.value = response.data.users;
   } catch (error) {
     console.error('Error al obtener todos los empleados:', error);
