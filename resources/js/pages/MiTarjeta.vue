@@ -5,27 +5,23 @@ import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// --- IMPORTS ---
-import { home } from '@/routes'; // Ruta para el botón de volver
-import { getSchedule } from '@/routes'; // Ruta de la API (asegúrate de haber corrido php artisan wayfinder:generate)
-
-// Importamos tu componente visual (ajusta la ruta si lo tienes en otra carpeta, ej: '@/Components/...')
+import { home } from '@/routes';
+import { getSchedule } from '@/routes'; 
+import { download_pdf } from '@/routes/tarjetas'; 
 import TarjetaPdf from './TarjetaPdf.vue'; 
 
 const props = defineProps({
-    empleado: {
-        type: Object,
-        required: true
-    }
+    empleado: Object,
+    descargasPrevias: { type: Array, default: () => [] },
+    // El resumen de faltas viene del controlador: { 1: [5, 12], 2: [1] }
+    resumenFaltas: { type: Object, default: () => ({}) }
 });
 
-// Configuración Fija
 const year = 2025;
-const loadingId = ref(null); // Controla el spinner de carga por mes
-const generatingPdf = ref(false); // Controla si se renderiza la tarjeta oculta
+const loadingId = ref(null);
+const generatingPdf = ref(false);
+const downloadedMonths = ref(new Set(props.descargasPrevias));
 
-// --- ESTADO PARA LA TARJETA OCULTA (PDF) ---
-// Estos datos alimentarán al componente TarjetaPdf cuando se genere el documento
 const pdfData = ref({
     schedule: { horario: '', registros: [] },
     selectedMonth: 1,
@@ -35,7 +31,6 @@ const pdfData = ref({
     secondFortnight: []
 });
 
-// Meses para el Grid
 const months = [
     { id: 1, name: 'Enero' }, { id: 2, name: 'Febrero' }, { id: 3, name: 'Marzo' },
     { id: 4, name: 'Abril' }, { id: 5, name: 'Mayo' }, { id: 6, name: 'Junio' },
@@ -43,210 +38,159 @@ const months = [
     { id: 10, name: 'Octubre' }, { id: 11, name: 'Noviembre' }, { id: 12, name: 'Diciembre' },
 ];
 
-// Mapeo de datos del empleado para que coincidan con lo que espera TarjetaPdf
-// (TarjetaPdf espera 'emp_code', pero tu controlador manda 'id')
 const employeeForPdf = computed(() => ({
     ...props.empleado,
-    emp_code: props.empleado.id, // Mapeamos ID a emp_code
-    department_name: props.empleado.department_name // Aseguramos compatibilidad
+    emp_code: props.empleado.emp_code || props.empleado.id, 
 }));
 
-// --- HELPERS ---
 const getDayFromDateString = (dateString) => {
-    if (!dateString || typeof dateString !== 'string') return '';
-    const parts = dateString.split('-');
-    return parseInt(parts[2], 10);
+    if (!dateString) return '';
+    return parseInt(dateString.split('-')[2], 10);
 };
 
-// --- PROCESAMIENTO DE DATOS ---
+const handleImageError = (e) => {
+    e.target.src = "https://placehold.co/90x90/D1D5DB/4B5563?text=LOGO";
+};
+
+// --- ESTILOS DE FILA (ROJO SI HAY FALTA) ---
+const getRowClass = (monthId) => {
+    // Verificamos si existe el mes en el objeto y si tiene elementos
+    if (props.resumenFaltas && props.resumenFaltas[monthId] && props.resumenFaltas[monthId].length > 0) {
+        return 'bg-red-50 border-l-4 border-l-red-400 hover:bg-red-100'; 
+    }
+    return 'hover:bg-blue-50'; 
+};
+
+// --- PROCESAMIENTO PDF ---
 const processDataForPdf = (apiData, monthId) => {
     const registrosRaw = apiData.registros || [];
-    
-    // 1. Limpieza y Reglas de Negocio Visuales (DESC + Obs = J)
     const processedRegistros = registrosRaw.map(registro => {
         const hasObservation = registro.observaciones && registro.observaciones.trim().length > 0;
         let displayCalificacion = registro.calificacion;
+        if (registro.calificacion === 'DESC' && hasObservation) displayCalificacion = 'J';
         
-        if (registro.calificacion === 'DESC' && hasObservation) {
-            displayCalificacion = 'J';
-        }
-        
-        // Quitar segundos de la hora para limpieza visual
-        const cleanCheckin = registro.checkin ? registro.checkin.substring(0, 5) : '';
-        const cleanCheckout = registro.checkout ? registro.checkout.substring(0, 5) : '';
-
         return {
             ...registro,
-            checkin: cleanCheckin,
-            checkout: cleanCheckout,
+            checkin: registro.checkin ? registro.checkin.substring(0, 5) : '',
+            checkout: registro.checkout ? registro.checkout.substring(0, 5) : '',
             calificacion: displayCalificacion
         };
     });
 
-    // 2. Separar en Quincenas (Requisito de TarjetaPdf)
-    const first = processedRegistros.filter(r => {
-        const d = getDayFromDateString(r.dia);
-        return d <= 15;
-    });
-    
-    const second = processedRegistros.filter(r => {
-        const d = getDayFromDateString(r.dia);
-        return d > 15;
-    });
-
-    // 3. Asignar al estado reactivo
     pdfData.value.schedule = apiData;
     pdfData.value.selectedMonth = monthId;
     pdfData.value.selectedYear = year;
     pdfData.value.daysInMonth = new Date(year, monthId, 0).getDate();
-    pdfData.value.firstFortnight = first;
-    pdfData.value.secondFortnight = second;
+    pdfData.value.firstFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) <= 15);
+    pdfData.value.secondFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) > 15);
 };
 
-// --- FUNCIÓN PRINCIPAL DE DESCARGA ---
+const registrarDescargaEnBackend = async (monthId) => {
+    try {
+        await axios.post(download_pdf().url, { month: monthId, year: year });
+        downloadedMonths.value.add(monthId);
+    } catch (e) { console.error(e); }
+};
+
 const descargarTarjeta = async (monthId) => {
     loadingId.value = monthId;
-    
     try {
-        // 1. Obtener datos de la API
-        const url = getSchedule().url;
-        const response = await axios.post(url, {
-            emp_id: props.empleado.id,
+        const response = await axios.post(getSchedule().url, {
+            emp_id: props.empleado.id, // ID Interno para la API
             month: monthId,
             year: year
         });
 
-        // 2. Procesar datos para el componente visual
         processDataForPdf(response.data, monthId);
-
-        // 3. Renderizar el componente oculto
         generatingPdf.value = true;
-        await nextTick(); // Esperamos a que Vue dibuje el DOM
+        await nextTick(); 
 
-        // 4. Generar el PDF (mismo método que en Tarjetas Generales)
         const element = document.getElementById('pdf-content');
-        if (!element) throw new Error("No se pudo renderizar la tarjeta para impresión.");
+        if (!element) throw new Error("Error render");
 
-        const canvas = await html2canvas(element, { 
-            scale: 2, // Alta resolución
-            useCORS: true,
-            logging: false,
-            windowWidth: element.scrollWidth,
-            windowHeight: element.scrollHeight
-        });
-        
+        const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false });
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        const pdf = new jsPDF('p', 'mm', 'letter'); // Vertical, mm, Carta
-        
+        const pdf = new jsPDF('p', 'mm', 'letter');
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Tarjeta_${props.empleado.emp_code}_${months[monthId-1].name}_${year}.pdf`);
         
-        // 5. Guardar archivo
-        const mesNombre = months.find(m => m.id === monthId).name;
-        pdf.save(`Tarjeta_${props.empleado.id}_${mesNombre}_${year}.pdf`);
-
-    } catch (error) {
-        console.error("Error al generar PDF:", error);
-        alert("Hubo un error al generar el documento. Por favor intente de nuevo.");
+        await registrarDescargaEnBackend(monthId);
+    } catch (e) {
+        alert("Error al generar PDF.");
+        console.error(e);
     } finally {
-        generatingPdf.value = false; // Ocultar componente
-        loadingId.value = null; // Quitar spinner
+        generatingPdf.value = false;
+        loadingId.value = null;
     }
 };
 </script>
 
 <template>
-    <Head title="Mis Tarjetas 2025" />
+    <Head title="Tarjetas de asistencia del año 2025" />
 
-    <div class="min-h-screen bg-gray-50 p-6">
-        <div class="max-w-6xl mx-auto">
-            
-            <!-- ENCABEZADO Y NAVEGACIÓN -->
-            <div class="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-800">Mis Tarjetas</h1>
-                    <p class="text-gray-500 mt-1">Historial Anual de Asistencia {{ year }}</p>
+    <div class="schedule-card-wrapper">
+        <div class="nav-bar">
+            <Link :href="home().url" class="back-link">← Volver al Menú</Link>
+        </div>
+
+        <div class="schedule-card">
+            <div class="header">
+                <img src="/images/logo_cdmx.jpeg" alt="Logo CDMX" class="logo" @error="handleImageError">
+                <div class="header-text">
+                    <h2 class="font-bold text-2xl text-gray-800">{{ empleado.first_name }} {{ empleado.last_name }}</h2>
+                    <p class="text-sm text-gray-500">Expediente: {{ empleado.emp_code }} | Departamento: {{ empleado.department_name }}</p>
                 </div>
-                
-                <Link :href="home().url" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 font-semibold py-2 px-5 rounded-lg shadow-sm transition-all flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-                    Volver al Inicio
-                </Link>
+                <img src="/images/logo_mujer_indigena.jpeg" alt="Logo" class="logo" @error="handleImageError">
             </div>
 
-            <!-- FICHA DEL EMPLEADO -->
-            <div class="bg-white rounded-xl shadow-md border-t-4 border-blue-600 mb-8 p-6">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div class="bg-gray-50 p-4 rounded-lg">
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">ID Empleado</p>
-                        <p class="text-xl font-bold text-gray-900">{{ empleado.id }}</p>
-                    </div>
-                    <div class="bg-gray-50 p-4 rounded-lg md:col-span-2">
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Nombre Completo</p>
-                        <p class="text-xl font-bold text-gray-900">{{ empleado.first_name }} {{ empleado.last_name }}</p>
-                    </div>
-                    <div class="bg-gray-50 p-4 rounded-lg">
-                        <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Departamento</p>
-                        <p class="text-sm font-medium text-gray-900 truncate" :title="empleado.department_name">
-                            {{ empleado.department_name }}
-                        </p>
-                    </div>
+            <div class="content-body">
+                <div class="table-header">
+                    <h3 class="text-lg font-semibold text-gray-700">Tarjetas de asistencia del año {{ year }}</h3>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Mes</th>
+                                <th class="text-center">Año</th>
+                                <th class="text-center">Estatus</th>
+                                <th class="text-right">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="month in months" :key="month.id" :class="getRowClass(month.id)" class="transition-colors duration-150">
+                                <td class="font-medium text-gray-700">{{ month.name }}</td>
+                                <td class="text-center text-gray-500">{{ year }}</td>
+                                <td class="text-center">
+                                    <div class="flex flex-col items-center justify-center gap-1">
+                                        <span v-if="downloadedMonths.has(month.id)" class="status-badge generated">Generado</span>
+                                        <span v-else class="status-badge available">Disponible</span>
+                                        
+                                        <!-- INDICADOR DE FALTAS -->
+                                        <div v-if="resumenFaltas[month.id] && resumenFaltas[month.id].length > 0" class="flex items-center text-xs text-red-600 font-bold mt-1">
+                                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                                            Falta día(s): {{ resumenFaltas[month.id].join(', ') }}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="text-right align-middle">
+                                    <button @click="descargarTarjeta(month.id)" :disabled="loadingId !== null" class="download-button-small">
+                                        <span v-if="loadingId === month.id">Cargando...</span>
+                                        <span v-else>Descargar PDF</span>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
-
-            <!-- GRID DE MESES -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                <div 
-                    v-for="month in months" 
-                    :key="month.id" 
-                    class="bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex flex-col justify-between h-full"
-                >
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <h3 class="font-bold text-lg text-gray-800">{{ month.name }}</h3>
-                            <p class="text-xs text-gray-400">Periodo {{ year }}</p>
-                        </div>
-                        <div class="h-10 w-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
-                            {{ month.id }}
-                        </div>
-                    </div>
-                    
-                    <button 
-                        @click="descargarTarjeta(month.id)"
-                        :disabled="loadingId !== null"
-                        class="w-full mt-auto flex justify-center items-center gap-2 py-2.5 px-4 bg-white border border-gray-200 text-gray-700 hover:bg-blue-600 hover:text-white hover:border-blue-600 rounded-lg font-medium transition-all text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group"
-                    >
-                        <!-- Spinner de carga -->
-                        <template v-if="loadingId === month.id">
-                            <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <span>Generando...</span>
-                        </template>
-                        
-                        <!-- Icono Descargar -->
-                        <template v-else>
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            <span>Descargar PDF</span>
-                        </template>
-                    </button>
-                </div>
-            </div>
-
         </div>
     </div>
 
-    <!-- 
-      === COMPONENTE OCULTO PARA GENERACIÓN DE PDF ===
-      Este componente solo se renderiza cuando generatingPdf es true.
-      Usa la misma estructura que Tarjetas Generales para mantener consistencia.
-      Está posicionado fuera de pantalla por su propio CSS.
-    -->
     <TarjetaPdf 
         v-if="generatingPdf"
         :employee="employeeForPdf"
@@ -259,3 +203,28 @@ const descargarTarjeta = async (monthId) => {
         :selected-year="pdfData.selectedYear"
     />
 </template>
+
+<style scoped>
+/* ESTILOS COPIADOS DE SCHEDULEVIEWER */
+.schedule-card-wrapper { min-height: 100vh; background-color: #f3f4f6; padding: 24px; }
+.nav-bar { max-width: 1000px; margin: 0 auto 16px auto; display: flex; justify-content: flex-end; }
+.back-link { color: #6b7280; text-decoration: none; font-weight: 500; font-size: 14px; transition: color 0.2s; }
+.back-link:hover { color: #2563eb; }
+.schedule-card { max-width: 1000px; margin: 0 auto; padding: 32px; background-color: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+.header { display: flex; justify-content: space-between; align-items: center; text-align: center; margin-bottom: 24px; border-bottom: 1px solid #e5e7eb; padding-bottom: 24px; }
+.header .logo { height: 90px; width: auto; }
+.header .header-text { flex-grow: 1; }
+.table-wrapper { width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+th { background-color: #f9fafb; font-weight: 600; color: #374151; }
+td { color: #4b5563; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.status-badge { padding: 4px 8px; border-radius: 9999px; font-size: 12px; font-weight: 500; }
+.status-badge.available { background-color: #f3f4f6; color: #4b5563; }
+.status-badge.generated { background-color: #dcfce7; color: #166534; }
+.download-button-small { padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; background-color: white; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; transition: all 0.2s; }
+.download-button-small:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; background-color: #eff6ff; }
+.download-button-small:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>

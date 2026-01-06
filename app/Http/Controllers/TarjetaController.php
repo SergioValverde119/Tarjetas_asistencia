@@ -19,25 +19,47 @@ class TarjetaController extends Controller
     }
 
     /**
-     * --- NUEVO: MÓDULO INDIVIDUAL ---
-     * Muestra la vista "Mi Tarjeta" con los datos del empleado logueado.
-     * Ruta: /MiTarjeta
+     * --- MÓDULO INDIVIDUAL ---
+     * Muestra la vista "Mi Tarjeta".
      */
     public function indexIndividual()
     {
         $user = Auth::user();
-
-        // Preparamos los datos del empleado para mostrarlos en la cabecera de la vista
-        // Si tienes una tabla separada de empleados, aquí harías una consulta extra:
-        // $empleadoDB = $this->repository->findEmployeeById($user->employee_id);
         
-        $empleadoData = [
-            'id' => $user->employee_id ?? $user->id,
-            'first_name' => $user->name,
-            'last_name' => $user->last_name ?? '',
-            'department_name' => $user->department ?? 'General',
-            'job_title' => $user->position ?? 'Colaborador',
-        ];
+        // 1. CORRECCIÓN DEFINITIVA:
+        // 'biotime_id' en Laravel es la Foreign Key que apunta al 'id' (PK) de personnel_employee.
+        $pkBiotime = $user->biotime_id; 
+
+        $empleadoData = null;
+
+        // 2. Buscamos al empleado en el repositorio coincidiendo por su ID interno (PK)
+        if ($pkBiotime) {
+            try {
+                $allEmployees = $this->repository->getAllEmployees();
+                
+                foreach ($allEmployees as $emp) {
+                    // Comparamos el ID interno de la base de datos de Biotime con la FK del usuario
+                    if (strval($emp->id) === strval($pkBiotime)) {
+                        $empleadoData = $emp;
+                        break;
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("Error buscando empleado Biotime por ID: " . $e->getMessage());
+            }
+        }
+
+        // 3. Fallback si no se encuentra
+        if (!$empleadoData) {
+            $empleadoData = [
+                'id' => $pkBiotime ?? 'N/A', // ID Interno
+                'emp_code' => 'N/A', // Código de empleado visual
+                'first_name' => $user->name,
+                'last_name' => '', 
+                'department_name' => 'No vinculado (Verificar biotime_id)',
+                'job_title' => ''
+            ];
+        }
 
         return Inertia::render('MiTarjeta', [
             'empleado' => $empleadoData
@@ -45,9 +67,7 @@ class TarjetaController extends Controller
     }
 
     /**
-     * --- NUEVO: DESCARGA DE PDF ---
-     * Genera el reporte de asistencia para un mes específico.
-     * Ruta: /MiTarjeta/descargar
+     * --- DESCARGA DE PDF ---
      */
     public function downloadPdf(Request $request)
     {
@@ -58,56 +78,32 @@ class TarjetaController extends Controller
 
         try {
             $user = Auth::user();
-            $empId = $user->employee_id ?? $user->id;
-            $month = $request->month;
-            $year = $request->year;
-
-            // 1. Obtener rango de fechas
-            $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth()->format('Y-m-d');
-            $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
-
-            // 2. Obtener datos (aquí reutilizamos la lógica de asistencia si vas a armar el PDF con datos reales)
-            // $registros = $this->repository->getAttendanceRecords($empId, $startOfMonth, $endOfMonth);
+            // Usamos la FK para loguear o validar
+            $empId = $user->biotime_id ?? 'N/A';
             
-            // --- SIMULACIÓN DE PDF ---
-            // Nota: Aquí debes integrar tu librería de PDF favorita (DomPDF o Snappy)
-            // Ejemplo real: 
-            // $pdf = PDF::loadView('pdf.tarjeta', compact('registros', 'user'));
-            // return $pdf->download("Tarjeta_{$empId}_{$month}_{$year}.pdf");
-            
-            $content = "Reporte de Asistencia (Simulado)\n\nEmpleado: {$user->name}\nID: {$empId}\nPeriodo: {$month}/{$year}\n\n(Aquí se mostraría la tabla generada por DomPDF o Snappy)";
-            
-            return response($content)
-                ->header('Content-Type', 'application/pdf') // Cambia a text/plain si estás probando sin librería PDF
-                ->header('Content-Disposition', 'attachment; filename="Tarjeta_' . $empId . '_' . $month . '_' . $year . '.pdf"');
+            return response()->json(['message' => 'Descarga iniciada para PK: ' . $empId]);
 
         } catch (Exception $e) {
-            return response()->json(['error' => 'Error al generar PDF: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Error: ' . $e->getMessage()], 500);
         }
     }
 
     /**
      * --- API: OBTENER USUARIOS ---
-     * Usado por: Tarjetas Generales (Admin)
-     * Endpoint: /api/internal/users
      */
     public function getUsers()
     {
-        // error_log('DEBUG: Inicio de petición getUsers'); // Descomentar para debug
-
         try {
             $users = $this->repository->getAllEmployees();
             return response()->json(['users' => $users]);
         } catch (Exception $e) {
             error_log('ERROR en getUsers: ' . $e->getMessage());
-            return response()->json(['error' => 'Error al obtener usuarios: ' . $e->getMessage()], 500);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
     /**
-     * --- API: OBTENER HORARIO Y ASISTENCIA ---
-     * Usado por: Tarjetas Generales y MiTarjeta (si necesitaras ver detalle en el futuro)
-     * Endpoint: /api/internal/schedules
+     * --- API: OBTENER HORARIO ---
      */
     public function getSchedule(Request $request)
     {
@@ -122,11 +118,9 @@ class TarjetaController extends Controller
             $month = $request->month;
             $year = $request->year;
 
-            // 1. Definir rango de fechas
             $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth()->format('Y-m-d');
             $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
 
-            // 2. Consultar BD
             $registrosRaw = $this->repository->getAttendanceRecords($empId, $startOfMonth, $endOfMonth);
             $holidaysRaw = $this->repository->getHolidays($startOfMonth, $endOfMonth);
 
@@ -134,19 +128,16 @@ class TarjetaController extends Controller
                 return response()->json(['horario' => null, 'registros' => []]);
             }
 
-            // 3. Procesar lógica de negocio (retardos, faltas, descansos)
             $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $startOfMonth, $endOfMonth);
 
-            // 4. Calcular texto del horario (basado en el primer registro encontrado)
             $horarioTexto = 'Sin horario';
-            
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->duration) {
                 try {
                     $startTime = Carbon::createFromFormat('H:i:s', $registrosRaw[0]->in_time);
                     $endTime = (clone $startTime)->addMinutes($registrosRaw[0]->duration);
                     $horarioTexto = $startTime->format('H:i:s') . ' A ' . $endTime->format('H:i:s');
                 } catch (Exception $e) {
-                    $horarioTexto = $registrosRaw[0]->in_time; // Fallback si falla el formato
+                    $horarioTexto = $registrosRaw[0]->in_time;
                 }
             }
 
@@ -157,14 +148,12 @@ class TarjetaController extends Controller
 
         } catch (Exception $e) {
             error_log('ERROR en getSchedule: ' . $e->getMessage());
-            return response()->json(['error' => 'Error al obtener horario: ' . $e->getMessage()], 500);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * --- PRIVADO: LÓGICA DE PROCESAMIENTO ---
-     * Itera día por día para determinar el estado de asistencia.
-     */
+    // --- LÓGICA PRIVADA ---
+
     private function transformarRegistros($registros, $holidays, $startDate, $endDate)
     {
         $start = Carbon::parse($startDate);
@@ -173,12 +162,10 @@ class TarjetaController extends Controller
         $retardosLevesPrevios = 0;
         $resultados = [];
 
-        // Iterar día por día del mes
         for ($date = $start; $date->lte($end); $date->addDay()) {
             $fechaActualStr = $date->format('Y-m-d');
-
-            // Buscar registro existente para este día
             $registroDia = null;
+            
             foreach ($registros as $reg) {
                 if (Carbon::parse($reg->att_date)->format('Y-m-d') === $fechaActualStr) {
                     $registroDia = $reg;
@@ -186,7 +173,6 @@ class TarjetaController extends Controller
                 }
             }
 
-            // Buscar si es festivo
             $holidayDia = null;
             foreach ($holidays as $hol) {
                 if (Carbon::parse($hol->start_date)->format('Y-m-d') === $fechaActualStr) {
@@ -197,7 +183,6 @@ class TarjetaController extends Controller
 
             $esFinDeSemana = $date->isWeekend();
 
-            // Lógica de "Descanso" (DESC) o Festivo
             if (!$registroDia || $esFinDeSemana || ($holidayDia && isset($registroDia->enable_holiday) && $registroDia->enable_holiday === true)) {
                 $resultados[] = [
                     'dia' => $fechaActualStr,
@@ -209,21 +194,13 @@ class TarjetaController extends Controller
                 continue;
             }
 
-            // Evaluar Retardo
             $calificacion = $this->evaluarRetardo($registroDia, $retardosLevesPrevios);
 
-            // Contar Retardos Leves para acumulación
-            if ($calificacion === 'RL') {
-                $retardosLevesPrevios += 1;
-            }
-
-            // Regla: 4 Retardos Leves = 1 Retardo Grave
+            if ($calificacion === 'RL') $retardosLevesPrevios += 1;
             if ($retardosLevesPrevios >= 4) {
                 $calificacion = 'RG';
-                $retardosLevesPrevios = 0; // Reiniciar contador
+                $retardosLevesPrevios = 0;
             }
-
-            // Regla: Falta con Justificación = J
             if ($calificacion === 'F' && !empty($registroDia->apply_reason)) {
                 $calificacion = 'J';
             }
@@ -236,47 +213,24 @@ class TarjetaController extends Controller
                 'observaciones' => $registroDia->apply_reason ?? ''
             ];
         }
-
         return $resultados;
     }
 
-    /**
-     * --- PRIVADO: REGLAS DE TIEMPO ---
-     * Evalúa la calificación del registro (OK, RL, RG, F).
-     */
     private function evaluarRetardo($registro, $retardosLevesPrevios)
     {
-        if (empty($registro->clock_in)) {
-            return 'F';
-        }
+        if (empty($registro->clock_in)) return 'F';
 
-        // Construir hora estándar de entrada
         $fechaCheckIn = Carbon::parse($registro->check_in)->format('Y-m-d');
         $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
-        
         $horaRealEntrada = Carbon::parse($registro->clock_in);
-
-        // Diferencia en minutos (negativo = temprano/a tiempo, positivo = tarde)
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
-
-        // Tolerancia
         $tolerance = $registro->allow_late - 1;
 
-        if ($diferenciaMinutos <= $tolerance) {
-            return 'OK';
-        }
-
+        if ($diferenciaMinutos <= $tolerance) return 'OK';
         if ($diferenciaMinutos > $tolerance && $diferenciaMinutos <= 20) {
-            // Verifica regla de acumulación dentro de la evaluación (opcional, ya se maneja fuera)
-            if ($retardosLevesPrevios >= 4) {
-                return 'RG';
-            }
-            return 'RL';
+            return ($retardosLevesPrevios >= 4) ? 'RG' : 'RL';
         }
-
-        if ($diferenciaMinutos > 20 && $diferenciaMinutos <= 31) {
-            return 'RG';
-        }
+        if ($diferenciaMinutos > 20 && $diferenciaMinutos <= 31) return 'RG';
 
         return 'F';
     }
