@@ -5,15 +5,15 @@ import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
+// --- IMPORTS ---
 import { home } from '@/routes';
 import { getSchedule } from '@/routes'; 
 import { download_pdf } from '@/routes/tarjetas'; 
 import TarjetaPdf from './TarjetaPdf.vue'; 
 
 const props = defineProps({
-    empleado: Object,
+    empleado: { type: Object, required: true },
     descargasPrevias: { type: Array, default: () => [] },
-    // El resumen de faltas viene del controlador: { 1: [5, 12], 2: [1] }
     resumenFaltas: { type: Object, default: () => ({}) }
 });
 
@@ -21,6 +21,13 @@ const year = 2025;
 const loadingId = ref(null);
 const generatingPdf = ref(false);
 const downloadedMonths = ref(new Set(props.descargasPrevias));
+
+// Estado para el Modal de Error (Bloqueo)
+const showModal = ref(false);
+
+// Estado para el Modal de Confirmación (Aviso de descarga única)
+const showConfirmModal = ref(false);
+const pendingMonthId = ref(null);
 
 const pdfData = ref({
     schedule: { horario: '', registros: [] },
@@ -52,13 +59,39 @@ const handleImageError = (e) => {
     e.target.src = "https://placehold.co/90x90/D1D5DB/4B5563?text=LOGO";
 };
 
-// --- ESTILOS DE FILA (ROJO SI HAY FALTA) ---
+// --- HELPER: DETECTAR FALTAS ---
+const hasFaults = (monthId) => {
+    return props.resumenFaltas && props.resumenFaltas[monthId] && props.resumenFaltas[monthId].length > 0;
+};
+
+// --- ESTILOS DE FILA ---
 const getRowClass = (monthId) => {
-    // Verificamos si existe el mes en el objeto y si tiene elementos
-    if (props.resumenFaltas && props.resumenFaltas[monthId] && props.resumenFaltas[monthId].length > 0) {
-        return 'bg-red-50 border-l-4 border-l-red-400 hover:bg-red-100'; 
+    if (hasFaults(monthId)) {
+        return 'bg-red-50 border-l-4 border-l-red-500'; // Estilo bloqueado
     }
     return 'hover:bg-blue-50'; 
+};
+
+// --- MANEJO DE CLIC EN EL BOTÓN ---
+const handleAction = (monthId) => {
+    // 1. Si tiene faltas, mostramos el modal de error/bloqueo
+    if (hasFaults(monthId)) {
+        showModal.value = true;
+        return;
+    }
+    
+    // 2. Si está disponible, pedimos confirmación con el aviso legal
+    pendingMonthId.value = monthId;
+    showConfirmModal.value = true;
+};
+
+// --- CONFIRMAR DESCARGA ---
+const confirmDownload = () => {
+    if (pendingMonthId.value !== null) {
+        descargarTarjeta(pendingMonthId.value);
+    }
+    showConfirmModal.value = false;
+    pendingMonthId.value = null;
 };
 
 // --- PROCESAMIENTO PDF ---
@@ -96,7 +129,7 @@ const descargarTarjeta = async (monthId) => {
     loadingId.value = monthId;
     try {
         const response = await axios.post(getSchedule().url, {
-            emp_id: props.empleado.id, // ID Interno para la API
+            emp_id: props.empleado.id, 
             month: monthId,
             year: year
         });
@@ -106,7 +139,7 @@ const descargarTarjeta = async (monthId) => {
         await nextTick(); 
 
         const element = document.getElementById('pdf-content');
-        if (!element) throw new Error("Error render");
+        if (!element) throw new Error("Render error");
 
         const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false });
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -120,7 +153,6 @@ const descargarTarjeta = async (monthId) => {
         await registrarDescargaEnBackend(monthId);
     } catch (e) {
         alert("Error al generar PDF.");
-        console.error(e);
     } finally {
         generatingPdf.value = false;
         loadingId.value = null;
@@ -166,21 +198,54 @@ const descargarTarjeta = async (monthId) => {
                                 <td class="font-medium text-gray-700">{{ month.name }}</td>
                                 <td class="text-center text-gray-500">{{ year }}</td>
                                 <td class="text-center">
-                                    <div class="flex flex-col items-center justify-center gap-1">
-                                        <span v-if="downloadedMonths.has(month.id)" class="status-badge generated">Generado</span>
-                                        <span v-else class="status-badge available">Disponible</span>
-                                        
-                                        <!-- INDICADOR DE FALTAS -->
-                                        <div v-if="resumenFaltas[month.id] && resumenFaltas[month.id].length > 0" class="flex items-center text-xs text-red-600 font-bold mt-1">
-                                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-                                            Falta día(s): {{ resumenFaltas[month.id].join(', ') }}
+                                    
+                                    <!-- LÓGICA DE ESTATUS -->
+                                    <template v-if="hasFaults(month.id)">
+                                        <!-- CASO 1: CON FALTAS (Bloqueado) -->
+                                        <div class="flex flex-col items-center">
+                                            <span class="status-badge blocked">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                No disponible
+                                            </span>
+                                            <!-- Detalle de días -->
+                                            <div class="text-[11px] text-red-600 font-bold mt-1">
+                                                Falta día(s): {{ resumenFaltas[month.id].join(', ') }}
+                                            </div>
                                         </div>
-                                    </div>
+                                    </template>
+                                    
+                                    <template v-else>
+                                        <!-- CASO 2: SIN FALTAS -->
+                                        <span v-if="downloadedMonths.has(month.id)" class="status-badge generated">
+                                            <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                            Generado
+                                        </span>
+                                        <span v-else class="status-badge available">Disponible</span>
+                                    </template>
+
                                 </td>
                                 <td class="text-right align-middle">
-                                    <button @click="descargarTarjeta(month.id)" :disabled="loadingId !== null" class="download-button-small">
-                                        <span v-if="loadingId === month.id">Cargando...</span>
-                                        <span v-else>Descargar PDF</span>
+                                    <!-- BOTÓN INTELIGENTE -->
+                                    <button 
+                                        @click="handleAction(month.id)" 
+                                        :disabled="loadingId !== null"
+                                        class="download-button-small"
+                                        :class="{'btn-blocked': hasFaults(month.id)}"
+                                    >
+                                        <template v-if="hasFaults(month.id)">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="-ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                            </svg>
+                                            Ver Detalle
+                                        </template>
+                                        <template v-else-if="loadingId === month.id">
+                                            <svg class="animate-spin -ml-1 mr-2 h-3 w-3 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            Cargando...
+                                        </template>
+                                        <template v-else>
+                                            <svg class="-ml-1 mr-2 h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                                            Descargar
+                                        </template>
                                     </button>
                                 </td>
                             </tr>
@@ -191,6 +256,58 @@ const descargarTarjeta = async (monthId) => {
         </div>
     </div>
 
+    <!-- MODAL DE BLOQUEO (ERROR) -->
+    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 transition-opacity">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up">
+            <!-- Icono Alerta -->
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            
+            <h3 class="text-lg font-bold text-center text-gray-900 mb-2">Acceso Restringido</h3>
+            
+            <p class="text-sm text-gray-600 text-center mb-6 leading-relaxed">
+                Se encuentran faltas o retardos graves no justificados en ese mes. Si considera esto un error, por favor acérquese a planta baja al área de Administración.
+            </p>
+            
+            <div class="flex justify-center">
+                <button @click="showModal = false" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-md transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    Entendido
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE CONFIRMACIÓN (AVISO) -->
+    <div v-if="showConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 transition-opacity">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up">
+            <!-- Icono Info -->
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
+                <svg class="h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                </svg>
+            </div>
+            
+            <h3 class="text-lg font-bold text-center text-gray-900 mb-2">Aviso Importante</h3>
+            
+            <p class="text-sm text-gray-600 text-center mb-6 leading-relaxed">
+                Solo se puede descargar una vez la tarjeta en formato PDF para su impresión. Si se presenta un error con la descarga de esta, por favor acérquese a planta baja al área de administración.
+            </p>
+            
+            <div class="flex justify-center gap-4">
+                <button @click="showConfirmModal = false" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-md transition-colors">
+                    Cancelar
+                </button>
+                <button @click="confirmDownload" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Descargar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- COMPONENTE OCULTO PARA PDF -->
     <TarjetaPdf 
         v-if="generatingPdf"
         :employee="employeeForPdf"
@@ -205,7 +322,6 @@ const descargarTarjeta = async (monthId) => {
 </template>
 
 <style scoped>
-/* ESTILOS COPIADOS DE SCHEDULEVIEWER */
 .schedule-card-wrapper { min-height: 100vh; background-color: #f3f4f6; padding: 24px; }
 .nav-bar { max-width: 1000px; margin: 0 auto 16px auto; display: flex; justify-content: flex-end; }
 .back-link { color: #6b7280; text-decoration: none; font-weight: 500; font-size: 14px; transition: color 0.2s; }
@@ -221,10 +337,46 @@ th { background-color: #f9fafb; font-weight: 600; color: #374151; }
 td { color: #4b5563; }
 .text-center { text-align: center; }
 .text-right { text-align: right; }
-.status-badge { padding: 4px 8px; border-radius: 9999px; font-size: 12px; font-weight: 500; }
-.status-badge.available { background-color: #f3f4f6; color: #4b5563; }
-.status-badge.generated { background-color: #dcfce7; color: #166534; }
-.download-button-small { padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; background-color: white; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; transition: all 0.2s; }
+
+/* BADGES */
+.status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+.status-badge.available { background-color: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+.status-badge.generated { background-color: #ecfdf5; color: #059669; border-color: #d1fae5; }
+.status-badge.blocked { background-color: #fef2f2; color: #dc2626; border-color: #fecaca; }
+
+/* BOTONES */
+.download-button-small {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    background-color: white;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
 .download-button-small:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; background-color: #eff6ff; }
 .download-button-small:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Estilo para botón bloqueado */
+.download-button-small.btn-blocked {
+    color: #991b1b;
+    border-color: #fecaca;
+    background-color: #fff1f2;
+}
+.download-button-small.btn-blocked:hover {
+    background-color: #fee2e2;
+    border-color: #f87171;
+}
+
+/* Animación simple modal */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up { animation: fadeInUp 0.3s ease-out; }
 </style>
