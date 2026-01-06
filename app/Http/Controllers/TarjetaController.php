@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use App\Repositories\TarjetaRepository;
 use Carbon\Carbon;
+use Inertia\Inertia;
 use Exception;
 
 class TarjetaController extends Controller
@@ -17,44 +19,98 @@ class TarjetaController extends Controller
     }
 
     /**
+     * --- NUEVO: MÓDULO INDIVIDUAL ---
+     * Muestra la vista "Mi Tarjeta" con los datos del empleado logueado.
+     * Ruta: /MiTarjeta
+     */
+    public function indexIndividual()
+    {
+        $user = Auth::user();
+
+        // Preparamos los datos del empleado para mostrarlos en la cabecera de la vista
+        // Si tienes una tabla separada de empleados, aquí harías una consulta extra:
+        // $empleadoDB = $this->repository->findEmployeeById($user->employee_id);
+        
+        $empleadoData = [
+            'id' => $user->employee_id ?? $user->id,
+            'first_name' => $user->name,
+            'last_name' => $user->last_name ?? '',
+            'department_name' => $user->department ?? 'General',
+            'job_title' => $user->position ?? 'Colaborador',
+        ];
+
+        return Inertia::render('MiTarjeta', [
+            'empleado' => $empleadoData
+        ]);
+    }
+
+    /**
+     * --- NUEVO: DESCARGA DE PDF ---
+     * Genera el reporte de asistencia para un mes específico.
+     * Ruta: /MiTarjeta/descargar
+     */
+    public function downloadPdf(Request $request)
+    {
+        $request->validate([
+            'month' => 'required|integer|min:1|max:12',
+            'year' => 'required|integer',
+        ]);
+
+        try {
+            $user = Auth::user();
+            $empId = $user->employee_id ?? $user->id;
+            $month = $request->month;
+            $year = $request->year;
+
+            // 1. Obtener rango de fechas
+            $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth()->format('Y-m-d');
+            $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
+
+            // 2. Obtener datos (aquí reutilizamos la lógica de asistencia si vas a armar el PDF con datos reales)
+            // $registros = $this->repository->getAttendanceRecords($empId, $startOfMonth, $endOfMonth);
+            
+            // --- SIMULACIÓN DE PDF ---
+            // Nota: Aquí debes integrar tu librería de PDF favorita (DomPDF o Snappy)
+            // Ejemplo real: 
+            // $pdf = PDF::loadView('pdf.tarjeta', compact('registros', 'user'));
+            // return $pdf->download("Tarjeta_{$empId}_{$month}_{$year}.pdf");
+            
+            $content = "Reporte de Asistencia (Simulado)\n\nEmpleado: {$user->name}\nID: {$empId}\nPeriodo: {$month}/{$year}\n\n(Aquí se mostraría la tabla generada por DomPDF o Snappy)";
+            
+            return response($content)
+                ->header('Content-Type', 'application/pdf') // Cambia a text/plain si estás probando sin librería PDF
+                ->header('Content-Disposition', 'attachment; filename="Tarjeta_' . $empId . '_' . $month . '_' . $year . '.pdf"');
+
+        } catch (Exception $e) {
+            return response()->json(['error' => 'Error al generar PDF: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * --- API: OBTENER USUARIOS ---
+     * Usado por: Tarjetas Generales (Admin)
      * Endpoint: /api/internal/users
      */
     public function getUsers()
     {
-        error_log('----------------------------------------------------');
-        error_log('DEBUG: Inicio de petición getUsers (/api/internal/users)');
+        // error_log('DEBUG: Inicio de petición getUsers'); // Descomentar para debug
 
         try {
-            // Intentamos obtener los usuarios
             $users = $this->repository->getAllEmployees();
-            
-            error_log('DEBUG: Consulta a BD ejecutada con éxito.');
-            error_log('DEBUG: Cantidad de empleados encontrados: ' . count($users));
-
-            if (count($users) > 0) {
-                // Imprimimos el primer usuario para verificar estructura
-                error_log('DEBUG: Ejemplo del primer registro: ' . json_encode($users[0]));
-            } else {
-                error_log('DEBUG: ¡OJO! La consulta no devolvió ningún registro (Array vacío).');
-            }
-
             return response()->json(['users' => $users]);
-
         } catch (Exception $e) {
-            error_log('ERROR CRÍTICO en getUsers:');
-            error_log('Mensaje: ' . $e->getMessage());
+            error_log('ERROR en getUsers: ' . $e->getMessage());
             return response()->json(['error' => 'Error al obtener usuarios: ' . $e->getMessage()], 500);
         }
     }
 
     /**
+     * --- API: OBTENER HORARIO Y ASISTENCIA ---
+     * Usado por: Tarjetas Generales y MiTarjeta (si necesitaras ver detalle en el futuro)
      * Endpoint: /api/internal/schedules
      */
     public function getSchedule(Request $request)
     {
-        error_log('----------------------------------------------------');
-        error_log('DEBUG: Inicio de petición getSchedule (/api/internal/schedules)');
-        
         try {
             $request->validate([
                 'emp_id' => 'required',
@@ -66,44 +122,33 @@ class TarjetaController extends Controller
             $month = $request->month;
             $year = $request->year;
 
-            error_log("DEBUG: Parámetros recibidos -> EmpID: $empId, Mes: $month, Año: $year");
-
-            // 1. Obtener fechas de inicio y fin de mes
+            // 1. Definir rango de fechas
             $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth()->format('Y-m-d');
             $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
 
             // 2. Consultar BD
-            error_log("DEBUG: Consultando asistencias entre $startOfMonth y $endOfMonth");
             $registrosRaw = $this->repository->getAttendanceRecords($empId, $startOfMonth, $endOfMonth);
             $holidaysRaw = $this->repository->getHolidays($startOfMonth, $endOfMonth);
 
-            error_log('DEBUG: Registros de asistencia encontrados: ' . count($registrosRaw));
-            error_log('DEBUG: Días festivos encontrados: ' . count($holidaysRaw));
-
             if (empty($registrosRaw)) {
-                error_log('DEBUG: No hay registros para procesar, devolviendo vacío.');
                 return response()->json(['horario' => null, 'registros' => []]);
             }
 
-            // 3. Procesar lógica de negocio (retardos, faltas, etc.)
+            // 3. Procesar lógica de negocio (retardos, faltas, descansos)
             $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $startOfMonth, $endOfMonth);
 
-            // 4. Calcular texto del horario
+            // 4. Calcular texto del horario (basado en el primer registro encontrado)
             $horarioTexto = 'Sin horario';
             
-            // CORRECCIÓN APLICADA AQUÍ: Usamos 'H:i:s' en lugar de 'H:mm:ss'
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->duration) {
                 try {
                     $startTime = Carbon::createFromFormat('H:i:s', $registrosRaw[0]->in_time);
                     $endTime = (clone $startTime)->addMinutes($registrosRaw[0]->duration);
                     $horarioTexto = $startTime->format('H:i:s') . ' A ' . $endTime->format('H:i:s');
                 } catch (Exception $e) {
-                    error_log("ADVERTENCIA: No se pudo formatear el horario. Error: " . $e->getMessage());
-                    $horarioTexto = $registrosRaw[0]->in_time; // Fallback
+                    $horarioTexto = $registrosRaw[0]->in_time; // Fallback si falla el formato
                 }
             }
-            
-            error_log("DEBUG: Horario calculado: $horarioTexto");
 
             return response()->json([
                 'horario' => $horarioTexto,
@@ -111,15 +156,14 @@ class TarjetaController extends Controller
             ]);
 
         } catch (Exception $e) {
-            error_log('ERROR CRÍTICO en getSchedule:');
-            error_log('Mensaje: ' . $e->getMessage());
-            error_log('Trace: ' . $e->getTraceAsString());
+            error_log('ERROR en getSchedule: ' . $e->getMessage());
             return response()->json(['error' => 'Error al obtener horario: ' . $e->getMessage()], 500);
         }
     }
 
     /**
-     * Lógica principal de iteración de días.
+     * --- PRIVADO: LÓGICA DE PROCESAMIENTO ---
+     * Itera día por día para determinar el estado de asistencia.
      */
     private function transformarRegistros($registros, $holidays, $startDate, $endDate)
     {
@@ -153,7 +197,7 @@ class TarjetaController extends Controller
 
             $esFinDeSemana = $date->isWeekend();
 
-            // Lógica de "Descanso" (DESC)
+            // Lógica de "Descanso" (DESC) o Festivo
             if (!$registroDia || $esFinDeSemana || ($holidayDia && isset($registroDia->enable_holiday) && $registroDia->enable_holiday === true)) {
                 $resultados[] = [
                     'dia' => $fechaActualStr,
@@ -168,7 +212,7 @@ class TarjetaController extends Controller
             // Evaluar Retardo
             $calificacion = $this->evaluarRetardo($registroDia, $retardosLevesPrevios);
 
-            // Contar Retardos Leves
+            // Contar Retardos Leves para acumulación
             if ($calificacion === 'RL') {
                 $retardosLevesPrevios += 1;
             }
@@ -176,7 +220,7 @@ class TarjetaController extends Controller
             // Regla: 4 Retardos Leves = 1 Retardo Grave
             if ($retardosLevesPrevios >= 4) {
                 $calificacion = 'RG';
-                $retardosLevesPrevios = 0;
+                $retardosLevesPrevios = 0; // Reiniciar contador
             }
 
             // Regla: Falta con Justificación = J
@@ -197,6 +241,7 @@ class TarjetaController extends Controller
     }
 
     /**
+     * --- PRIVADO: REGLAS DE TIEMPO ---
      * Evalúa la calificación del registro (OK, RL, RG, F).
      */
     private function evaluarRetardo($registro, $retardosLevesPrevios)
@@ -222,7 +267,7 @@ class TarjetaController extends Controller
         }
 
         if ($diferenciaMinutos > $tolerance && $diferenciaMinutos <= 20) {
-            // Verifica regla de acumulación dentro de la evaluación
+            // Verifica regla de acumulación dentro de la evaluación (opcional, ya se maneja fuera)
             if ($retardosLevesPrevios >= 4) {
                 return 'RG';
             }
