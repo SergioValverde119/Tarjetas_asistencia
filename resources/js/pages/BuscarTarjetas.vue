@@ -8,6 +8,12 @@ import { Head } from '@inertiajs/vue3';
 // Se asegura de importar el componente hijo que mostrará los detalles del horario.
 import ScheduleViewer from './ScheduleViewer.vue';
 
+import AppSidebar from '@/components/AppSidebar.vue';
+import {
+    SidebarProvider,
+    SidebarInset,
+} from '@/components/ui/sidebar';
+
 // =================================================================================================
 // ESTADO REACTIVO (State)
 // =================================================================================================
@@ -28,8 +34,6 @@ const selectedEmployee = ref(null);
 /**
  * Se ejecuta una vez que el componente ha sido montado en el DOM.
  * Realiza la llamada inicial a la API para obtener la lista completa de empleados.
- * Este enfoque (cargar todo al inicio) es viable para una cantidad moderada de datos.
- * Para listas muy grandes, sería más eficiente hacer la búsqueda en el backend.
  */
 onMounted(async () => {
   try {
@@ -48,19 +52,14 @@ onMounted(async () => {
 
 /**
  * Filtra la lista de 'employees' basándose en el 'searchTerm'.
- * Esta propiedad es reactiva: se recalcula automáticamente cada vez que 'searchTerm' cambia.
- * Esto elimina la necesidad de una función @input en el campo de búsqueda.
- * @returns {Array} - La lista de empleados filtrada.
  */
 const filteredEmployees = computed(() => {
-  // Si no hay término de búsqueda, devuelve la lista completa.
   if (!searchTerm.value) {
     return employees.value;
   }
   
   const searchLower = searchTerm.value.toLowerCase();
   
-  // Filtra la lista comparando el término de búsqueda con el nombre completo y el código de empleado.
   return employees.value.filter(employee => {
     const fullName = `${employee.first_name} ${employee.last_name}`.toLowerCase();
     const empCode = employee.emp_code.toString().toLowerCase();
@@ -74,17 +73,14 @@ const filteredEmployees = computed(() => {
 // =================================================================================================
 
 /**
- * Asigna el empleado seleccionado al estado 'selectedEmployee',
- * lo que provoca que la vista cambie del buscador al visor de horarios.
- * @param {Object} employee - El objeto del empleado al que se le hizo clic.
+ * Asigna el empleado seleccionado al estado 'selectedEmployee'.
  */
 const selectEmployee = (employee) => {
   selectedEmployee.value = employee;
 };
 
 /**
- * Resetea el estado 'selectedEmployee' a 'null',
- * lo que provoca que la vista regrese del visor de horarios al buscador.
+ * Resetea el estado 'selectedEmployee' a 'null'.
  */
 const resetSelection = () => {
   selectedEmployee.value = null;
@@ -94,51 +90,62 @@ const resetSelection = () => {
 <template>
   <Head title="Sistema de Control de Asistencia" />
 
-  <div class="page-container">
-    <!-- Vista de Búsqueda: Se muestra si 'selectedEmployee' es nulo. -->
-    <div v-if="!selectedEmployee" class="search-card">
-      <h1 class="text-3xl font-bold text-gray-800">Sistema de Control de Asistencia</h1>
-      <div class="search-bar">
-        <input
-          type="text"
-          v-model="searchTerm"
-          placeholder="Buscar por nombre o # de empleado"
-        />
-      </div>
-      <div class="employee-list">
-        <p v-if="loading" class="p-4 text-center text-gray-500">Cargando empleados...</p>
-        <ul v-else>
-          <li v-for="employee in filteredEmployees" :key="employee.id" @click="selectEmployee(employee)">
-            {{ employee.emp_code }} - {{ employee.first_name }} {{ employee.last_name }}
-          </li>
-        </ul>
-        <p v-if="!loading && filteredEmployees.length === 0" class="p-4 text-center text-gray-500">
-          No se encontraron empleados.
-        </p>
-      </div>
-    </div>
+  <!-- ESTRUCTURA PRINCIPAL DEL LAYOUT CON SIDEBAR -->
+  <SidebarProvider>
+    <!-- BARRA LATERAL REUTILIZABLE -->
+    <AppSidebar />
 
-    <!-- Vista de Horarios: Se muestra cuando se ha seleccionado un empleado. -->
-    <div v-else class="viewer-container">
-        <div class="mb-4">
-            <button @click="resetSelection" class="back-button">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
-                </svg>
-                Volver a la búsqueda
-            </button>
+    <!-- CONTENIDO PRINCIPAL (INSET) -->
+    <SidebarInset>
+      <div class="page-container">
+        <!-- Vista de Búsqueda: Se muestra si 'selectedEmployee' es nulo. -->
+        <div v-if="!selectedEmployee" class="search-card">
+          <h1 class="text-3xl font-bold text-gray-800">Sistema de Control de Asistencia</h1>
+          <div class="search-bar">
+            <input
+              type="text"
+              v-model="searchTerm"
+              placeholder="Buscar por nombre o # de empleado"
+            />
+          </div>
+          <div class="employee-list">
+            <p v-if="loading" class="p-4 text-center text-gray-500">Cargando empleados...</p>
+            <ul v-else>
+              <li v-for="employee in filteredEmployees" :key="employee.id" @click="selectEmployee(employee)">
+                {{ employee.emp_code }} - {{ employee.first_name }} {{ employee.last_name }}
+              </li>
+            </ul>
+            <p v-if="!loading && filteredEmployees.length === 0" class="p-4 text-center text-gray-500">
+              No se encontraron empleados.
+            </p>
+          </div>
         </div>
-      <!-- Renderiza el componente hijo, pasándole el empleado seleccionado como prop. -->
-      <ScheduleViewer :employee="selectedEmployee" />
-    </div>
-  </div>
+
+        <!-- Vista de Horarios: Se muestra cuando se ha seleccionado un empleado. -->
+        <div v-else class="viewer-container">
+            <div class="mb-4">
+                <button @click="resetSelection" class="back-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                    </svg>
+                    Volver a la búsqueda
+                </button>
+            </div>
+          <!-- Renderiza el componente hijo, pasándole el empleado seleccionado como prop. -->
+          <ScheduleViewer :employee="selectedEmployee" />
+        </div>
+      </div>
+    </SidebarInset>
+  </SidebarProvider>
 </template>
 
 <style scoped>
 .page-container {
   background-color: #f3f4f6;
   padding: 40px;
-  min-height: 100vh;
+  /* min-height: 100vh; <-- Eliminado o ajustado, ya que el SidebarInset maneja la altura principal */
+  width: 100%;
+  height: 100%;
   display: flex;
   justify-content: center;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -152,6 +159,7 @@ const resetSelection = () => {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   text-align: center;
   align-self: flex-start; /* Previene que la tarjeta se estire verticalmente en un contenedor flex. */
+  margin-top: 40px; /* Un poco de margen superior */
 }
 .search-bar {
   margin: 20px 0;
@@ -192,6 +200,7 @@ li:hover {
 .viewer-container {
     width: 100%;
     max-width: 1000px; /* Ancho máximo para el contenedor del visor de horarios. */
+    margin-top: 20px;
 }
 .back-button {
   display: inline-flex;

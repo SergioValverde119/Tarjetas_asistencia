@@ -23,8 +23,10 @@ class User extends Authenticatable
         'username', 
         'biotime_id',
         'email',
+        'role',
         'password',
         'emp_code',
+        
     ];
 
     /**

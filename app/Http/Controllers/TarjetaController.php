@@ -299,4 +299,21 @@ class TarjetaController extends Controller
 
         return 'F';
     }
+
+    public function indexLogs(Request $request) {
+    $query = \App\Models\HistorialDescarga::with('user')->orderBy('downloaded_at', 'desc');
+
+    if ($request->has('search')) {
+        $search = $request->search;
+        $query->whereHas('user', function($q) use ($search) {
+            $q->where('name', 'like', "%{$search}%")
+              ->orWhere('biotime_id', 'like', "%{$search}%");
+        });
+    }
+
+    return Inertia::render('LogsDescargas', [
+        'logs' => $query->paginate(15)->withQueryString(),
+        'filters' => $request->only(['search'])
+    ]);
+}
 }
