@@ -2,12 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use Illuminate\Foundation\Application; // Importante para versiones
+use Illuminate\Foundation\Application;
 use App\Http\Controllers\KardexController;
 use App\Http\Controllers\ReglasController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\TarjetaController;
+// use App\Http\Controllers\ReporteGlobalController; // Deshabilitado temporalmente
+use App\Http\Controllers\AdminUserController; // Nuevo Controlador
 
 /*
 |--------------------------------------------------------------------------
@@ -38,7 +40,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('tarjetas.download_pdf');
 
     // --- API INTERNA: DATOS DE ASISTENCIA INDIVIDUAL ---
-    // Esta ruta es necesaria para que 'MiTarjeta' cargue los datos
     Route::post('/api/internal/schedules', [TarjetaController::class, 'getSchedule'])
         ->name('getSchedule');
 });
@@ -48,6 +49,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // NIVEL 2: SOLO ADMINISTRADORES (Middleware: auth, verified, role:admin)
 // =================================================================================================
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
+
+    Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
+    // --- GESTIÓN DE USUARIOS (NUEVO) ---
+    Route::get('/usuarios/nuevo', [AdminUserController::class, 'create'])->name('users.create');
+    Route::post('/usuarios', [AdminUserController::class, 'store'])->name('users.store');
 
     // --- LOGS DE DESCARGAS ---
     Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
@@ -59,6 +65,15 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
     // --- API INTERNA: LISTADO DE USUARIOS ---
     Route::get('/api/internal/users', [TarjetaController::class, 'getUsers']);
+
+    // --- REPORTES GLOBALES (MASIVOS) - PENDIENTE ---
+    /*
+    Route::prefix('reportes-globales')->name('reportes.')->group(function () {
+        Route::get('/', [ReporteGlobalController::class, 'index'])->name('index');
+        Route::post('/generar', [ReporteGlobalController::class, 'generate'])->name('generate');
+        Route::get('/descargar', [ReporteGlobalController::class, 'download'])->name('download');
+    });
+    */
 
     // --- MÓDULO KÁRDEX ---
     Route::prefix('kardex')->name('kardex.')->group(function () {
