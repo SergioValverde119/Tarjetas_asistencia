@@ -52,8 +52,19 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
     Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
     // --- GESTIÓN DE USUARIOS (NUEVO) ---
+    // 1. Listado
+    Route::get('/usuarios', [AdminUserController::class, 'index'])->name('users.index');
+    // 2. Creación
     Route::get('/usuarios/nuevo', [AdminUserController::class, 'create'])->name('users.create');
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('users.store');
+    Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
+    // 3. Edición
+    Route::get('/usuarios/{user}/editar', [AdminUserController::class, 'edit'])->name('users.edit');
+    Route::put('/usuarios/{user}', [AdminUserController::class, 'update'])->name('users.update');
+    // 4. Borrado
+    Route::delete('/usuarios/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
+
+
 
     // --- LOGS DE DESCARGAS ---
     Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
@@ -99,6 +110,11 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
     // --- VISTA DETALLE EMPLEADO ---
     Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
+
+
+
+    
+
 });
 
 require __DIR__.'/settings.php';
