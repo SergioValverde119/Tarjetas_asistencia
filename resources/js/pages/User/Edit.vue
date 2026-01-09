@@ -1,35 +1,34 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
-import AppSidebar from '@/components/AppSidebar.vue';
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
-import { UserCog, Save, CheckCircle, Search, AlertTriangle, Lock, XCircle } from 'lucide-vue-next';
+import { ref, watch, onMounted } from 'vue';
+import { useForm, Head, Link } from '@inertiajs/vue3';
+import AppLayout from '@/layouts/app/AppSidebarLayout.vue'; 
+import { UserCog, Save, CheckCircle, Search, AlertTriangle, Lock, XCircle, Mail } from 'lucide-vue-next';
 import axios from 'axios';
-import { update, check_biotime } from '@/routes/users'; 
+import { update, check_biotime, index } from '@/routes/users'; 
 
-const props = defineProps({
-    user: Object
-});
+const props = defineProps({ user: Object });
 
 const form = useForm({
     _method: 'put', 
-    // Campos separados
     nombre: props.user.nombre || '', 
     paterno: props.user.paterno || '',
     materno: props.user.materno || '',
     rfc: props.user.rfc || '',
     curp: props.user.curp || '',
-    
     username: props.user.username,
+    email: props.user.email || '', 
     password: '', 
     password_confirmation: '',
     role: props.user.role,
     biotime_id: props.user.biotime_id,
     emp_code: props.user.emp_code,
-    
-    // Auxiliar búsqueda
     search_input: props.user.emp_code || '', 
 });
+
+const breadcrumbs = [
+    { title: 'Usuarios', href: index().url },
+    { title: 'Editar', href: '#' },
+];
 
 const checkingBioTime = ref(false);
 const bioTimeStatus = ref(null); 
@@ -40,22 +39,23 @@ const resultType = ref('success');
 const resultTitle = ref('');
 const resultMessage = ref('');
 
-// Auto-llenado de Username (Login) con RFC si está vacío o coincide
-watch(() => form.rfc, (val) => {
-    if (val && (!form.username || form.username === props.user.username)) {
-        form.username = val.toUpperCase();
+onMounted(() => {
+    if (props.user.biotime_id) {
+        bioTimeStatus.value = 'success';
+        bioTimeMessage.value = `Vinculado correctamente con BioTime.`;
+    } else if (props.user.emp_code) {
+        bioTimeStatus.value = 'error';
+        bioTimeMessage.value = `No vinculado. Código local: ${props.user.emp_code}`;
     }
 });
 
 const checkBioTime = async () => {
     const fullNameSearch = `${form.nombre} ${form.paterno} ${form.materno}`.trim();
-    
     if (!form.search_input && !fullNameSearch) {
         bioTimeStatus.value = 'error';
         bioTimeMessage.value = 'Ingresa datos para buscar.';
         return;
     }
-
     checkingBioTime.value = true;
     bioTimeStatus.value = null;
     bioTimeMessage.value = '';
@@ -78,15 +78,13 @@ const checkBioTime = async () => {
                 form.search_input = codeString;
                 bioTimeStatus.value = 'success';
                 bioTimeMessage.value = `Encontrado con código: ${data.employee.first_name} ${data.employee.last_name}`;
-                
-                // Opcional: llenar nombres si están vacíos
-                if (!form.nombre) {
-                     // Aquí es complejo separar nombres automáticamente, mejor dejar manual
+                if (!form.nombre || confirm('¿Desea actualizar el nombre con el encontrado en BioTime?')) {
+                     // Lógica opcional
                 }
             } else if (data.match_type === 'name') {
                 form.emp_code = form.search_input; 
                 bioTimeStatus.value = 'warning';
-                bioTimeMessage.value = `Encontrado por nombre: ${data.employee.first_name} ${data.employee.last_name}`;
+                bioTimeMessage.value = `Encontrado por nombre: ${data.employee.first_name} ${data.employee.last_name}. Código en BioTime: ${data.employee.emp_code}`;
             }
         } else {
             bioTimeStatus.value = 'error';
@@ -147,56 +145,54 @@ const submit = () => {
         }
     });
 };
-
 const closeResultModal = () => { showResultModal.value = false; };
 </script>
 
 <template>
     <Head title="Editar Usuario" />
-    <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-            <div class="min-h-full bg-gray-50 p-8 flex justify-center">
-                <div class="max-w-5xl w-full">
-                    <div class="mb-8">
-                        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                            <div class="p-2 bg-orange-100 rounded-lg text-orange-600"><UserCog class="h-6 w-6" /></div>
-                            Editar Usuario: {{ user.name }}
-                        </h1>
-                        <p class="text-gray-500 mt-1 ml-12">Modificación de datos.</p>
-                    </div>
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <form @submit.prevent="submit" class="p-8">
-                            
-                            <!-- SECCIÓN 1: DATOS PERSONALES -->
+    <AppLayout :breadcrumbs="breadcrumbs">
+        <!-- Eliminamos 'min-h-full' para evitar el doble scroll -->
+        <div class="bg-gray-50 p-4 md:p-8 flex justify-center w-full">
+            <div class="max-w-5xl w-full">
+                
+                <div class="mb-8">
+                    <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                        <div class="p-2 bg-orange-100 rounded-lg text-orange-600"><UserCog class="h-6 w-6" /></div>
+                        Editar Usuario: {{ user.name }}
+                    </h1>
+                    <p class="text-gray-500 mt-1 ml-12">Modificación de datos.</p>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <form @submit.prevent="submit" class="p-6 md:p-8">
+                        <!-- SECCIÓN 1: DATOS PERSONALES -->
                             <div class="mb-8">
                                 <h3 class="text-lg font-semibold text-gray-700 border-b border-gray-100 pb-2 mb-4">Datos Personales</h3>
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Nombre(s)</label>
-                                        <input v-model="form.nombre" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm" placeholder="Ej. Juan Carlos" maxlength="60">
+                                        <input v-model="form.nombre" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm" maxlength="100">
                                         <p v-if="form.errors.nombre" class="mt-1 text-sm text-red-600">{{ form.errors.nombre }}</p>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Apellido Paterno</label>
-                                        <input v-model="form.paterno" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm" placeholder="Ej. Pérez">
+                                        <input v-model="form.paterno" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm">
                                         <p v-if="form.errors.paterno" class="mt-1 text-sm text-red-600">{{ form.errors.paterno }}</p>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Apellido Materno</label>
-                                        <input v-model="form.materno" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm" placeholder="Ej. López">
+                                        <input v-model="form.materno" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm">
                                     </div>
                                 </div>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">RFC</label>
-                                        <input v-model="form.rfc" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm uppercase" placeholder="XAXX010101000" maxlength="13">
+                                        <input v-model="form.rfc" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm uppercase" maxlength="13">
                                         <p v-if="form.errors.rfc" class="mt-1 text-sm text-red-600">{{ form.errors.rfc }}</p>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">CURP</label>
                                         <input v-model="form.curp" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm uppercase" maxlength="18">
-                                        <p v-if="form.errors.curp" class="mt-1 text-sm text-red-600">{{ form.errors.curp }}</p>
                                     </div>
                                 </div>
                             </div>
@@ -206,9 +202,14 @@ const closeResultModal = () => { showResultModal.value = false; };
                                 <h3 class="text-lg font-semibold text-gray-700 border-b border-gray-100 pb-2 mb-4">Cuenta de Sistema</h3>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">Usuario (Login)</label>
-                                        <input v-model="form.username" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm uppercase bg-gray-50" maxlength="13">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Usuario (Login) <span class="text-red-500">*</span></label>
+                                        <input v-model="form.username" type="text" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm uppercase bg-gray-50">
                                         <p v-if="form.errors.username" class="mt-1 text-sm text-red-600">{{ form.errors.username }}</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico (Opcional)</label>
+                                        <input v-model="form.email" type="email" class="w-full rounded-lg border-gray-300 focus:border-blue-500 shadow-sm">
+                                        <p v-if="form.errors.email" class="mt-1 text-sm text-red-600">{{ form.errors.email }}</p>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Rol</label>
@@ -218,7 +219,7 @@ const closeResultModal = () => { showResultModal.value = false; };
                             </div>
 
                             <!-- SECCIÓN 3: VINCULACIÓN -->
-                            <div class="mb-8 bg-blue-50 -mx-8 px-8 py-6 border-t border-b border-blue-100">
+                            <div class="mb-8 bg-blue-50 -mx-6 md:-mx-8 px-6 md:px-8 py-6 border-t border-b border-blue-100">
                                 <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2"><Search class="w-5 h-5 text-gray-500" /> Vinculación BioTime</h3>
                                 <div class="flex flex-col md:flex-row gap-4 items-end">
                                     <div class="flex-grow w-full">
@@ -257,17 +258,17 @@ const closeResultModal = () => { showResultModal.value = false; };
                                 </div>
                             </div>
 
-                            <div class="mt-8 flex justify-end border-t border-gray-100 pt-6">
+                            <div class="mt-8 flex justify-end border-t border-gray-100 pt-6 gap-3">
+                                <Link :href="index().url" class="px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-all shadow-sm">Cancelar</Link>
                                 <button type="submit" :disabled="form.processing" class="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-md">
-                                    <Save class="w-5 h-5" /> {{ form.processing ? 'Guardando...' : 'Actualizar' }}
+                                    <Save class="w-5 h-5" /> Actualizar
                                 </button>
                             </div>
-                        </form>
-                    </div>
+                    </form>
                 </div>
             </div>
-        </SidebarInset>
-    </SidebarProvider>
+        </div>
+    </AppLayout>
     <div v-if="showResultModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 transition-opacity">
         <div class="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 relative animate-fade-in-up">
             <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-4" :class="resultType === 'success' ? 'bg-green-100' : 'bg-red-100'">
