@@ -18,12 +18,10 @@ import {
 // --- RUTAS (Wayfinder) ---
 import { home } from '@/routes';
 import { general, mi_tarjeta } from '@/routes/tarjetas';
-// CAMBIO: Importamos el 'index' (la lista) en lugar de 'create'
 import { index as usersIndex } from '@/routes/users'; 
-// import { index as logsIndex } from '@/routes/logs'; 
+import { index as logsIndex } from '@/routes/logs'; // Importamos la ruta de logs
 
 import { Link } from '@inertiajs/vue3';
-// Agregamos el icono 'Users' para el menú de gestión
 import { BookOpen, Folder, LayoutGrid, IdCard, Info, Command, FileClock, Archive, User, Users } from 'lucide-vue-next';
 
 const { toggleSidebar } = useSidebar();
@@ -53,17 +51,17 @@ const mainNavItems = computed(() => {
     if (isAdmin) {
         items.push(
             {
-                title: 'Tarjetas Generales',
+                // CAMBIO: Renombrado a "Generador de Tarjetas" para mayor claridad
+                title: 'Generador de Tarjetas',
                 href: general(),
                 icon: IdCard,
             },
             {
                 title: 'Bitácora Descargas',
-                href: '#', // Cambiar por logsIndex() cuando esté lista
+                href: logsIndex ? logsIndex() : '#', // Enlace habilitado
                 icon: FileClock,
             },
             {
-                // CAMBIO: Ahora apunta a la lista general de usuarios
                 title: 'Usuarios', 
                 href: usersIndex ? usersIndex() : '#',
                 icon: Users,

@@ -8,11 +8,10 @@ import { Head } from '@inertiajs/vue3';
 // Se asegura de importar el componente hijo que mostrará los detalles del horario.
 import ScheduleViewer from './ScheduleViewer.vue';
 
-import AppSidebar from '@/components/AppSidebar.vue';
-import {
-    SidebarProvider,
-    SidebarInset,
-} from '@/components/ui/sidebar';
+// IMPORTAR EL LAYOUT (Única modificación de imports necesaria)
+import AppLayout from '@/layouts/app/AppSidebarLayout.vue';
+import { home } from '@/routes';
+import { general } from '@/routes/tarjetas';
 
 // =================================================================================================
 // ESTADO REACTIVO (State)
@@ -28,12 +27,33 @@ const loading = ref(true);
 const selectedEmployee = ref(null);
 
 // =================================================================================================
+// CONFIGURACIÓN ADICIONAL (Layout)
+// =================================================================================================
+
+// Configuración de Breadcrumbs para el Layout
+const breadcrumbs = computed(() => {
+    const crumbs = [
+        { title: 'Dashboard', href: home() },
+        { title: 'Generador de Tarjetas', href: general() }
+    ];
+    if (selectedEmployee.value) {
+        crumbs.push({ 
+            title: `${selectedEmployee.value.first_name} ${selectedEmployee.value.last_name}`, 
+            href: '#' 
+        });
+    }
+    return crumbs;
+});
+
+// =================================================================================================
 // HOOK DE CICLO DE VIDA (Lifecycle Hook)
 // =================================================================================================
 
 /**
  * Se ejecuta una vez que el componente ha sido montado en el DOM.
  * Realiza la llamada inicial a la API para obtener la lista completa de empleados.
+ * Este enfoque (cargar todo al inicio) es viable para una cantidad moderada de datos.
+ * Para listas muy grandes, sería más eficiente hacer la búsqueda en el backend.
  */
 onMounted(async () => {
   try {
@@ -52,14 +72,19 @@ onMounted(async () => {
 
 /**
  * Filtra la lista de 'employees' basándose en el 'searchTerm'.
+ * Esta propiedad es reactiva: se recalcula automáticamente cada vez que 'searchTerm' cambia.
+ * Esto elimina la necesidad de una función @input en el campo de búsqueda.
+ * @returns {Array} - La lista de empleados filtrada.
  */
 const filteredEmployees = computed(() => {
+  // Si no hay término de búsqueda, devuelve la lista completa.
   if (!searchTerm.value) {
     return employees.value;
   }
   
   const searchLower = searchTerm.value.toLowerCase();
   
+  // Filtra la lista comparando el término de búsqueda con el nombre completo y el código de empleado.
   return employees.value.filter(employee => {
     const fullName = `${employee.first_name} ${employee.last_name}`.toLowerCase();
     const empCode = employee.emp_code.toString().toLowerCase();
@@ -73,14 +98,17 @@ const filteredEmployees = computed(() => {
 // =================================================================================================
 
 /**
- * Asigna el empleado seleccionado al estado 'selectedEmployee'.
+ * Asigna el empleado seleccionado al estado 'selectedEmployee',
+ * lo que provoca que la vista cambie del buscador al visor de horarios.
+ * @param {Object} employee - El objeto del empleado al que se le hizo clic.
  */
 const selectEmployee = (employee) => {
   selectedEmployee.value = employee;
 };
 
 /**
- * Resetea el estado 'selectedEmployee' a 'null'.
+ * Resetea el estado 'selectedEmployee' a 'null',
+ * lo que provoca que la vista regrese del visor de horarios al buscador.
  */
 const resetSelection = () => {
   selectedEmployee.value = null;
@@ -88,15 +116,10 @@ const resetSelection = () => {
 </script>
 
 <template>
-  <Head title="Sistema de Control de Asistencia" />
+  <Head title="Generador de Tarjetas" />
 
-  <!-- ESTRUCTURA PRINCIPAL DEL LAYOUT CON SIDEBAR -->
-  <SidebarProvider>
-    <!-- BARRA LATERAL REUTILIZABLE -->
-    <AppSidebar />
-
-    <!-- CONTENIDO PRINCIPAL (INSET) -->
-    <SidebarInset>
+  <!-- Envolvemos todo en el AppLayout para mantener la barra lateral -->
+  <AppLayout :breadcrumbs="breadcrumbs">
       <div class="page-container">
         <!-- Vista de Búsqueda: Se muestra si 'selectedEmployee' es nulo. -->
         <div v-if="!selectedEmployee" class="search-card">
@@ -135,17 +158,17 @@ const resetSelection = () => {
           <ScheduleViewer :employee="selectedEmployee" />
         </div>
       </div>
-    </SidebarInset>
-  </SidebarProvider>
+  </AppLayout>
 </template>
 
 <style scoped>
 .page-container {
   background-color: #f3f4f6;
   padding: 40px;
-  /* min-height: 100vh; <-- Eliminado o ajustado, ya que el SidebarInset maneja la altura principal */
+  /* MODIFICADO: Se elimina min-height: 100vh para evitar el doble scroll con el Layout */
+  /* min-height: 100vh; */
   width: 100%;
-  height: 100%;
+  height: 100%; 
   display: flex;
   justify-content: center;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;

@@ -8,92 +8,51 @@ use App\Http\Controllers\ReglasController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\TarjetaController;
-// use App\Http\Controllers\ReporteGlobalController; // Deshabilitado temporalmente
-use App\Http\Controllers\AdminUserController; // Nuevo Controlador
+// use App\Http\Controllers\ReporteGlobalController; 
+use App\Http\Controllers\AdminUserController;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-*/
-
-// =================================================================================================
-// RUTA PÚBLICA / HOME
-// =================================================================================================
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
     ]);
 })->name('home');
 
-
-// =================================================================================================
-// NIVEL 1: EMPLEADOS Y ADMINISTRADORES (Middleware: auth, verified)
-// =================================================================================================
+// --- NIVEL 1: TODOS (Auth) ---
 Route::middleware(['auth', 'verified'])->group(function () {
-
-    // --- MÓDULO INDIVIDUAL: MI TARJETA ---
-    Route::get('/MiTarjeta', [TarjetaController::class, 'indexIndividual'])
-        ->name('tarjetas.mi_tarjeta');
-
-    Route::post('/MiTarjeta/descargar', [TarjetaController::class, 'downloadPdf'])
-        ->name('tarjetas.download_pdf');
-
-    // --- API INTERNA: DATOS DE ASISTENCIA INDIVIDUAL ---
-    Route::post('/api/internal/schedules', [TarjetaController::class, 'getSchedule'])
-        ->name('getSchedule');
+    Route::get('/MiTarjeta', [TarjetaController::class, 'indexIndividual'])->name('tarjetas.mi_tarjeta');
+    Route::post('/MiTarjeta/descargar', [TarjetaController::class, 'downloadPdf'])->name('tarjetas.download_pdf');
+    Route::post('/api/internal/schedules', [TarjetaController::class, 'getSchedule'])->name('getSchedule');
 });
 
-
-// =================================================================================================
-// NIVEL 2: SOLO ADMINISTRADORES (Middleware: auth, verified, role:admin)
-// =================================================================================================
+// --- NIVEL 2: ADMINS (Role: admin) ---
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
-    Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
-    // --- GESTIÓN DE USUARIOS (NUEVO) ---
-    // 1. Listado
+    // USUARIOS
     Route::get('/usuarios', [AdminUserController::class, 'index'])->name('users.index');
-    // 2. Creación
     Route::get('/usuarios/nuevo', [AdminUserController::class, 'create'])->name('users.create');
     Route::post('/usuarios', [AdminUserController::class, 'store'])->name('users.store');
-    Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
-    // 3. Edición
     Route::get('/usuarios/{user}/editar', [AdminUserController::class, 'edit'])->name('users.edit');
     Route::put('/usuarios/{user}', [AdminUserController::class, 'update'])->name('users.update');
-    // 4. Borrado
     Route::delete('/usuarios/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
+    Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
 
-
-
-    // --- LOGS DE DESCARGAS ---
-    Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
-
-    // --- TARJETAS GENERALES ---
+    // TARJETAS GENERALES
     Route::get('/tarjetas-generales', function () {
         return Inertia::render('BuscarTarjetas');
     })->name('tarjetas.general');
-
-    // --- API INTERNA: LISTADO DE USUARIOS ---
     Route::get('/api/internal/users', [TarjetaController::class, 'getUsers']);
 
-    // --- REPORTES GLOBALES (MASIVOS) - PENDIENTE ---
-    /*
-    Route::prefix('reportes-globales')->name('reportes.')->group(function () {
-        Route::get('/', [ReporteGlobalController::class, 'index'])->name('index');
-        Route::post('/generar', [ReporteGlobalController::class, 'generate'])->name('generate');
-        Route::get('/descargar', [ReporteGlobalController::class, 'download'])->name('download');
-    });
-    */
+    // LOGS DE DESCARGAS (CORREGIDO: Descomentado y apuntando al controlador)
+    Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
 
-    // --- MÓDULO KÁRDEX ---
+    // KÁRDEX
     Route::prefix('kardex')->name('kardex.')->group(function () {
         Route::get('/', [KardexController::class, 'index'])->name('index');
         Route::post('/buscar', [KardexController::class, 'buscar'])->name('buscar');
         Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
     });
 
-    // --- MÓDULO REGLAS Y POLÍTICAS ---
+    // REGLAS
     Route::prefix('reglas')->name('reglas.')->group(function () {
         Route::get('/', [ReglasController::class, 'index'])->name('index');
         Route::post('/', [ReglasController::class, 'store'])->name('store');
@@ -102,19 +61,14 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
         Route::delete('/policy/{id}', [ReglasController::class, 'deletePolicy'])->name('policy.delete');
     });
 
-    // --- MÓDULO NOTIFICACIONES ---
+    // NOTIFICACIONES
     Route::prefix('notifications')->name('notifications.')->group(function () {
         Route::post('/{id}/read', [NotificationController::class, 'markAsRead'])->name('read');
         Route::post('/read-all', [NotificationController::class, 'markAllAsRead'])->name('readAll');
     });
 
-    // --- VISTA DETALLE EMPLEADO ---
+    // DETALLE EMPLEADO
     Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
-
-
-
-    
-
 });
 
 require __DIR__.'/settings.php';
