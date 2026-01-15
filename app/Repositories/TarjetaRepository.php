@@ -76,4 +76,19 @@ class TarjetaRepository
         $query = "SELECT * FROM public.att_holiday WHERE start_date BETWEEN ? AND ?;";
         return DB::connection('pgsql_biotime')->select($query, [$startDate, $endDate]);
     }
+
+
+
+    public function getPermissions($empId, $startDate, $endDate)
+    {
+        return DB::connection('pgsql_biotime')->table('personnel_employee_exception')
+            ->where('employee_id', $empId)
+            ->where(function($query) use ($startDate, $endDate) {
+                 // Busca si hay traslape de fechas
+                 $query->where('start_time', '<=', $endDate)
+                       ->where('end_time', '>=', $startDate);
+            })
+            ->select('start_time as start_date', 'end_time as end_date', 'reason')
+            ->get();
+    }
 }
