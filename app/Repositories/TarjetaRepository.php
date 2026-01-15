@@ -76,4 +76,22 @@ class TarjetaRepository
         $query = "SELECT * FROM public.att_holiday WHERE start_date BETWEEN ? AND ?;";
         return DB::connection('pgsql_biotime')->select($query, [$startDate, $endDate]);
     }
+
+    /**
+     * --- NUEVO: OBTENER PERMISOS ---
+     * Se agregó para justificar faltas por rango de fechas.
+     */
+    public function getPermissions($empId, $startDate, $endDate)
+    {
+        // 'personnel_employee_exception' contiene las solicitudes de permiso/vacaciones
+        return DB::connection('pgsql_biotime')->table('personnel_employee_exception')
+            ->where('employee_id', $empId)
+            ->where(function($query) use ($startDate, $endDate) {
+                 // Busca si las fechas se traslapan con el rango solicitado
+                 $query->where('start_time', '<=', $endDate)
+                       ->where('end_time', '>=', $startDate);
+            })
+            ->select('start_time as start_date', 'end_time as end_date', 'reason')
+            ->get();
+    }
 }

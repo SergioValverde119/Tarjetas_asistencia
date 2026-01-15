@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Repositories\TarjetaRepository;
-use App\Models\HistorialDescarga; // Modelo para guardar quién descargó el PDF
+use App\Models\HistorialDescarga;
 use Carbon\Carbon;
 use Inertia\Inertia;
 use Exception;
@@ -14,47 +14,41 @@ class TarjetaController extends Controller
 {
     protected $repository;
 
-    // Inyección de Dependencias: Laravel nos "regala" una instancia del Repositorio aquí.
     public function __construct(TarjetaRepository $repository)
     {
         $this->repository = $repository;
     }
 
     /**
-     * --- MÓDULO INDIVIDUAL (VISTA PRINCIPAL) ---
-     * Esta función carga la pantalla cuando el empleado entra a ver sus tarjetas.
+     * --- MÓDULO INDIVIDUAL ---
      */
     public function indexIndividual()
     {
         $user = Auth::user();
         
-        // 1. VINCULACIÓN: Obtenemos el ID de enlace (biotime_id) del usuario logueado.
+        // 1. Vinculación
         $pkBiotime = $user->biotime_id;
-        $year = 2025; // Año fijo para este módulo
+        $year = 2025; 
 
         $empleadoData = null;
-        $resumenFaltas = []; // Aquí guardaremos qué meses tienen "taches" (Faltas)
+        $resumenFaltas = []; 
 
-        // 2. BUSQUEDA DE EMPLEADO:
-        // Si el usuario tiene un ID vinculado, buscamos sus datos reales en BioTime via el Repositorio.
+        // 2. Búsqueda de Empleado
         if ($pkBiotime) {
             try {
                 $allEmployees = $this->repository->getAllEmployees();
-                
                 foreach ($allEmployees as $emp) {
-                    // Comparamos el ID de la base de datos (strval para evitar errores de tipo)
                     if (strval($emp->id) === strval($pkBiotime)) {
                         $empleadoData = $emp;
-                        break; // ¡Encontrado! Dejamos de buscar.
+                        break;
                     }
                 }
             } catch (Exception $e) {
-                error_log("Error buscando empleado Biotime: " . $e->getMessage());
+                error_log("Error buscando empleado: " . $e->getMessage());
             }
         }
 
-        // 3. DATOS DEL EMPLEADO (Fallback):
-        // Si no lo encontramos, creamos un objeto "falso" para que la vista no se rompa.
+        // 3. Fallback
         if (!$empleadoData) {
             $empleadoData = [
                 'id' => $pkBiotime ?? 'N/A',
@@ -65,37 +59,41 @@ class TarjetaController extends Controller
                 'job_title' => ''
             ];
         } else {
-            // --- CÁLCULO DE ESTATUS (Faltas del año) ---
-            // Solo entramos aquí si el empleado existe.
+            // --- CÁLCULO DE ESTATUS ---
             try {
-                // Definimos el rango del año completo (Enero 1 a Dic 31)
                 $startOfYear = Carbon::createFromDate($year, 1, 1)->startOfYear()->format('Y-m-d');
                 $endOfYear = Carbon::createFromDate($year, 12, 31)->endOfYear()->format('Y-m-d');
 
-                // PEDIDO AL REPOSITORIO: "Traeme todas las checadas y festivos del año"
-                // Hacemos una sola consulta grande en lugar de 12 pequeñas (Mejora rendimiento).
+                // Consultas al repositorio
                 $registrosYear = $this->repository->getAttendanceRecords($empleadoData->id, $startOfYear, $endOfYear);
                 $holidaysYear = $this->repository->getHolidays($startOfYear, $endOfYear);
+                
+                // --- NUEVO: Traer Permisos (Excepciones) ---
+                // DEBUG: Verificar si el método existe y qué devuelve
+                if (method_exists($this->repository, 'getPermissions')) {
+                    $permisosYear = $this->repository->getPermissions($empleadoData->id, $startOfYear, $endOfYear);
+                    error_log("DEBUG: Permisos encontrados para Empleado ID {$empleadoData->id}: " . count($permisosYear));
+                    if (count($permisosYear) > 0) {
+                        error_log("DEBUG: Primer permiso (Muestra): " . json_encode($permisosYear[0]));
+                    }
+                } else {
+                    error_log("CRITICAL: El método 'getPermissions' NO EXISTE en TarjetaRepository. Revisa el archivo del repositorio.");
+                    $permisosYear = [];
+                }
 
-                // CICLO MES POR MES (1 al 12)
                 for ($m = 1; $m <= 12; $m++) {
-                    // REGLA DE TIEMPO: Si el mes es futuro (ej. estamos en Marzo y vamos en el ciclo 4-Abril), paramos.
+                    // LÓGICA ORIGINAL: Si el mes es futuro, paramos. (Muestra el mes actual en curso)
                     if ($year == now()->year && $m > now()->month) break;
 
                     $inicioMes = Carbon::createFromDate($year, $m, 1)->startOfMonth()->format('Y-m-d');
                     $finMes = Carbon::createFromDate($year, $m, 1)->endOfMonth()->format('Y-m-d');
 
-                    // FILTRADO EN MEMORIA:
-                    // De todos los registros del año, separamos solo los de ESTE mes ($m).
                     $registrosMes = array_filter($registrosYear, fn($r) => Carbon::parse($r->att_date)->month == $m);
                     $holidaysMes = array_filter($holidaysYear, fn($h) => Carbon::parse($h->start_date)->month == $m);
 
-                    // LÓGICA DE NEGOCIO:
-                    // Enviamos los datos crudos a procesar para obtener calificaciones (OK, RL, RG, F).
-                    $procesado = $this->transformarRegistros($registrosMes, $holidaysMes, $inicioMes, $finMes);
+                    // --- PASAMOS LOS PERMISOS A LA FUNCIÓN ---
+                    $procesado = $this->transformarRegistros($registrosMes, $holidaysMes, $permisosYear, $inicioMes, $finMes);
 
-                    // CONTEO DE FALTAS:
-                    // Revisamos el resultado procesado. Si hay una 'F', guardamos el día.
                     $diasFalta = [];
                     foreach ($procesado as $dia) {
                         if ($dia['calificacion'] === 'F') {
@@ -103,7 +101,6 @@ class TarjetaController extends Controller
                         }
                     }
 
-                    // Si hubo faltas en este mes, las guardamos en el resumen para bloquear el botón en la vista.
                     if (!empty($diasFalta)) {
                         $resumenFaltas[$m] = $diasFalta;
                     }
@@ -113,13 +110,11 @@ class TarjetaController extends Controller
             }
         }
 
-        // 4. HISTORIAL: Buscamos qué meses ya descargó este usuario anteriormente.
         $descargasPrevias = HistorialDescarga::where('user_id', $user->id)
             ->where('year', $year)
             ->pluck('month')
             ->toArray();
 
-        // 5. RESPUESTA: Enviamos todo a la vista de Vue (Inertia).
         return Inertia::render('MiTarjeta', [
             'empleado' => $empleadoData,
             'descargasPrevias' => $descargasPrevias,
@@ -128,8 +123,7 @@ class TarjetaController extends Controller
     }
 
     /**
-     * --- REGISTRO DE DESCARGA ---
-     * Se llama cuando el usuario confirma la descarga del PDF.
+     * --- DESCARGA PDF ---
      */
     public function downloadPdf(Request $request)
     {
@@ -140,75 +134,58 @@ class TarjetaController extends Controller
 
         try {
             $user = Auth::user();
-            
-            // Guardamos o actualizamos el registro en la base de datos local (MySQL)
             HistorialDescarga::updateOrInsert(
-                [
-                    'user_id' => $user->id,
-                    'month' => $request->month,
-                    'year' => $request->year
-                ],
-                [
-                    'downloaded_at' => now(),
-                    'ip_address' => $request->ip()
-                ]
+                ['user_id' => $user->id, 'month' => $request->month, 'year' => $request->year],
+                ['downloaded_at' => now(), 'ip_address' => $request->ip()]
             );
-            
             return response()->json(['status' => 'success', 'message' => 'Descarga registrada']);
-
         } catch (Exception $e) {
             return response()->json(['error' => 'Error: ' . $e->getMessage()], 500);
         }
     }
 
-    /**
-     * --- API USUARIOS ---
-     * Usada probablemente para selectores o administración.
-     */
     public function getUsers()
     {
         try {
-            $users = $this->repository->getAllEmployees();
-            return response()->json(['users' => $users]);
+            return response()->json(['users' => $this->repository->getAllEmployees()]);
         } catch (Exception $e) {
-            error_log('ERROR en getUsers: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
     /**
-     * --- API GENERACIÓN PDF ---
-     * Esta función devuelve los datos DETALLADOS para armar el PDF de un mes específico.
+     * --- API SCHEDULE ---
      */
     public function getSchedule(Request $request)
     {
         try {
-            $request->validate([
-                'emp_id' => 'required',
-                'month' => 'required',
-                'year' => 'required'
-            ]);
+            $request->validate(['emp_id' => 'required', 'month' => 'required', 'year' => 'required']);
 
             $empId = $request->emp_id;
             $month = $request->month;
             $year = $request->year;
 
-            // Calculamos fechas límite del mes solicitado
             $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth()->format('Y-m-d');
             $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth()->format('Y-m-d');
 
-            // Pedimos datos crudos al Repositorio
             $registrosRaw = $this->repository->getAttendanceRecords($empId, $startOfMonth, $endOfMonth);
             $holidaysRaw = $this->repository->getHolidays($startOfMonth, $endOfMonth);
+            
+            // --- NUEVO: Traer Permisos y validar si existe método ---
+            $permisosRaw = [];
+            if (method_exists($this->repository, 'getPermissions')) {
+                $permisosRaw = $this->repository->getPermissions($empId, $startOfMonth, $endOfMonth);
+            } else {
+                error_log("CRITICAL: getPermissions no existe en el repositorio (getSchedule)");
+            }
 
-            if (empty($registrosRaw)) {
+            if (empty($registrosRaw) && empty($permisosRaw)) {
                 return response()->json(['horario' => null, 'registros' => []]);
             }
 
-            // Procesamos la lógica de negocio (Faltas/Retardos)
-            $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $startOfMonth, $endOfMonth);
+            // --- PASAR PERMISOS ---
+            $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $permisosRaw, $startOfMonth, $endOfMonth);
 
-            // Intentamos adivinar el horario base del empleado tomando el primer registro disponible
             $horarioTexto = 'Sin horario';
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->duration) {
                 try {
@@ -220,85 +197,106 @@ class TarjetaController extends Controller
                 }
             }
 
-            return response()->json([
-                'horario' => $horarioTexto,
-                'registros' => $registrosProcesados
-            ]);
+            return response()->json(['horario' => $horarioTexto, 'registros' => $registrosProcesados]);
 
         } catch (Exception $e) {
-            error_log('ERROR en getSchedule: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    // --- LÓGICA PRIVADA (EL MOTOR DE REGLAS) ---
+    // --- LÓGICA PRIVADA ---
 
     /**
-     * Transforma una lista de checadas crudas en una lista de días con calificación.
-     * Rellena huecos de días faltantes.
+     * Transforma registros. AHORA RECIBE $permisos.
      */
-    private function transformarRegistros($registros, $holidays, $startDate, $endDate)
+    private function transformarRegistros($registros, $holidays, $permisos, $startDate, $endDate)
     {
         $start = Carbon::parse($startDate);
         $end = Carbon::parse($endDate);
         
-        $retardosLevesPrevios = 0; // Contador acumulativo de retardos leves
+        $retardosLevesPrevios = 0;
         $resultados = [];
 
-        // RECORREMOS CADA DÍA DEL RANGO (ej. del 1 al 30 de Abril)
         for ($date = $start; $date->lte($end); $date->addDay()) {
             $fechaActualStr = $date->format('Y-m-d');
-            $registroDia = null;
             
-            // 1. ¿Hay checada este día?
+            // 1. Buscar Checada
+            $registroDia = null;
             foreach ($registros as $reg) {
-                if (Carbon::parse($reg->att_date)->format('Y-m-d') === $fechaActualStr) {
+                // Comparamos fecha (quitamos hora si viene)
+                $fechaReg = substr($reg->att_date, 0, 10);
+                if ($fechaReg === $fechaActualStr) {
                     $registroDia = $reg;
                     break;
                 }
             }
 
-            // 2. ¿Es día festivo?
+            // 2. NUEVO: Buscar Permiso por Rango (SOLUCIÓN A TU PROBLEMA)
+            $permisoDia = null;
+            foreach ($permisos as $p) {
+                $pStart = Carbon::parse($p->start_date);
+                $pEnd = Carbon::parse($p->end_date);
+                
+                // DEBUG: Ver qué está comparando si tenemos dudas
+                // error_log("DEBUG: Comparando día $fechaActualStr con permiso {$p->start_date} - {$p->end_date}");
+
+                // Si la fecha actual está DENTRO del rango del permiso
+                if ($date->between($pStart, $pEnd)) {
+                    $permisoDia = $p;
+                    error_log("DEBUG: MATCH! Permiso encontrado para el día $fechaActualStr. Razón: " . ($p->reason ?? 'Sin razón'));
+                    break;
+                }
+            }
+
+            // 3. Buscar Festivo
             $holidayDia = null;
             foreach ($holidays as $hol) {
-                if (Carbon::parse($hol->start_date)->format('Y-m-d') === $fechaActualStr) {
+                // Comparamos fecha (quitamos hora si viene)
+                $fechaHol = substr($hol->start_date, 0, 10);
+                if ($fechaHol === $fechaActualStr) {
                     $holidayDia = $hol;
                     break;
                 }
             }
 
+            // PRIORIDAD A: Si hay permiso, es Justificado (J) directo.
+            if ($permisoDia) {
+                $resultados[] = [
+                    'dia' => $fechaActualStr,
+                    'checkin' => $registroDia ? substr($registroDia->clock_in, 11, 5) : '',
+                    'checkout' => $registroDia ? substr($registroDia->clock_out, 11, 5) : '',
+                    'calificacion' => 'J',
+                    'observaciones' => $permisoDia->reason ?? 'Permiso'
+                ];
+                continue;
+            }
+
             $esFinDeSemana = $date->isWeekend();
 
-            // CASO: DÍA NO LABORABLE O DESCANSO
-            // Si no hay registro Y (es fin de semana O es festivo habilitado), marcamos DESC.
+            // CASO: DESCANSOS
             if (!$registroDia || $esFinDeSemana || ($holidayDia && isset($registroDia->enable_holiday) && $registroDia->enable_holiday === true)) {
                 $resultados[] = [
                     'dia' => $fechaActualStr,
                     'checkin' => '',
                     'checkout' => '',
-                    'calificacion' => 'DESC', // Descanso
+                    'calificacion' => 'DESC',
                     'observaciones' => $holidayDia ? $holidayDia->alias : ''
                 ];
-                continue; // Pasamos al siguiente día
+                continue;
             }
 
-            // CASO: DÍA LABORABLE CON ASISTENCIA (O FALTA DE ELLA)
-            // Evaluamos minutos de retardo.
+            // CASO: EVALUAR RETARDOS
             $calificacion = $this->evaluarRetardo($registroDia, $retardosLevesPrevios);
 
-            // Regla de acumulación: 4 Retardos Leves (RL) = 1 Retardo Grave (RG)
             if ($calificacion === 'RL') $retardosLevesPrevios += 1;
             if ($retardosLevesPrevios >= 4) {
                 $calificacion = 'RG';
-                $retardosLevesPrevios = 0; // Reiniciamos contador
+                $retardosLevesPrevios = 0;
             }
-            
-            // Regla de Justificación: Si es Falta pero tiene "apply_reason" en BD, pasa a 'J'.
             if ($calificacion === 'F' && !empty($registroDia->apply_reason)) {
                 $calificacion = 'J';
             }
 
-            // Agregamos el resultado final del día
             $resultados[] = [
                 'dia' => $fechaActualStr,
                 'checkin' => $registroDia->clock_in ? Carbon::parse($registroDia->clock_in)->format('H:i:s') : '',
@@ -310,43 +308,26 @@ class TarjetaController extends Controller
         return $resultados;
     }
 
-    /**
-     * Calcula la calificación basada estrictamente en la hora de entrada vs checada.
-     */
     private function evaluarRetardo($registro, $retardosLevesPrevios)
     {
-        // Regla de Oro: Si no hay checada de entrada = Falta.
         if (empty($registro->clock_in)) return 'F';
 
-        // Cálculos de tiempo
         $fechaCheckIn = Carbon::parse($registro->check_in)->format('Y-m-d');
-        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time); // Hora que DEBÍA llegar
-        $horaRealEntrada = Carbon::parse($registro->clock_in); // Hora que LLEGÓ
+        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
+        $horaRealEntrada = Carbon::parse($registro->clock_in);
         
-        // Diferencia en minutos (Positivo = Tarde, Negativo = Temprano)
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
-        
-        // Tolerancia configurada en BioTime (ej. 10 minutos)
-        // Se resta 1 para ajuste estricto (ej. min 10 es OK, min 11 es retardo)
         $tolerance = $registro->allow_late - 1;
 
-        // --- REGLAS DURAS ---
-        if ($diferenciaMinutos <= $tolerance) return 'OK'; // Llegó a tiempo
-        
-        // Entre tolerancia y 20 min = Retardo Leve
+        if ($diferenciaMinutos <= $tolerance) return 'OK';
         if ($diferenciaMinutos > $tolerance && $diferenciaMinutos <= 20) {
-            // (Nota: aquí hay una lógica recursiva curiosa que depende del acumulado previo)
             return ($retardosLevesPrevios >= 4) ? 'RG' : 'RL';
         }
-        
-        // Entre 21 y 31 min = Retardo Grave directo
         if ($diferenciaMinutos > 20 && $diferenciaMinutos <= 31) return 'RG';
 
-        // Más de 31 min = Falta
         return 'F';
     }
 
-    // --- PANEL DE ADMINISTRADOR ---
     public function indexLogs(Request $request) {
         $query = \App\Models\HistorialDescarga::with('user')->orderBy('downloaded_at', 'desc');
 
