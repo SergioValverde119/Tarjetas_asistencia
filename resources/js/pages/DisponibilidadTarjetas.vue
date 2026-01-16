@@ -1,12 +1,10 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue'; 
 import { SidebarProvider } from '@/components/ui/sidebar'; 
-import { Search, AlertCircle, CheckCircle, Filter } from 'lucide-vue-next';
+import { Search, AlertCircle, CheckCircle } from 'lucide-vue-next';
 import { debounce } from 'lodash';
-
-// import { disponibilidad } from '@/routes/tarjetas'; 
 
 const props = defineProps({
     empleados: Object, 
@@ -19,7 +17,6 @@ const search = ref(props.filters.search || '');
 const monthFilter = ref(props.filters.month || '');
 const statusFilter = ref(props.filters.status || '');
 
-// Lista completa para el select
 const monthsFull = [
     { id: 1, name: 'Enero' }, { id: 2, name: 'Febrero' }, { id: 3, name: 'Marzo' },
     { id: 4, name: 'Abril' }, { id: 5, name: 'Mayo' }, { id: 6, name: 'Junio' },
@@ -27,25 +24,65 @@ const monthsFull = [
     { id: 10, name: 'Octubre' }, { id: 11, name: 'Noviembre' }, { id: 12, name: 'Diciembre' }
 ];
 
-// Función unificada para actualizar filtros
-const updateFilters = debounce(() => {
-    // CORRECCIÓN: Usamos la URL directa para asegurar que funcione siempre
-    // Y agregamos page: 1 para reiniciar la paginación al filtrar
+// --- FILTRADO FRONTEND ---
+const filteredEmployees = computed(() => {
+    let data = props.empleados.data;
+    if (!monthFilter.value && !statusFilter.value) return data;
+
+    return data.filter(emp => {
+        const semaforo = emp.semaforo;
+        if (monthFilter.value) {
+            const mIndex = parseInt(monthFilter.value) - 1; 
+            const statusMes = semaforo[mIndex];
+            if (statusFilter.value === 'blocked' && statusMes !== 'blocked') return false;
+            if (statusFilter.value === 'ok' && statusMes !== 'ok') return false;
+        } else {
+            const hasBlock = semaforo.includes('blocked');
+            if (statusFilter.value === 'blocked' && !hasBlock) return false;
+            if (statusFilter.value === 'ok' && hasBlock) return false;
+        }
+        return true;
+    });
+});
+
+// --- SINCRONIZACIÓN DE URL ---
+const updateUrlParams = () => {
+    const url = new URL(window.location.href);
+    if (monthFilter.value) url.searchParams.set('month', monthFilter.value); else url.searchParams.delete('month');
+    if (statusFilter.value) url.searchParams.set('status', statusFilter.value); else url.searchParams.delete('status');
+    if (search.value) url.searchParams.set('search', search.value); else url.searchParams.delete('search');
+    window.history.replaceState({}, '', url);
+};
+
+watch([monthFilter, statusFilter], () => { updateUrlParams(); });
+
+// --- BÚSQUEDA BACKEND ---
+const updateSearch = debounce((val) => {
     router.get('/reporte-disponibilidad', { 
-        search: search.value,
+        search: val,
+        page: 1,
         month: monthFilter.value,
-        status: statusFilter.value,
-        page: 1 
+        status: statusFilter.value
     }, {
         preserveState: true,
         replace: true,
     });
 }, 500);
 
-// Observamos cambios en cualquiera de los 3 filtros
-watch([search, monthFilter, statusFilter], () => {
-    updateFilters();
-});
+watch(search, (val) => { updateSearch(val); });
+
+// --- PAGINACIÓN ---
+const changePage = (url) => {
+    if (!url) return;
+    router.get(url, {
+        search: search.value,
+        month: monthFilter.value,
+        status: statusFilter.value
+    }, {
+        preserveState: true,
+        preserveScroll: true
+    });
+};
 
 const monthsHeader = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -54,10 +91,6 @@ const getStatusClasses = (status) => {
     if (status === 'ok') return 'bg-green-100 text-green-600 border-green-200';
     return 'bg-gray-50 text-gray-300 border-gray-100'; 
 };
-
-const changePage = (url) => {
-    if (url) router.get(url);
-};
 </script>
 
 <template>
@@ -65,41 +98,29 @@ const changePage = (url) => {
 
     <SidebarProvider>
         <AppSidebar>
-            <div class="p-6 min-h-screen bg-gray-50">
-                <div class="max-w-full mx-auto">
+            <div class="p-6 min-h-screen bg-gray-50 flex flex-col">
+                <div class="max-w-full mx-auto w-full flex-grow flex flex-col">
                     
-                    <!-- Encabezado y Barra de Filtros -->
-                    <div class="flex flex-col gap-4 mb-6">
+                    <!-- Encabezado y Filtros -->
+                    <div class="flex flex-col gap-4 mb-4">
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900">Disponibilidad de Tarjetas {{ year }}</h1>
-                            <p class="text-sm text-gray-500">Semáforo de incidencias. Use los filtros para reportes específicos.</p>
+                            <p class="text-sm text-gray-500">Semáforo de incidencias. Mostrando 100 registros por página.</p>
                         </div>
                         
-                        <!-- Barra de Herramientas (Buscador + Filtros) -->
                         <div class="flex flex-col sm:flex-row gap-3 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                            
-                            <!-- Buscador -->
                             <div class="relative flex-grow">
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                     <Search class="h-4 w-4 text-gray-400" />
                                 </div>
-                                <input 
-                                    v-model="search"
-                                    type="text"
-                                    class="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm h-10"
-                                    placeholder="Buscar por nombre o ID..."
-                                />
+                                <input v-model="search" type="text" class="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm h-10" placeholder="Buscar por nombre o ID..." />
                             </div>
-
-                            <!-- Filtro Mes -->
                             <div class="w-full sm:w-48">
                                 <select v-model="monthFilter" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm h-10 bg-gray-50">
                                     <option value="">Todo el Año</option>
                                     <option v-for="m in monthsFull" :key="m.id" :value="m.id">{{ m.name }}</option>
                                 </select>
                             </div>
-
-                            <!-- Filtro Estatus -->
                             <div class="w-full sm:w-48">
                                 <select v-model="statusFilter" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm h-10 bg-gray-50">
                                     <option value="">Todos los estatus</option>
@@ -110,26 +131,26 @@ const changePage = (url) => {
                         </div>
                     </div>
 
-                    <!-- Tabla Semáforo -->
-                    <div class="bg-white shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
-                        <div class="overflow-x-auto">
+                    <!-- Tabla con SCROLL VERTICAL -->
+                    <!-- max-h-[70vh] define la altura máxima antes de hacer scroll -->
+                    <div class="bg-white shadow overflow-hidden border-b border-gray-200 sm:rounded-lg flex flex-col flex-grow h-[70vh]">
+                        <div class="overflow-auto flex-grow relative">
                             <table class="min-w-full divide-y divide-gray-200 text-sm">
-                                <thead class="bg-gray-50">
+                                <thead class="bg-gray-50 sticky top-0 z-20 shadow-sm">
                                     <tr>
-                                        <!-- Columna Fija: Nombre -->
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-20 shadow-sm min-w-[250px]">
+                                        <!-- Empleado: Sticky Left + Sticky Top = z-30 -->
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 top-0 bg-gray-50 z-30 shadow-sm min-w-[250px] border-b border-gray-200">
                                             Empleado
                                         </th>
-                                        <!-- Meses -->
-                                        <th v-for="m in monthsHeader" :key="m" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                                        <!-- Meses: Sticky Top = z-20 -->
+                                        <th v-for="m in monthsHeader" :key="m" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky top-0 bg-gray-50 z-20 border-b border-gray-200">
                                             {{ m }}
                                         </th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="emp in empleados.data" :key="emp.id" class="hover:bg-gray-50">
-                                        
-                                        <!-- Datos del Empleado -->
+                                    <tr v-for="emp in filteredEmployees" :key="emp.id" class="hover:bg-gray-50">
+                                        <!-- Columna Fija Lateral (z-10) -->
                                         <td class="px-6 py-4 whitespace-nowrap sticky left-0 bg-white z-10 shadow-sm border-r border-gray-100">
                                             <div class="flex items-center">
                                                 <div class="flex-shrink-0 h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold">
@@ -141,14 +162,11 @@ const changePage = (url) => {
                                                 </div>
                                             </div>
                                         </td>
-
-                                        <!-- Grid de Semáforo -->
                                         <td v-for="(status, index) in emp.semaforo" :key="index" class="px-2 py-4 text-center whitespace-nowrap">
                                             <div 
                                                 class="mx-auto flex items-center justify-center h-8 w-8 rounded-full border text-xs transition-all cursor-default"
                                                 :class="getStatusClasses(status)"
-                                                :style="monthFilter && parseInt(monthFilter) !== (index + 1) ? 'opacity: 0.3' : ''"
-                                                :title="status === 'blocked' ? 'Con Incidencias' : (status === 'ok' ? 'Disponible' : 'Mes Futuro')"
+                                                :style="monthFilter && parseInt(monthFilter) !== (index + 1) ? 'opacity: 0.2' : ''"
                                             >
                                                 <AlertCircle v-if="status === 'blocked'" class="h-4 w-4" />
                                                 <CheckCircle v-else-if="status === 'ok'" class="h-4 w-4" />
@@ -156,10 +174,9 @@ const changePage = (url) => {
                                             </div>
                                         </td>
                                     </tr>
-
-                                    <tr v-if="empleados.data.length === 0">
+                                    <tr v-if="filteredEmployees.length === 0">
                                         <td colspan="13" class="px-6 py-10 text-center text-gray-500">
-                                            No se encontraron empleados que coincidan con los filtros.
+                                            No hay empleados en esta página que coincidan con los filtros.
                                         </td>
                                     </tr>
                                 </tbody>
@@ -170,23 +187,11 @@ const changePage = (url) => {
                     <!-- Paginación -->
                     <div class="mt-4 flex items-center justify-between" v-if="empleados.total > 0">
                         <div class="text-sm text-gray-700 hidden sm:block">
-                            Mostrando <span class="font-medium">{{ empleados.from }}</span> a <span class="font-medium">{{ empleados.to }}</span> de <span class="font-medium">{{ empleados.total }}</span> resultados
+                            Mostrando {{ empleados.from }} a {{ empleados.to }} de {{ empleados.total }} resultados
                         </div>
                         <div class="flex gap-2">
-                            <button 
-                                @click="changePage(empleados.prev_page_url)"
-                                :disabled="!empleados.prev_page_url"
-                                class="px-4 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium text-gray-700"
-                            >
-                                Anterior
-                            </button>
-                            <button 
-                                @click="changePage(empleados.next_page_url)"
-                                :disabled="!empleados.next_page_url"
-                                class="px-4 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium text-gray-700"
-                            >
-                                Siguiente
-                            </button>
+                            <button @click="changePage(empleados.prev_page_url)" :disabled="!empleados.prev_page_url" class="px-4 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-50 text-sm font-medium text-gray-700">Anterior</button>
+                            <button @click="changePage(empleados.next_page_url)" :disabled="!empleados.next_page_url" class="px-4 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-50 text-sm font-medium text-gray-700">Siguiente</button>
                         </div>
                     </div>
 
