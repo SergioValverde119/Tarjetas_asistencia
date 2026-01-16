@@ -1,25 +1,16 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
 
-// --- WAYFINDER: Solo importamos las rutas de destino ---
+// --- WAYFINDER: Importamos las rutas ---
 // Asegúrate de correr: php artisan wayfinder:generate
 
-// 1. Rutas de Tarjetas (Archivo generated resources/js/routes/tarjetas.js)
+// 1. Rutas de Tarjetas
 import { mi_tarjeta, general } from '@/routes/tarjetas'; 
 
-// 2. Rutas de Kardex (Archivo generated resources/js/routes/kardex.js)
+// 2. Rutas de Kardex (Si existe)
 import { index as kardexIndex } from '@/routes/kardex'; 
 
-defineProps({
-    laravelVersion: {
-        type: String,
-        required: true,
-    },
-    phpVersion: {
-        type: String,
-        required: true,
-    },
-});
+// Ya no necesitamos definir props si no las usamos
 </script>
 
 <template>
@@ -39,7 +30,7 @@ defineProps({
                 </p>
             </div>
 
-            <!-- CAMBIO: Usamos Flexbox + justify-center para centrar las tarjetas -->
+            <!-- TARJETAS CENTRADAS -->
             <div class="flex flex-wrap justify-center gap-6 w-full max-w-5xl">
                 
                 <Link 
