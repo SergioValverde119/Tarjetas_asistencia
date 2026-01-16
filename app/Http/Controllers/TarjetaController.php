@@ -20,7 +20,6 @@ class TarjetaController extends Controller
         $this->tarjetaService = $tarjetaService;
     }
 
-    // --- MÓDULO: MI TARJETA ---
     public function indexIndividual()
     {
         $user = Auth::user();
@@ -51,18 +50,20 @@ class TarjetaController extends Controller
     }
 
     /**
-     * REPORTE DE DISPONIBILIDAD (Versión Rápida)
-     * Estrategia: Paginar primero, calcular después.
-     * Los filtros de Estatus/Mes se manejarán visualmente en el Frontend.
+     * REPORTE DE DISPONIBILIDAD (Backend Filtering)
      */
     public function indexDisponibilidad(Request $request)
     {
+        // 1. Evitar Timeout en cálculos masivos
+        set_time_limit(0); 
+        ini_set('memory_limit', '512M');
+
         $year = 2025;
         
-        // 1. Obtener empleados (Consulta ligera)
+        // 2. Obtener empleados
         $allEmployees = $this->tarjetaService->obtenerTodosLosEmpleados();
 
-        // 2. Filtro Local: Solo usuarios con cuenta
+        // 3. Filtrar solo usuarios con cuenta local
         $idsConCuenta = User::whereNotNull('biotime_id')
             ->pluck('biotime_id')
             ->map(fn($id) => (string)$id)
@@ -72,7 +73,7 @@ class TarjetaController extends Controller
             return in_array((string)$emp->id, $idsConCuenta);
         });
 
-        // 3. Filtro de Texto (Buscador)
+        // 4. Filtro de Búsqueda (Texto)
         if ($request->has('search') && $request->search) {
             $search = strtolower($request->search);
             $allEmployees = array_filter($allEmployees, function($emp) use ($search) {
@@ -82,14 +83,52 @@ class TarjetaController extends Controller
             });
         }
 
-        // 4. Paginación INMEDIATA (Esto garantiza la velocidad)
+        // 5. FILTRO DE ESTATUS Y MES (Lógica Backend)
+        $filterMonth = $request->input('month');
+        $filterStatus = $request->input('status'); // 'blocked' | 'ok'
+
+        if ($filterStatus) {
+            $filtered = [];
+            foreach ($allEmployees as $emp) {
+                $isBlocked = false;
+
+                // Optimización: Si hay mes, solo consultamos ese mes
+                if ($filterMonth) {
+                    $m = (int)$filterMonth;
+                    $datosMes = $this->tarjetaService->obtenerDatosPorMes($emp->id, $m, $year);
+                    
+                    // Buscamos incidencias (F o RG)
+                    foreach ($datosMes['registros'] as $dia) {
+                        if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
+                            $isBlocked = true;
+                            break;
+                        }
+                    }
+                } 
+                // Si es global, calculamos todo (más lento)
+                else {
+                    $resumen = $this->tarjetaService->calcularResumenFaltasAnual($emp->id, $year);
+                    $isBlocked = count($resumen) > 0;
+                    $emp->cached_resumen = $resumen; // Guardar para reusar
+                }
+
+                if ($filterStatus === 'blocked' && $isBlocked) {
+                    $filtered[] = $emp;
+                } elseif ($filterStatus === 'ok' && !$isBlocked) {
+                    $filtered[] = $emp;
+                }
+            }
+            $allEmployees = $filtered;
+        }
+
+        // 6. Paginación (100 por página)
         $currentPage = LengthAwarePaginator::resolveCurrentPage();
-        $perPage = 100;
+        $perPage = 10;
         $currentItems = array_slice($allEmployees, ($currentPage - 1) * $perPage, $perPage);
         
-        // 5. Cálculo SOLO para los 10 visibles
+        // 7. Armado visual del Semáforo
         foreach ($currentItems as &$emp) {
-            $resumen = $this->tarjetaService->calcularResumenFaltasAnual($emp->id, $year);
+            $resumen = $emp->cached_resumen ?? $this->tarjetaService->calcularResumenFaltasAnual($emp->id, $year);
             
             $semaforo = [];
             for ($m = 1; $m <= 12; $m++) {
@@ -102,6 +141,7 @@ class TarjetaController extends Controller
                 }
             }
             $emp->semaforo = $semaforo;
+            unset($emp->cached_resumen);
         }
 
         $paginatedItems = new LengthAwarePaginator($currentItems, count($allEmployees), $perPage);
@@ -109,16 +149,14 @@ class TarjetaController extends Controller
 
         return Inertia::render('DisponibilidadTarjetas', [
             'empleados' => $paginatedItems,
-            'filters' => $request->only(['search', 'month', 'status']), // Pasamos filtros para que el Front sepa qué hacer
+            'filters' => $request->only(['search', 'month', 'status']),
             'year' => $year
         ]);
     }
 
-    // --- MÓDULO: TARJETAS GENERALES ---
     public function indexUsers(Request $request)
     {
         $todosEmpleados = $this->tarjetaService->obtenerTodosLosEmpleados();
-        
         if ($request->has('search') && $request->search != '') {
             $search = strtolower($request->search);
             $todosEmpleados = array_filter($todosEmpleados, function($emp) use ($search) {
@@ -127,24 +165,15 @@ class TarjetaController extends Controller
                        str_contains($emp->emp_code ?? '', $search);
             });
         }
-
         $perPage = 10;
         $page = $request->input('page', 1);
         $offset = ($page - 1) * $perPage;
-        
         $empleadosPaginados = array_slice($todosEmpleados, $offset, $perPage);
         $total = count($todosEmpleados);
-
-        // Para este módulo simple, quizás no necesitas calcular el semáforo completo si es lento
-        // pero lo dejo igual para mantener consistencia si lo usabas.
         $year = 2025;
         $listaFinal = [];
-
         foreach ($empleadosPaginados as $emp) {
-            // Si esto es lento aquí, podrías quitarlo, ya que este módulo es "Buscar y Descargar"
             $estatusMeses = []; 
-            // ... (Lógica simplificada si prefieres velocidad extrema aquí) ...
-            
             $listaFinal[] = [
                 'id' => $emp->id,
                 'emp_code' => $emp->emp_code,
@@ -153,7 +182,6 @@ class TarjetaController extends Controller
                 'estatus_anual' => $estatusMeses 
             ];
         }
-
         return Inertia::render('BuscarTarjetas', [
             'empleados' => [
                 'data' => $listaFinal,
@@ -165,7 +193,6 @@ class TarjetaController extends Controller
         ]);
     }
 
-    // --- APIs ---
     public function getSchedule(Request $request)
     {
         try {
