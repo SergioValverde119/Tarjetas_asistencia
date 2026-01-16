@@ -4,9 +4,9 @@ import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { LogOut } from 'lucide-vue-next'; // Icono para el botón
 
 // --- IMPORTS ---
-import { home } from '@/routes';
 import { getSchedule } from '@/routes'; 
 import { download_pdf } from '@/routes/tarjetas'; 
 import TarjetaPdf from './TarjetaPdf.vue'; 
@@ -165,7 +165,16 @@ const descargarTarjeta = async (monthId) => {
 
     <div class="schedule-card-wrapper">
         <div class="nav-bar">
-            <Link :href="home().url" class="back-link">← Volver al Menú</Link>
+            <!-- Botón Cerrar Sesión (Alineado a la derecha) -->
+            <Link 
+                href="/logout" 
+                method="post" 
+                as="button" 
+                class="logout-link"
+            >
+                <LogOut class="w-4 h-4 mr-2" />
+                Cerrar Sesión
+            </Link>
         </div>
 
         <div class="schedule-card">
@@ -180,7 +189,7 @@ const descargarTarjeta = async (monthId) => {
 
             <div class="content-body">
                 <div class="table-header">
-                    <h3 class="text-lg font-semibold text-gray-700">Tarjetas de asistencia del año {{ year }}</h3>
+                    <h3 class="text-lg font-semibold text-gray-700">Tarjetas de asistencia</h3>
                 </div>
 
                 <div class="table-wrapper">
@@ -218,7 +227,7 @@ const descargarTarjeta = async (monthId) => {
                                         <!-- CASO 2: SIN FALTAS -->
                                         <span v-if="downloadedMonths.has(month.id)" class="status-badge generated">
                                             <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                                            Generado
+                                            Descargada
                                         </span>
                                         <span v-else class="status-badge available">Disponible</span>
                                     </template>
@@ -323,9 +332,33 @@ const descargarTarjeta = async (monthId) => {
 
 <style scoped>
 .schedule-card-wrapper { min-height: 100vh; background-color: #f3f4f6; padding: 24px; }
-.nav-bar { max-width: 1000px; margin: 0 auto 16px auto; display: flex; justify-content: flex-end; }
+
+/* Barra de navegación: Alineación a la derecha */
+.nav-bar { 
+    max-width: 1000px; 
+    margin: 0 auto 16px auto; 
+    display: flex; 
+    justify-content: flex-end; 
+}
+
 .back-link { color: #6b7280; text-decoration: none; font-weight: 500; font-size: 14px; transition: color 0.2s; }
 .back-link:hover { color: #2563eb; }
+
+/* ESTILO NUEVO: Botón Cerrar Sesión */
+.logout-link {
+    display: flex;
+    align-items: center;
+    color: #ef4444; /* Rojo suave */
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+.logout-link:hover { color: #b91c1c; }
+
 .schedule-card { max-width: 1000px; margin: 0 auto; padding: 32px; background-color: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
 .header { display: flex; justify-content: space-between; align-items: center; text-align: center; margin-bottom: 24px; border-bottom: 1px solid #e5e7eb; padding-bottom: 24px; }
 .header .logo { height: 90px; width: auto; }

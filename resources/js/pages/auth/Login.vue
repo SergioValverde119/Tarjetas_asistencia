@@ -16,13 +16,13 @@ defineProps<{
 
 // Usamos useForm directamente para controlar los campos
 const form = useForm({
-    username: '', // Usamos username (RFC) en lugar de email
+    username: '', 
     password: '',
     remember: false,
 });
 
 const submit = () => {
-    // Usamos store().url de Wayfinder en lugar de route('login')
+    
     form.post(store().url, {
         onFinish: () => form.reset('password'),
     });
@@ -64,7 +64,7 @@ const submit = () => {
                         autofocus
                         :tabindex="1"
                         autocomplete="username"
-                        placeholder="ADMIN010101"
+                        placeholder="Ingrese su RFC"
                         class="bg-white text-black placeholder-gray-500 border-gray-300"
                     />
                     <InputError :message="form.errors.username" />
@@ -81,7 +81,7 @@ const submit = () => {
                         required
                         :tabindex="2"
                         autocomplete="current-password"
-                        placeholder="••••••••"
+                        placeholder="Número de empleado"
                         class="bg-white text-black placeholder-gray-500 border-gray-300"
                     />
                     <InputError :message="form.errors.password" />

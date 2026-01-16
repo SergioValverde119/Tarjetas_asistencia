@@ -39,24 +39,25 @@ defineProps({
                 </p>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+            <!-- CAMBIO: Usamos Flexbox + justify-center para centrar las tarjetas -->
+            <div class="flex flex-wrap justify-center gap-6 w-full max-w-5xl">
                 
                 <Link 
                     :href="mi_tarjeta().url"
-                    class="group relative bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center"
+                    class="group relative bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center w-full md:w-80"
                 >
                     <div class="h-16 w-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
                         </svg>
                     </div>
-                    <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Mi Historial</h2>
-                    <p class="text-gray-500 dark:text-gray-400 text-sm">Consulta tus registros personales.</p>
+                    <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Mi Tarjeta</h2>
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">Tarjetas personales.</p>
                 </Link>
 
                 <Link 
                     :href="general().url"
-                    class="group relative bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center"
+                    class="group relative bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center w-full md:w-80"
                 >
                     <div class="h-16 w-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
@@ -66,23 +67,6 @@ defineProps({
                     <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Tarjetas Generales</h2>
                     <p class="text-gray-500 dark:text-gray-400 text-sm">Buscador global de empleados.</p>
                 </Link>
-
-                <Link 
-                    :href="kardexIndex().url"
-                    class="group relative bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center"
-                >
-                    <div class="h-16 w-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                        </svg>
-                    </div>
-                    <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Kárdex</h2>
-                    <p class="text-gray-500 dark:text-gray-400 text-sm">Reportes y exportación.</p>
-                </Link>
-            </div>
-
-            <div class="mt-16 text-center text-sm text-gray-500 dark:text-gray-400">
-                Laravel v{{ laravelVersion }} (PHP v{{ phpVersion }})
             </div>
         </div>
     </div>
