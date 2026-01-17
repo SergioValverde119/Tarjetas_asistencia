@@ -43,6 +43,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     Route::get('/api/internal/users', [TarjetaController::class, 'getUsers']);
 
         Route::get('/reporte-disponibilidad', [TarjetaController::class, 'indexDisponibilidad'])->name('tarjetas.disponibilidad');
+        
     // LOGS DE DESCARGAS (CORREGIDO: Descomentado y apuntando al controlador)
     Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
 

@@ -185,15 +185,17 @@ class TarjetaService
 
             // --- REGLAS ---
 
+                        if ($date->isWeekend()) {
+                $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', '');
+                continue;
+            }
+
             if ($permisoDia) {
                 $resultados[] = $this->crearFila($fechaActualStr, $registroDia, 'J', $permisoDia->reason ?? 'Permiso');
                 continue;
             }
 
-            if ($date->isWeekend()) {
-                $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', '');
-                continue;
-            }
+
 
             if (!$registroDia || ($holidayDia && isset($registroDia->enable_holiday) && $registroDia->enable_holiday === true)) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', $holidayDia ? $holidayDia->alias : '');
