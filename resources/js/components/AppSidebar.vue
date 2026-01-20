@@ -5,14 +5,21 @@ import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
 import {
-    Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar, 
+    Sidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    useSidebar, 
 } from '@/components/ui/sidebar';
 
 import { home } from '@/routes';
-// Agregamos 'disponibilidad' al import (asegúrate de crear esta ruta en tu archivo de rutas)
 import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
+import * as incidencias from '@/routes/incidencias'; // Importamos el módulo completo
 
 import { Link } from '@inertiajs/vue3';
 import { BookOpen, Folder, LayoutGrid, IdCard, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck } from 'lucide-vue-next';
@@ -24,37 +31,36 @@ const isAdmin = user && user.role === 'admin';
 
 const mainNavItems = computed(() => {
     const items = [
-        { title: 'Dashboard', href: '#', icon: LayoutGrid },
-        { title: 'Configuración Mi tarjeta', href: '#', icon: User },
+        { title: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
+        { title: 'Configuración Mi tarjeta', href: mi_tarjeta ? mi_tarjeta().url : '#', icon: User },
     ];
 
     if (isAdmin) {
         items.push(
             { 
                 title: 'Generador de Tarjetas', 
-                href: general(), 
+                href: general ? general().url : '#', 
                 icon: IdCard 
             },
             { 
                 title: 'Incidencias', 
-                href: '#', // Pendiente de ruta
+                // CORRECCIÓN: Apuntamos al INDEX (Listado), no al CREATE
+                href: incidencias.index ? incidencias.index().url : '#', 
                 icon: TriangleAlert 
             },
             { 
-                // --- NUEVA PANTALLA DE SEMÁFOROS (SEPARADA) ---
                 title: 'Disponibilidad', 
-                href: disponibilidad ? disponibilidad() : '#', 
+                href: disponibilidad ? disponibilidad().url : '#', 
                 icon: CalendarCheck 
             },
             { 
                 title: 'Bitácora Descargas', 
-                href: logsIndex ? logsIndex() : '#', 
+                href: logsIndex ? logsIndex().url : '#', 
                 icon: FileClock 
             },
             { 
-                // --- CRUD DE USUARIOS ORIGINAL (RESTAURADO) ---
                 title: 'Usuarios', 
-                href: usersIndex ? usersIndex() : '#', 
+                href: usersIndex ? usersIndex().url : '#', 
                 icon: Users 
             }
         );
