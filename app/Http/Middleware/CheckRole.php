@@ -12,10 +12,12 @@ class CheckRole
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     * @param  string  $role  El rol requerido (ej. 'admin')
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure  $next
+     * @param  string  ...$roles  // <--- Aceptamos lista de roles
+     * @return mixed
      */
-    public function handle(Request $request, Closure $next, string $role): Response
+    public function handle(Request $request, Closure $next, ...$roles): Response
     {
         if (!Auth::check()) {
             return redirect('login');
@@ -23,17 +25,18 @@ class CheckRole
 
         $user = Auth::user();
 
-        // Si el usuario es admin, tiene acceso a todo (opcional) o validamos estricto
+        // 1. Si el usuario es 'admin', le damos pase VIP a todo
         if ($user->role === 'admin') {
             return $next($request);
         }
 
-        // Si el rol requerido es el del usuario, pasa
-        if ($user->role === $role) {
+        // 2. Si el rol del usuario está en la lista de roles permitidos, pasa
+        // (Ejemplo: Si la ruta dice 'role:supervisor' y el usuario es 'supervisor')
+        if (in_array($user->role, $roles)) {
             return $next($request);
         }
 
-        // Si no cumple, abortamos con error 403 (Prohibido)
+        // Si no tiene el rol necesario, denegamos acceso
         abort(403, 'No tienes permisos para acceder a esta sección.');
     }
 }

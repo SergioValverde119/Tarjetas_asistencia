@@ -221,7 +221,8 @@ const closeResultModal = () => {
                                         class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 shadow-sm bg-white"
                                     >
                                         <option value="empleado">Empleado</option>
-                                        <option value="admin">Administrador</option>
+                                        <option value="disponibilidad">Monitor de tarjetas</option>
+                                        <option value="admin">Administradorr</option>
                                     </select>
                                 </div>
 

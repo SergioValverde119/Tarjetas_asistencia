@@ -19,7 +19,7 @@ import { home } from '@/routes';
 import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
-import * as incidencias from '@/routes/incidencias'; // Importamos el módulo completo
+import * as incidencias from '@/routes/incidencias';
 
 import { Link } from '@inertiajs/vue3';
 import { BookOpen, Folder, LayoutGrid, IdCard, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck } from 'lucide-vue-next';
@@ -27,14 +27,42 @@ import { BookOpen, Folder, LayoutGrid, IdCard, Info, Command, FileClock, Archive
 const { toggleSidebar } = useSidebar();
 const page = usePage();
 const user = page.props.auth.user;
-const isAdmin = user && user.role === 'admin';
+
+// --- GESTIÓN DE ROLES ---
+const role = user ? user.role : 'empleado';
+const isAdmin = role === 'admin';
+const isSupervisor = role === 'supervisor';
 
 const mainNavItems = computed(() => {
+    
+    // CASO 1: MONITOR DE DISPONIBILIDAD (VISTA EXCLUSIVA)
+    // Si el usuario tiene el rol 'disponibilidad', SOLO ve esto y nada más.
+    if (role === 'disponibilidad') {
+        return [
+            { 
+                title: 'Disponibilidad', 
+                href: disponibilidad ? disponibilidad().url : '#', 
+                icon: CalendarCheck 
+            }
+        ];
+    }
+
+    // CASO 2: BASE COMÚN (Para Empleado, Supervisor y Admin)
     const items = [
         { title: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
         { title: 'Configuración Mi tarjeta', href: mi_tarjeta ? mi_tarjeta().url : '#', icon: User },
     ];
 
+    // Módulo INCIDENCIAS (Supervisor + Admin)
+    if (isAdmin || isSupervisor) {
+        items.push({ 
+            title: 'Incidencias', 
+            href: incidencias.index ? incidencias.index().url : '#', 
+            icon: TriangleAlert 
+        });
+    }
+
+    // Módulos EXCLUSIVOS DE ADMIN
     if (isAdmin) {
         items.push(
             { 
@@ -43,13 +71,7 @@ const mainNavItems = computed(() => {
                 icon: IdCard 
             },
             { 
-                title: 'Incidencias', 
-                // CORRECCIÓN: Apuntamos al INDEX (Listado), no al CREATE
-                href: incidencias.index ? incidencias.index().url : '#', 
-                icon: TriangleAlert 
-            },
-            { 
-                title: 'Disponibilidad', 
+                title: 'Disponibilidad', // El Admin también ve el semáforo
                 href: disponibilidad ? disponibilidad().url : '#', 
                 icon: CalendarCheck 
             },
@@ -65,6 +87,7 @@ const mainNavItems = computed(() => {
             }
         );
     }
+
     return items;
 });
 

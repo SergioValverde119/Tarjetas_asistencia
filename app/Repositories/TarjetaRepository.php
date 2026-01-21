@@ -26,6 +26,7 @@ class TarjetaRepository
                 ON public.personnel_position.id = public.personnel_employee.position_id
             LEFT JOIN public.personnel_department 
                 ON public.personnel_employee.department_id = public.personnel_department.id
+                WHERE public.personnel_employee.status = 0
             ORDER BY public.personnel_employee.id ASC;
         ";
         return DB::connection('pgsql_biotime')->select($query);

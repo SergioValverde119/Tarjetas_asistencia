@@ -5,7 +5,7 @@ import { Head, Link } from '@inertiajs/vue3';
 // Asegúrate de correr: php artisan wayfinder:generate
 
 // 1. Rutas de Tarjetas
-import { mi_tarjeta, general } from '@/routes/tarjetas'; 
+import { mi_tarjeta, general, disponibilidad } from '@/routes/tarjetas'; 
 
 // 2. Rutas de Kardex (Si existe)
 import { index as kardexIndex } from '@/routes/kardex'; 
@@ -47,7 +47,7 @@ import { index as kardexIndex } from '@/routes/kardex';
                 </Link>
 
                 <Link 
-                    :href="general().url"
+                    :href="disponibilidad().url"
                     class="group relative bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center w-full md:w-80"
                 >
                     <div class="h-16 w-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
