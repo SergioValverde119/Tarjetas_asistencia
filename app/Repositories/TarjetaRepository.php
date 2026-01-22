@@ -55,7 +55,6 @@ class TarjetaRepository
                 WHERE fecha < ?::date
             ),
             asignacion_horario AS (
-                -- Buscamos el turno y el departamento del empleado
                 SELECT 
                     e.id as emp_id,
                     e.enable_holiday,
@@ -70,7 +69,6 @@ class TarjetaRepository
                 LIMIT 1
             ),
             horario_base AS (
-                -- Buscamos el PRIMER horario disponible del turno para usarlo como referencia global
                 SELECT DISTINCT ON (sd.shift_id)
                     sd.shift_id,
                     ti.in_time as shift_in_time,
@@ -103,41 +101,46 @@ class TarjetaRepository
                 je.timetable_alias as timetable_name,
                 je.department_name,
                 
-                -- LA VERDAD DEL RELOJ (Mejorada: Compara valores de tiempo directamente)
+                -- Procesamiento de huellas del reloj
                 TO_CHAR(p.entrada, 'YYYY-MM-DD HH24:MI:SS') as clock_in,
                 TO_CHAR(p.salida, 'YYYY-MM-DD HH24:MI:SS') as clock_out,
 
-                -- LÓGICA DE RESPALDO: Horarios oficiales
+                -- Datos de horario y duración
                 COALESCE(je.in_time, je.shift_in_time) as in_time,
                 COALESCE(je.duration, je.shift_duration) as duration,
                 je.allow_late,
                 (je.fecha || ' ' || COALESCE(je.in_time, je.shift_in_time, '00:00:00'))::timestamp as check_in,
-                
-                -- Salida oficial calculada
                 (COALESCE(je.in_time, je.shift_in_time, '00:00:00')::time + (COALESCE(je.duration, je.shift_duration, 0) || ' minutes')::interval)::time as off_time,
                 
                 je.enable_holiday,
                 al.apply_reason
 
             FROM jornada_esperada je
-            -- El LATERAL JOIN busca la checada mínima y máxima del día
             LEFT JOIN LATERAL (
                 SELECT 
                     MIN(punch_time) as entrada,
-                    -- CORRECCIÓN: Solo devolvemos salida si hay un tiempo diferente al de entrada
-                    CASE 
-                        WHEN MAX(punch_time) > MIN(punch_time) THEN MAX(punch_time) 
-                        ELSE NULL 
-                    END as salida
+                    CASE WHEN MAX(punch_time) > MIN(punch_time) THEN MAX(punch_time) ELSE NULL END as salida
                 FROM public.iclock_transaction 
                 WHERE emp_id = je.emp_id AND punch_time::date = je.fecha
             ) p ON true
-            LEFT JOIN public.att_leave al ON je.emp_id = al.employee_id 
-                AND al.start_time::date = je.fecha
+            
+            -- LÓGICA DE INCIDENCIAS: Prioriza la que inicia el día actual y resta 1 segundo al final
+            LEFT JOIN LATERAL (
+                SELECT apply_reason 
+                FROM public.att_leave 
+                WHERE employee_id = je.emp_id 
+                AND je.fecha BETWEEN start_time::date AND (end_time - interval '1 second')::date
+                ORDER BY 
+                    (start_time::date = je.fecha) DESC, -- Prioridad 1: Inicia hoy
+                    (end_time - start_time) ASC,       -- Prioridad 2: La más específica/corta
+                    start_time DESC                      -- Prioridad 3: La más reciente
+                LIMIT 1
+            ) al ON true
+            
             ORDER BY je.fecha ASC;
         ";
 
-        return DB::connection('pgsql_biotime')->select($query, [
+         return DB::connection('pgsql_biotime')->select($query, [
             $startDate, // Inicio calendario
             $endDate,   // Fin calendario
             $startDate, // Inicio validación horario
