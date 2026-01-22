@@ -34,18 +34,118 @@ class TarjetaRepository
 
     public function getAttendanceRecords($empId, $startDate, $endDate)
     {
+        //  $query = "
+        //       SELECT apb.*, tt.*, al.*, pe.enable_holiday
+        //      FROM public.att_payloadbase apb
+        //      LEFT JOIN public.att_timeinterval tt ON apb.timetable_id = tt.id
+        //      LEFT JOIN public.att_leave al ON apb.emp_id = al.employee_id AND DATE(apb.check_in) = DATE(al.start_time) 
+        //      LEFT JOIN public.personnel_employee pe ON apb.emp_id = pe.id
+        //      WHERE apb.att_date BETWEEN ? AND ? 
+        //      AND apb.emp_id = ? 
+        //      ORDER BY apb.check_in ASC; 
+        //  ";
+        // return DB::connection('pgsql_biotime')->select($query, [$startDate, $endDate, $empId]);
+
         $query = "
-            SELECT apb.*, tt.*, al.*, pe.enable_holiday
-            FROM public.att_payloadbase apb
-            LEFT JOIN public.att_timeinterval tt ON apb.timetable_id = tt.id
-            LEFT JOIN public.att_leave al ON apb.emp_id = al.employee_id AND DATE(apb.check_in) = DATE(al.start_time) 
-            LEFT JOIN public.personnel_employee pe ON apb.emp_id = pe.id
-            WHERE apb.att_date BETWEEN ? AND ? 
-            AND apb.emp_id = ? 
-            ORDER BY apb.check_in ASC;
+            WITH RECURSIVE calendario_dias AS (
+                SELECT ?::date AS fecha
+                UNION ALL
+                SELECT (fecha + interval '1 day')::date
+                FROM calendario_dias
+                WHERE fecha < ?::date
+            ),
+            asignacion_horario AS (
+                -- Buscamos el turno y el departamento del empleado
+                SELECT 
+                    e.id as emp_id,
+                    e.enable_holiday,
+                    pd.dept_name as department_name,
+                    COALESCE(sch.shift_id, ds.shift_id) as shift_id
+                FROM public.personnel_employee e
+                LEFT JOIN public.personnel_department pd ON e.department_id = pd.id
+                LEFT JOIN public.att_attschedule sch ON e.id = sch.employee_id 
+                    AND ?::date BETWEEN sch.start_date AND sch.end_date
+                LEFT JOIN public.att_departmentschedule ds ON e.department_id = ds.department_id
+                WHERE e.id = ?
+                LIMIT 1
+            ),
+            horario_base AS (
+                -- Buscamos el PRIMER horario disponible del turno para usarlo como referencia global
+                SELECT DISTINCT ON (sd.shift_id)
+                    sd.shift_id,
+                    ti.in_time as shift_in_time,
+                    ti.work_time_duration as shift_duration
+                FROM public.att_shiftdetail sd
+                JOIN public.att_timeinterval ti ON sd.time_interval_id = ti.id
+                ORDER BY sd.shift_id, sd.day_index ASC
+            ),
+            jornada_esperada AS (
+                SELECT 
+                    cd.fecha,
+                    ah.emp_id,
+                    ah.enable_holiday,
+                    ah.department_name,
+                    ti.alias as timetable_alias,
+                    ti.in_time,
+                    ti.work_time_duration as duration, 
+                    ti.allow_late,
+                    hb.shift_in_time,
+                    hb.shift_duration
+                FROM calendario_dias cd
+                CROSS JOIN asignacion_horario ah
+                LEFT JOIN horario_base hb ON ah.shift_id = hb.shift_id
+                LEFT JOIN public.att_shiftdetail sd ON ah.shift_id = sd.shift_id 
+                    AND sd.day_index = extract(dow from cd.fecha)::int 
+                LEFT JOIN public.att_timeinterval ti ON sd.time_interval_id = ti.id
+            )
+            SELECT 
+                je.fecha as att_date,
+                je.timetable_alias as timetable_name,
+                je.department_name,
+                
+                -- LA VERDAD DEL RELOJ (Mejorada: Compara valores de tiempo directamente)
+                TO_CHAR(p.entrada, 'YYYY-MM-DD HH24:MI:SS') as clock_in,
+                TO_CHAR(p.salida, 'YYYY-MM-DD HH24:MI:SS') as clock_out,
+
+                -- LÓGICA DE RESPALDO: Horarios oficiales
+                COALESCE(je.in_time, je.shift_in_time) as in_time,
+                COALESCE(je.duration, je.shift_duration) as duration,
+                je.allow_late,
+                (je.fecha || ' ' || COALESCE(je.in_time, je.shift_in_time, '00:00:00'))::timestamp as check_in,
+                
+                -- Salida oficial calculada
+                (COALESCE(je.in_time, je.shift_in_time, '00:00:00')::time + (COALESCE(je.duration, je.shift_duration, 0) || ' minutes')::interval)::time as off_time,
+                
+                je.enable_holiday,
+                al.apply_reason
+
+            FROM jornada_esperada je
+            -- El LATERAL JOIN busca la checada mínima y máxima del día
+            LEFT JOIN LATERAL (
+                SELECT 
+                    MIN(punch_time) as entrada,
+                    -- CORRECCIÓN: Solo devolvemos salida si hay un tiempo diferente al de entrada
+                    CASE 
+                        WHEN MAX(punch_time) > MIN(punch_time) THEN MAX(punch_time) 
+                        ELSE NULL 
+                    END as salida
+                FROM public.iclock_transaction 
+                WHERE emp_id = je.emp_id AND punch_time::date = je.fecha
+            ) p ON true
+            LEFT JOIN public.att_leave al ON je.emp_id = al.employee_id 
+                AND al.start_time::date = je.fecha
+            ORDER BY je.fecha ASC;
         ";
-        return DB::connection('pgsql_biotime')->select($query, [$startDate, $endDate, $empId]);
-    }
+
+        return DB::connection('pgsql_biotime')->select($query, [
+            $startDate, // Inicio calendario
+            $endDate,   // Fin calendario
+            $startDate, // Inicio validación horario
+            $empId      // ID Empleado
+        ]);
+
+        
+        }
 
     public function getHolidays($startDate, $endDate)
     {

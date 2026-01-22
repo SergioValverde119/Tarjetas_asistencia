@@ -24,6 +24,11 @@ class TarjetaController extends Controller
     {
         $user = Auth::user();
         $empleadoData = $this->tarjetaService->buscarEmpleadoPorBiotimeId($user->biotime_id);
+
+        if ($empleadoData) {
+            error_log("DEBUG - indexIndividual - Depto: " . ($empleadoData->department_name ?? 'NULL'));
+        }
+
         $resumenFaltas = [];
         $year = 2025;
 
@@ -178,9 +183,11 @@ class TarjetaController extends Controller
                 'id' => $emp->id,
                 'emp_code' => $emp->emp_code,
                 'nombre' => $emp->first_name . ' ' . $emp->last_name,
-                'depto' => $emp->department_name,
+                'department_name' => $emp->department_name,
+                
                 'estatus_anual' => $estatusMeses 
             ];
+         
         }
         return Inertia::render('BuscarTarjetas', [
             'empleados' => [

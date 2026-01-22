@@ -1,4 +1,4 @@
-<script setup>
+routes<script setup>
 import { ref, watch, computed, nextTick } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue'; 
@@ -75,7 +75,7 @@ const downloadCard = async (emp, monthIndex) => {
         employeeForPdf.value = {
             ...emp,
             emp_code: emp.emp_code || emp.id, 
-            department_name: emp.depto 
+            department_name: emp.department_name 
         };
 
         const response = await axios.post(getSchedule().url, {

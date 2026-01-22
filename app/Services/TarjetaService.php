@@ -118,10 +118,16 @@ class TarjetaService
                 : [];
 
             if (empty($registrosRaw) && empty($permisosRaw)) {
-                return ['horario' => null, 'registros' => []];
+                return [
+                    'horario' => null, 
+                    'registros' => [],
+                    'department_name'=> 'Sin area'
+                    ];
             }
 
             $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $permisosRaw, $startOfMonth, $endOfMonth);
+
+            $departmentName = $registrosRaw[0]->department_name ?? 'Sin departamento';
 
             $horarioTexto = 'Sin horario';
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->duration) {
@@ -133,9 +139,11 @@ class TarjetaService
                     $horarioTexto = $registrosRaw[0]->in_time;
                 }
             }
+            //error_log($departmentName);
 
             return [
                 'horario' => $horarioTexto,
+                'department_name' => $departmentName,
                 'registros' => $registrosProcesados
             ];
 
@@ -242,11 +250,12 @@ class TarjetaService
         $horaRealEntrada = Carbon::parse($registro->clock_in);
         
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
+        
         $tolerance = $registro->allow_late - 1;
 
         if ($diferenciaMinutos <= $tolerance) return 'OK';
-        if ($diferenciaMinutos > $tolerance && $diferenciaMinutos <= 20) return ($retardosLevesPrevios >= 4) ? 'RG' : 'RL';
-        if ($diferenciaMinutos > 20 && $diferenciaMinutos <= 31) return 'RG';
+        if ($diferenciaMinutos > $tolerance && $diferenciaMinutos <= 21) return ($retardosLevesPrevios >= 4) ? 'RG' : 'RL';
+        if ($diferenciaMinutos > 21 && $diferenciaMinutos <= 31) return 'RG';
         return 'F';
     }
 }

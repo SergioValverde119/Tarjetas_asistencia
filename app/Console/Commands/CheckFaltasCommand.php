@@ -99,7 +99,7 @@ class CheckFaltasCommand extends Command
             if ($faltas > 0 || $retardosGraves > 0) {
                 $reporte[] = [
                     'nomina' => $emp->emp_code,
-                    'nombre' => $emp->first_name . ' ' . $emp->last_name,
+                    'nombre' => $emp->last_name .' ' .$emp->first_name,
                     'faltas' => $faltas,
                     'rg' => $retardosGraves,
                     'detalle' => implode(', ', $diasDetalle)
