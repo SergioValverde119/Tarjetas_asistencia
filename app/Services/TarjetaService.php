@@ -82,40 +82,7 @@ class TarjetaService
                 }
             }
 
-            /* COMENTADO: Lógica antigua que fallaba al procesar el año completo por pérdida de contexto de turnos
-            $startOfYear = Carbon::createFromDate($year, 1, 1)->startOfYear()->format('Y-m-d H:i:s');
-            $endOfYear = Carbon::createFromDate($year, 12, 31)->endOfYear()->format('Y-m-d H:i:s');
-
-            $registrosYear = $this->repository->getAttendanceRecords($empleadoId, $startOfYear, $endOfYear);
-            $holidaysYear = $this->repository->getHolidays($startOfYear, $endOfYear);
             
-            $permisosYear = [];
-            if (method_exists($this->repository, 'getPermissions')) {
-                $permisosYear = $this->repository->getPermissions($empleadoId, $startOfYear, $endOfYear);
-            }
-
-            for ($m = 1; $m <= 12; $m++) {
-                if ($year == now()->year && $m > now()->month) break;
-
-                $inicioMes = Carbon::createFromDate($year, $m, 1)->startOfMonth()->format('Y-m-d');
-                $finMes = Carbon::createFromDate($year, $m, 1)->endOfMonth()->format('Y-m-d');
-
-                $registrosMes = array_filter($registrosYear, fn($r) => Carbon::parse($r->att_date)->month == $m);
-
-                $procesado = $this->transformarRegistros($registrosMes, $holidaysYear, $permisosYear, $inicioMes, $finMes);
-
-                $diasMalos = [];
-                foreach ($procesado as $dia) {
-                    if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
-                        $diasMalos[] = Carbon::parse($dia['dia'])->day;
-                    }
-                }
-
-                if (!empty($diasMalos)) {
-                    $resumenFaltas[$m] = $diasMalos;
-                }
-            }
-            */
         } catch (Exception $e) {
             Log::error("Error calculando resumen anual: " . $e->getMessage());
         }
@@ -135,12 +102,7 @@ class TarjetaService
             $registrosRaw = $this->repository->getAttendanceRecords($empleadoId, $startOfMonth, $endOfMonth);
             $holidaysRaw = $this->repository->getHolidays($startOfMonth, $endOfMonth);
             
-            // COMENTADO: Ya no buscamos permisos adicionales, el repositorio trae el 'apply_reason' correcto por día.
-            /*
-            $permisosRaw = method_exists($this->repository, 'getPermissions') 
-                ? $this->repository->getPermissions($empleadoId, $startOfMonth, $endOfMonth) 
-                : [];
-            */
+           
 
             // AGREGADO: Verificamos solo registrosRaw
             if (empty($registrosRaw)) {
@@ -162,17 +124,7 @@ class TarjetaService
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->off_time) {
                 $horarioTexto = $registrosRaw[0]->in_time . ' A ' . $registrosRaw[0]->off_time;
             }
-            /* COMENTADO: Lógica antigua que fallaba si el primer día era descanso
-            if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->duration) {
-                try {
-                    $startTime = Carbon::createFromFormat('H:i:s', $registrosRaw[0]->in_time);
-                    $endTime = (clone $startTime)->addMinutes($registrosRaw[0]->duration);
-                    $horarioTexto = $startTime->format('H:i:s') . ' A ' . $endTime->format('H:i:s');
-                } catch (Exception $e) {
-                    $horarioTexto = $registrosRaw[0]->in_time;
-                }
-            }
-            */
+            
 
             return [
                 'horario' => $horarioTexto,
@@ -203,19 +155,9 @@ class TarjetaService
             
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
             // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
-            $motivoSQL = $reg->apply_reason ?? null;
+            $incidenciaAMostrar = !empty(trim($reg->nombre_permiso ?? '')) ? $reg->nombre_permiso : null;
 
-            /* COMENTADO: Este bucle manual era el que "encimaba" los motivos
-            $permisoDia = null;
-            foreach ($permisos as $p) {
-                $pStart = Carbon::parse($p->start_date);
-                $pEnd = Carbon::parse($p->end_date);
-                if ($date->between($pStart, $pEnd)) {
-                    $permisoDia = $p;
-                    break;
-                }
-            }
-            */
+            
 
             $holidayDia = null;
             foreach ($holidays as $hol) {
@@ -228,8 +170,8 @@ class TarjetaService
             // --- REGLAS ---
 
             // AGREGADO: Si el SQL trae motivo, es Justificado ('J')
-            if ($motivoSQL) {
-                $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $motivoSQL);
+            if ($incidenciaAMostrar) {
+                $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
                 continue;
             }
 
@@ -239,12 +181,7 @@ class TarjetaService
             }
 
             // COMENTADO: Ya no evaluamos permisoDia manual
-            /*
-            if ($permisoDia) {
-                $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $permisoDia->reason ?? 'Permiso');
-                continue;
-            }
-            */
+            
 
             // AGREGADO: Lógica de descanso si no hay huellas y es festivo
             if (!$reg->clock_in && !$reg->clock_out && (!$reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
@@ -261,21 +198,15 @@ class TarjetaService
             // --- AGREGADO: NUEVA LÓGICA DE CLASIFICACIÓN SIN ACUMULACIÓN ---
             $calificacion = $this->evaluarRetardo($reg, $retardosLevesPrevios);
             
-            /* COMENTADO: Se quita la regla de acumulación de 4 retardos leves = 1 grave
-            if ($calificacion === 'RL') $retardosLevesPrevios++;
-            if ($retardosLevesPrevios >= 4) {
-                $calificacion = 'RG';
-                $retardosLevesPrevios = 0;
-            }
-            */
+            
             
             // Si es F o RG pero tiene justificación en el registro, pasa a 'J'
             // AGREGADO: trim() para mayor seguridad en la validación
-            if (($calificacion === 'F' || $calificacion === 'RG') && !empty(trim($reg->apply_reason ?? ''))) {
+            if (($calificacion === 'F' || $calificacion === 'RG') && !empty(trim($reg->nombre_permiso ?? ''))) {
                 $calificacion = 'J';
             }
 
-            $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->apply_reason ?? '');
+            $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
         }
 
         return $resultados;
@@ -315,12 +246,6 @@ class TarjetaService
             */
             return 'RL';
         }
-
-        // 2. Si pasa de 21 minutos, ahora siempre es RG (Ya no hay falta por tiempo excesivo)
-        /* COMENTADO: Lógica antigua que marcaba falta después de 31 minutos
-        if ($diferenciaMinutos > 21 && $diferenciaMinutos <= 31) return 'RG';
-        return 'F';
-        */
         return 'RG';
     }
 }

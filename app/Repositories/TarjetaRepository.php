@@ -113,7 +113,8 @@ class TarjetaRepository
                 (COALESCE(je.in_time, je.shift_in_time, '00:00:00')::time + (COALESCE(je.duration, je.shift_duration, 0) || ' minutes')::interval)::time as off_time,
                 
                 je.enable_holiday,
-                al.apply_reason
+                al.nombre_categoria as nombre_permiso,
+                al.motivo_original as motivo_permiso
 
             FROM jornada_esperada je
             LEFT JOIN LATERAL (
@@ -126,14 +127,17 @@ class TarjetaRepository
             
             -- LÓGICA DE INCIDENCIAS: Prioriza la que inicia el día actual y resta 1 segundo al final
             LEFT JOIN LATERAL (
-                SELECT apply_reason 
-                FROM public.att_leave 
-                WHERE employee_id = je.emp_id 
-                AND je.fecha BETWEEN start_time::date AND (end_time - interval '1 second')::date
+                SELECT 
+                    cat.category_name as nombre_categoria, 
+                    l.apply_reason as motivo_original
+                FROM public.att_leave l 
+                JOIN public.att_leavecategory cat ON l.category_id = cat.id
+                WHERE l.employee_id = je.emp_id 
+                AND je.fecha BETWEEN l.start_time::date AND (l.end_time - interval '1 second')::date
                 ORDER BY 
-                    (start_time::date = je.fecha) DESC, -- Prioridad 1: Inicia hoy
-                    (end_time - start_time) ASC,       -- Prioridad 2: La más específica/corta
-                    start_time DESC                      -- Prioridad 3: La más reciente
+                    (l.start_time::date = je.fecha) DESC,
+                    (l.end_time - l.start_time) ASC,
+                    l.start_time DESC
                 LIMIT 1
             ) al ON true
             
