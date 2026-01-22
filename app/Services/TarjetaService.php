@@ -135,32 +135,34 @@ class TarjetaService
             $registrosRaw = $this->repository->getAttendanceRecords($empleadoId, $startOfMonth, $endOfMonth);
             $holidaysRaw = $this->repository->getHolidays($startOfMonth, $endOfMonth);
             
-            // RESTAURADO: Búsqueda de permisos según original
+            // COMENTADO: Ya no buscamos permisos adicionales, el repositorio trae el 'apply_reason' correcto por día.
+            /*
             $permisosRaw = method_exists($this->repository, 'getPermissions') 
                 ? $this->repository->getPermissions($empleadoId, $startOfMonth, $endOfMonth) 
                 : [];
+            */
 
-            if (empty($registrosRaw) && empty($permisosRaw)) {
+            // AGREGADO: Verificamos solo registrosRaw
+            if (empty($registrosRaw)) {
                 return [
                     'horario' => null, 
                     'registros' => [],
-                    'department_name'=> 'Sin área' // AGREGADO: Corrección de tilde
+                    'department_name'=> 'Sin area'
                     ];
             }
 
-            // RESTAURADO: Llamada con parámetros originales
-            $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $permisosRaw, $startOfMonth, $endOfMonth);
+            // AGREGADO: Llamamos al transformador solo con lo que necesitamos
+            $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $startOfMonth, $endOfMonth);
 
             $departmentName = $registrosRaw[0]->department_name ?? 'Sin departamento';
 
             $horarioTexto = 'Sin horario';
             
-            // --- AGREGADO: RESTAURADA LÓGICA DE HORARIO MEDIANTE OFF_TIME (SÍ FUNCIONABA) ---
+            // AGREGADO: Usamos off_time que viene del Repositorio (Garantiza horario aunque sea descanso el día 1)
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->off_time) {
                 $horarioTexto = $registrosRaw[0]->in_time . ' A ' . $registrosRaw[0]->off_time;
             }
-            
-            /* COMENTADO: Lógica antigua basada en duración manual en PHP
+            /* COMENTADO: Lógica antigua que fallaba si el primer día era descanso
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->duration) {
                 try {
                     $startTime = Carbon::createFromFormat('H:i:s', $registrosRaw[0]->in_time);
@@ -188,23 +190,22 @@ class TarjetaService
      * LÓGICA PRIVADA PARA TRANSFORMAR REGISTROS
      * RESTAURADO: Parámetros originales ($registros, $holidays, $permisos, $startDate, $endDate)
      */
-    private function transformarRegistros($registros, $holidays, $permisos, $startDate, $endDate)
+    private function transformarRegistros($registros, $holidays, $startDate, $endDate)
     {
         $retardosLevesPrevios = 0;
         $resultados = [];
 
-        // AGREGADO: Mantengo el foreach para respetar la lógica de apply_reason que viene del SQL
-        // pero integrado con la estructura original.
+        // AGREGADO: Ahora usamos un foreach sobre los registros que trajo el SQL.
+        // Esto garantiza que respetamos exactamente las 31 filas (o 30) calculadas por el repositorio.
         foreach ($registros as $reg) {
             $fechaActualStr = Carbon::parse($reg->att_date)->format('Y-m-d');
             $date = Carbon::parse($fechaActualStr);
             
-            // AGREGADO: PRIORIDAD 1: Esto resuelve el problema de Sergio (ID 14154). 
-            // Si el SQL encontró incidencia, ganará sobre el bucle manual.
-            // AGREGADO: trim() para evitar que espacios en blanco se tomen como justificación válida.
-            $motivoSQL = !empty(trim($reg->apply_reason ?? '')) ? $reg->apply_reason : null;
+            // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
+            // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
+            $motivoSQL = $reg->apply_reason ?? null;
 
-            // RESTAURADO: Bucle manual de permisos del archivo original
+            /* COMENTADO: Este bucle manual era el que "encimaba" los motivos
             $permisoDia = null;
             foreach ($permisos as $p) {
                 $pStart = Carbon::parse($p->start_date);
@@ -214,6 +215,7 @@ class TarjetaService
                     break;
                 }
             }
+            */
 
             $holidayDia = null;
             foreach ($holidays as $hol) {
@@ -225,7 +227,7 @@ class TarjetaService
 
             // --- REGLAS ---
 
-            // AGREGADO: Priorizamos el motivo del SQL si existe
+            // AGREGADO: Si el SQL trae motivo, es Justificado ('J')
             if ($motivoSQL) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $motivoSQL);
                 continue;
@@ -236,19 +238,21 @@ class TarjetaService
                 continue;
             }
 
-            // RESTAURADO: Evaluación permisoDia manual del original
+            // COMENTADO: Ya no evaluamos permisoDia manual
+            /*
             if ($permisoDia) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $permisoDia->reason ?? 'Permiso');
                 continue;
             }
+            */
 
-            // RESTAURADO: Lógica de descanso original
+            // AGREGADO: Lógica de descanso si no hay huellas y es festivo
             if (!$reg->clock_in && !$reg->clock_out && (!$reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', $holidayDia ? $holidayDia->alias : '');
                 continue;
             }
 
-            // RESTAURADO: Lógica de falta original
+            // AGREGADO: Si no hay entrada del reloj (y no hubo motivo arriba), es Falta
             if (!$reg->clock_in) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'F', '');
                 continue;
@@ -292,7 +296,7 @@ class TarjetaService
         if (empty($registro->clock_in)) return 'F';
         
         // RESTAURADO: Lógica basada en check_in como el original
-        $fechaCheckIn = Carbon::parse($registro->check_in)->format('Y-m-d');
+        $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
         $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
         $horaRealEntrada = Carbon::parse($registro->clock_in);
         
