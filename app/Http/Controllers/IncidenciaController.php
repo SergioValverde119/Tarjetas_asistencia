@@ -143,10 +143,12 @@ class IncidenciaController extends Controller
             $rows = $data[0]; 
 
             // Remover encabezado si existe (detectando texto en la fila 1)
-            if (isset($rows[0][2]) && !is_numeric($rows[0][3]) && stripos($rows[0][2], 'cod') !== false) {
-                array_shift($rows);
-            }
+            // if (isset($rows[0][2]) && !is_numeric($rows[0][3]) && stripos($rows[0][2], 'cod') !== false) {
+            //     array_shift($rows);
+            // }
 
+            array_shift($rows); 
+            
             $resultados = [];
 
             foreach ($rows as $row) {
