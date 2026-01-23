@@ -177,6 +177,24 @@ class TarjetaService
                 }
             }
             
+
+            if ($reg->clock_in && !$reg->clock_out && $reg->in_time) {
+                $entradaOficial = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
+                $duracionMinutos = $reg->duration ?? 480; 
+                $salidaOficial = (clone $entradaOficial)->addMinutes($duracionMinutos);
+                
+                $checadaReal = Carbon::parse($reg->clock_in);
+
+                // Calculamos la distancia absoluta en minutos a ambos puntos
+                $distanciaEntrada = abs($checadaReal->diffInMinutes($entradaOficial, false));
+                $distanciaSalida = abs($checadaReal->diffInMinutes($salidaOficial, false));
+
+                // Si está notablemente más cerca de la salida, la movemos
+                if ($distanciaSalida < $distanciaEntrada) {
+                    $reg->clock_out = $reg->clock_in;
+                    $reg->clock_in = null;
+                }
+            }
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
             // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
             $incidenciaAMostrar = !empty(trim($reg->nombre_permiso ?? '')) ? $reg->nombre_permiso : null;
@@ -194,22 +212,24 @@ class TarjetaService
             // --- REGLAS ---
 
             // AGREGADO: Si el SQL trae motivo, es Justificado ('J')
+            if ($date->isWeekend()) {
+                $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', '');
+                continue;
+            }
+            
             if ($incidenciaAMostrar) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
                 continue;
             }
 
-            if ($date->isWeekend()) {
-                $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', '');
-                continue;
-            }
+            
 
             // COMENTADO: Ya no evaluamos permisoDia manual
             
 
             // AGREGADO: Lógica de descanso si no hay huellas y es festivo
             if (!$reg->clock_in && !$reg->clock_out && (!$reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
-                $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', $holidayDia ? $holidayDia->alias : '');
+                $resultados[] = $this->crearFila($fechaActualStr, null, 'FEST', $holidayDia ? $holidayDia->alias : '');
                 continue;
             }
 
