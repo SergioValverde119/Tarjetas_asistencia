@@ -146,12 +146,36 @@ class TarjetaService
     {
         $retardosLevesPrevios = 0;
         $resultados = [];
+        
 
-        // AGREGADO: Ahora usamos un foreach sobre los registros que trajo el SQL.
-        // Esto garantiza que respetamos exactamente las 31 filas (o 30) calculadas por el repositorio.
         foreach ($registros as $reg) {
-            $fechaActualStr = Carbon::parse($reg->att_date)->format('Y-m-d');
-            $date = Carbon::parse($fechaActualStr);
+            $date = Carbon::parse($reg->att_date);
+            $fechaActualStr = $date->format('Y-m-d');
+            
+            // --- CÁLCULO AUTOMÁTICO DE AJUSTE (Lógica corregida) ---
+            $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
+            $finOtono = Carbon::parse("last sunday of october $date->year");
+
+            // Determinamos si estamos en el periodo de "verano" (Abril a Octubre)
+            $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
+
+            if ($esVerano) {
+                // En verano el dato viene retrasado de origen -> SUMAMOS 1 hora
+                $horasAjuste = 1;
+            } else {
+                // En invierno (Nov-Mar) el dato sale adelantado -> RESTAMOS 1 hora
+                $horasAjuste = -1;
+            }
+
+            // Aplicamos el ajuste si existe checada
+            if ($horasAjuste > 0) {
+                if ($reg->clock_in) {
+                    $reg->clock_in = Carbon::parse($reg->clock_in)->addHours($horasAjuste)->format('Y-m-d H:i:s');
+                }
+                if ($reg->clock_out) {
+                    $reg->clock_out = Carbon::parse($reg->clock_out)->addHours($horasAjuste)->format('Y-m-d H:i:s');
+                }
+            }
             
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
             // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
