@@ -27,7 +27,8 @@ class TarjetaService
         try {
             return $this->repository->getAllEmployees();
         } catch (Exception $e) {
-            Log::error("Error en TarjetaService@obtenerTodosLosEmpleados: " . $e->getMessage());
+            Log::error('Error en TarjetaService@obtenerTodosLosEmpleados: '.$e->getMessage());
+
             return [];
         }
     }
@@ -37,7 +38,9 @@ class TarjetaService
      */
     public function buscarEmpleadoPorBiotimeId($biotimeId)
     {
-        if (!$biotimeId) return null;
+        if (! $biotimeId) {
+            return null;
+        }
 
         try {
             $allEmployees = $this->repository->getAllEmployees();
@@ -47,8 +50,9 @@ class TarjetaService
                 }
             }
         } catch (Exception $e) {
-            Log::error("Error en TarjetaService@buscarEmpleado: " . $e->getMessage());
+            Log::error('Error en TarjetaService@buscarEmpleado: '.$e->getMessage());
         }
+
         return null;
     }
 
@@ -59,17 +63,19 @@ class TarjetaService
     public function calcularResumenFaltasAnual($empleadoId, $year)
     {
         $resumenFaltas = [];
-        
+
         try {
             // --- AGREGADO: NUEVA LÓGICA DE UNIFICACIÓN ---
             // Para evitar que el semáforo salga verde cuando hay RG, ahora consultamos
             // mes por mes usando la misma lógica del detalle. Esto garantiza consistencia.
             for ($m = 1; $m <= 12; $m++) {
-                if ($year == now()->year && $m > now()->month) break;
+                if ($year == now()->year && $m > now()->month) {
+                    break;
+                }
 
                 // Llamamos a obtenerDatosPorMes para usar exactamente la misma vara de medir
                 $datosMes = $this->obtenerDatosPorMes($empleadoId, $m, $year);
-                
+
                 $diasMalos = [];
                 foreach ($datosMes['registros'] as $dia) {
                     if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
@@ -77,14 +83,13 @@ class TarjetaService
                     }
                 }
 
-                if (!empty($diasMalos)) {
+                if (! empty($diasMalos)) {
                     $resumenFaltas[$m] = $diasMalos;
                 }
             }
 
-            
         } catch (Exception $e) {
-            Log::error("Error calculando resumen anual: " . $e->getMessage());
+            Log::error('Error calculando resumen anual: '.$e->getMessage());
         }
 
         return $resumenFaltas;
@@ -101,16 +106,14 @@ class TarjetaService
 
             $registrosRaw = $this->repository->getAttendanceRecords($empleadoId, $startOfMonth, $endOfMonth);
             $holidaysRaw = $this->repository->getHolidays($startOfMonth, $endOfMonth);
-            
-           
 
             // AGREGADO: Verificamos solo registrosRaw
             if (empty($registrosRaw)) {
                 return [
-                    'horario' => null, 
+                    'horario' => null,
                     'registros' => [],
-                    'department_name'=> 'Sin area'
-                    ];
+                    'department_name' => 'Sin area',
+                ];
             }
 
             // AGREGADO: Llamamos al transformador solo con lo que necesitamos
@@ -119,21 +122,20 @@ class TarjetaService
             $departmentName = $registrosRaw[0]->department_name ?? 'Sin departamento';
 
             $horarioTexto = 'Sin horario';
-            
+
             // AGREGADO: Usamos off_time que viene del Repositorio (Garantiza horario aunque sea descanso el día 1)
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->off_time) {
-                $horarioTexto = $registrosRaw[0]->in_time . ' A ' . $registrosRaw[0]->off_time;
+                $horarioTexto = $registrosRaw[0]->in_time.' A '.$registrosRaw[0]->off_time;
             }
-            
 
             return [
                 'horario' => $horarioTexto,
                 'department_name' => $departmentName,
-                'registros' => $registrosProcesados
+                'registros' => $registrosProcesados,
             ];
 
         } catch (Exception $e) {
-            Log::error("Error en TarjetaService@obtenerDatosPorMes: " . $e->getMessage());
+            Log::error('Error en TarjetaService@obtenerDatosPorMes: '.$e->getMessage());
             throw $e;
         }
     }
@@ -146,12 +148,11 @@ class TarjetaService
     {
         $retardosLevesPrevios = 0;
         $resultados = [];
-        
 
         foreach ($registros as $reg) {
             $date = Carbon::parse($reg->att_date);
             $fechaActualStr = $date->format('Y-m-d');
-            
+
             // --- CÁLCULO AUTOMÁTICO DE AJUSTE (Lógica corregida) ---
             $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
             $finOtono = Carbon::parse("last sunday of october $date->year");
@@ -176,13 +177,12 @@ class TarjetaService
                     $reg->clock_out = Carbon::parse($reg->clock_out)->addHours($horasAjuste)->format('Y-m-d H:i:s');
                 }
             }
-            
 
-            if ($reg->clock_in && !$reg->clock_out && $reg->in_time) {
-                $entradaOficial = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
-                $duracionMinutos = $reg->duration ?? 480; 
+            if ($reg->clock_in && ! $reg->clock_out && $reg->in_time) {
+                $entradaOficial = Carbon::parse($reg->att_date.' '.$reg->in_time);
+                $duracionMinutos = $reg->duration ?? 480;
                 $salidaOficial = (clone $entradaOficial)->addMinutes($duracionMinutos);
-                
+
                 $checadaReal = Carbon::parse($reg->clock_in);
 
                 // Calculamos la distancia absoluta en minutos a ambos puntos
@@ -197,9 +197,7 @@ class TarjetaService
             }
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
             // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
-            $incidenciaAMostrar = !empty(trim($reg->nombre_permiso ?? '')) ? $reg->nombre_permiso : null;
-
-            
+            $incidenciaAMostrar = ! empty(trim($reg->nombre_permiso ?? '')) ? $reg->nombre_permiso : null;
 
             $holidayDia = null;
             foreach ($holidays as $hol) {
@@ -214,39 +212,38 @@ class TarjetaService
             // AGREGADO: Si el SQL trae motivo, es Justificado ('J')
             if ($date->isWeekend()) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', '');
+
                 continue;
             }
-            
+
             if ($incidenciaAMostrar) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
+
                 continue;
             }
 
-            
-
             // COMENTADO: Ya no evaluamos permisoDia manual
-            
 
             // AGREGADO: Lógica de descanso si no hay huellas y es festivo
-            if (!$reg->clock_in && !$reg->clock_out && (!$reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
-                $resultados[] = $this->crearFila($fechaActualStr, null, 'FEST', $holidayDia ? $holidayDia->alias : '');
+            if (! $reg->clock_in && ! $reg->clock_out && (! $reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
+                $resultados[] = $this->crearFila($fechaActualStr, null, 'J', $holidayDia ? $holidayDia->alias : '');
+
                 continue;
             }
 
             // AGREGADO: Si no hay entrada del reloj (y no hubo motivo arriba), es Falta
-            if (!$reg->clock_in) {
+            if (! $reg->clock_in) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'F', '');
+
                 continue;
             }
 
             // --- AGREGADO: NUEVA LÓGICA DE CLASIFICACIÓN SIN ACUMULACIÓN ---
             $calificacion = $this->evaluarRetardo($reg, $retardosLevesPrevios);
-            
-            
-            
+
             // Si es F o RG pero tiene justificación en el registro, pasa a 'J'
             // AGREGADO: trim() para mayor seguridad en la validación
-            if (($calificacion === 'F' || $calificacion === 'RG') && !empty(trim($reg->nombre_permiso ?? ''))) {
+            if (($calificacion === 'F' || $calificacion === 'RG') && ! empty(trim($reg->nombre_permiso ?? ''))) {
                 $calificacion = 'J';
             }
 
@@ -256,33 +253,38 @@ class TarjetaService
         return $resultados;
     }
 
-    private function crearFila($fecha, $registro, $calificacion, $obs) {
+    private function crearFila($fecha, $registro, $calificacion, $obs)
+    {
         return [
             'dia' => $fecha,
             'checkin' => ($registro && $registro->clock_in) ? Carbon::parse($registro->clock_in)->format('H:i:s') : '',
             'checkout' => ($registro && $registro->clock_out) ? Carbon::parse($registro->clock_out)->format('H:i:s') : '',
             'calificacion' => $calificacion,
-            'observaciones' => $obs
+            'observaciones' => $obs,
         ];
     }
 
     private function evaluarRetardo($registro, $retardosLevesPrevios)
     {
-        if (empty($registro->clock_in)) return 'F';
-        
+        if (empty($registro->clock_in)) {
+            return 'F';
+        }
+
         // RESTAURADO: Lógica basada en check_in como el original
         $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
-        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
+        $horaEntradaEstandar = Carbon::parse($fechaCheckIn.' '.$registro->in_time);
         $horaRealEntrada = Carbon::parse($registro->clock_in);
-        
+
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
-        
+
         $tolerance = $registro->allow_late - 1;
 
-        if ($diferenciaMinutos <= $tolerance) return 'OK';
+        if ($diferenciaMinutos <= $tolerance) {
+            return 'OK';
+        }
 
         // --- AGREGADO: CLASIFICACIÓN DIRECTA SIN LÍMITE DE FALTA POR TIEMPO ---
-        
+
         // 1. Si está dentro del rango de retardo leve (hasta 21 minutos) siempre es RL
         if ($diferenciaMinutos > $tolerance && $diferenciaMinutos <= 21) {
             /* COMENTADO: Se quita la verificación de acumulados
@@ -290,6 +292,7 @@ class TarjetaService
             */
             return 'RL';
         }
+
         return 'RG';
     }
 }

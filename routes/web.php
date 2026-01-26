@@ -56,6 +56,8 @@ Route::middleware(['auth', 'verified', 'role:admin,supervisor'])->group(function
     Route::post('/incidencias/categoria', [IncidenciaController::class, 'storeCategory'])->name('incidencias.category.store');
     Route::get('/incidencias/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('incidencias.template');
     Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
+    Route::get('/incidencias/{id}/editar', [IncidenciaController::class, 'edit'])->name('incidencias.edit');
+    Route::put('/incidencias/{id}', [IncidenciaController::class, 'update'])->name('incidencias.update');
 });
 
 // --- NIVEL 3: ADMINISTRADOR SUPREMO ---

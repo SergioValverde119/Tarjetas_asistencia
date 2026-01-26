@@ -138,6 +138,31 @@ class IncidenciaRepository
 
     // --- FUNCIONES DE BÚSQUEDA PARA IMPORTACIÓN (Faltaban estas) ---
 
+
+    public function findIncidenciaById($id)
+    {
+        return DB::connection('pgsql_biotime')
+            ->table('att_leave')
+            ->where('abstractexception_ptr_id', $id)
+            ->first();
+    }
+
+
+    public function updateIncidencia($id, $data)
+    {
+        return DB::connection('pgsql_biotime')
+            ->table('att_leave')
+            ->where('abstractexception_ptr_id', $id)
+            ->update([
+                'employee_id' => $data['employee_id'],
+                'category_id' => $data['category_id'],
+                'start_time'  => $data['start_time'],
+                'end_time'    => $data['end_time'],
+                'apply_reason'=> $data['reason'],
+                // No actualizamos apply_time para conservar la fecha de creación original
+            ]);
+    }
+
     /**
      * Buscar ID por CÓDIGO DE NÓMINA
      */

@@ -84,6 +84,48 @@ class IncidenciaController extends Controller
         }
     }
 
+    public function edit($id, Request $request)
+    {
+        try {
+            $incidencia = $this->repository->findIncidenciaById($id);
+            
+            if (!$incidencia) {
+                return redirect()->route('incidencias.index')->with('error', 'La incidencia no existe.');
+            }
+
+            $searchEmployee = $request->input('search');
+            
+            return Inertia::render('Incidencias/Edit', [
+                'incidencia' => $incidencia,
+                'employees'  => $this->repository->getActiveEmployees($searchEmployee),
+                'categories' => $this->repository->getLeaveCategories(),
+                'filters'    => [
+                    'search' => $searchEmployee
+                ]
+            ]);
+        } catch (Exception $e) {
+            return redirect()->route('incidencias.index')->with('error', 'Error al cargar edición: ' . $e->getMessage());
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'employee_id' => 'required|integer',
+            'category_id' => 'required|integer',
+            'start_time'  => 'required|date',
+            'end_time'    => 'required|date|after_or_equal:start_time',
+            'reason'      => 'nullable|string|max:250'
+        ]);
+
+        try {
+            $this->repository->updateIncidencia($id, $validated);
+            return redirect()->route('incidencias.index')->with('success', 'Incidencia actualizada correctamente.');
+        } catch (Exception $e) {
+            return back()->with('error', 'Error al actualizar: ' . $e->getMessage());
+        }
+    }
+
     public function storeCategory(Request $request)
     {
         $validated = $request->validate([
