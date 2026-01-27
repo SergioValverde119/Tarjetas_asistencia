@@ -177,22 +177,46 @@ class TarjetaService
                     $reg->clock_out = Carbon::parse($reg->clock_out)->addHours($horasAjuste)->format('Y-m-d H:i:s');
                 }
             }
+            // Segundo filtro de rebote de checadas
 
-            if ($reg->clock_in && ! $reg->clock_out && $reg->in_time) {
-                $entradaOficial = Carbon::parse($reg->att_date.' '.$reg->in_time);
-                $duracionMinutos = $reg->duration ?? 480;
-                $salidaOficial = (clone $entradaOficial)->addMinutes($duracionMinutos);
+            if ($reg->clock_in && $reg->clock_out) {
+                $c_in = Carbon::parse($reg->clock_in);
+                $c_out = Carbon::parse($reg->clock_out);
+                
+                // Si la diferencia entre entrada y salida es menor a 5 minutos, es un error del usuario.
+                // Anulamos la salida para tratarla como una checada única en el siguiente paso.
+                if ($c_in->diffInMinutes($c_out) < 5) {
+                    $reg->clock_out = null;
+                }
+            }
 
-                $checadaReal = Carbon::parse($reg->clock_in);
 
-                // Calculamos la distancia absoluta en minutos a ambos puntos
-                $distanciaEntrada = abs($checadaReal->diffInMinutes($entradaOficial, false));
-                $distanciaSalida = abs($checadaReal->diffInMinutes($salidaOficial, false));
-
-                // Si está notablemente más cerca de la salida, la movemos
-                if ($distanciaSalida < $distanciaEntrada) {
-                    $reg->clock_out = $reg->clock_in;
+            if ($reg->clock_in && $reg->in_time) {
+                $entradaOficial = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
+                $entradaReal = Carbon::parse($reg->clock_in);
+                $puntoMedio = (clone $entradaOficial)->addMinutes(($reg->duration ?? 480) / 2);
+                
+                // Regla de los 30 minutos antes
+                if ($entradaReal->lt($entradaOficial) && $entradaReal->diffInMinutes($entradaOficial, false) > 30) {
+                    // Anulamos la entrada por ser muy temprana
                     $reg->clock_in = null;
+
+                    // Lógica de Rescate (Atrasar): Si la 2da checada existe y es antes del punto medio, es la entrada real
+                    if ($reg->clock_out) {
+                        $salidaDudosa = Carbon::parse($reg->clock_out);
+                        if ($salidaDudosa->lessThanOrEqualTo($puntoMedio)) {
+                            $reg->clock_in = $reg->clock_out;
+                            $reg->clock_out = null;
+                        }
+                    }
+                }
+
+                // Lógica de Posicionamiento (Adelantar): Si queda una checada única después del punto medio, es salida
+                if ($reg->clock_in && !$reg->clock_out) {
+                    if (Carbon::parse($reg->clock_in)->greaterThan($puntoMedio)) {
+                        $reg->clock_out = $reg->clock_in;
+                        $reg->clock_in = null;
+                    }
                 }
             }
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
@@ -217,8 +241,14 @@ class TarjetaService
             }
 
             if ($incidenciaAMostrar) {
+                if ($reg->clock_in) {
+                    $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
+                    $entradaRealRef = Carbon::parse($reg->clock_in);
+                    if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) {
+                        $reg->clock_in = null; 
+                    }
+                }
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
-
                 continue;
             }
 
@@ -245,7 +275,20 @@ class TarjetaService
             // AGREGADO: trim() para mayor seguridad en la validación
             if (($calificacion === 'F' || $calificacion === 'RG') && ! empty(trim($reg->nombre_permiso ?? ''))) {
                 $calificacion = 'J';
+
+                if ($reg->clock_in) {
+                    $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
+                    $entradaRealRef = Carbon::parse($reg->clock_in);
+                    if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) {
+                        $reg->clock_in = null; 
+                    }
+                }
+
+                
+                
             }
+
+            
 
             $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
         }
@@ -277,8 +320,9 @@ class TarjetaService
 
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
 
-        $tolerance = $registro->allow_late - 1;
-
+        //$tolerance = $registro->allow_late - 1;
+        $tolerance=11;
+     
         if ($diferenciaMinutos <= $tolerance) {
             return 'OK';
         }
