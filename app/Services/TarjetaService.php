@@ -263,7 +263,7 @@ class TarjetaService
 
             // AGREGADO: Si no hay entrada del reloj (y no hubo motivo arriba), es Falta
             if (! $reg->clock_in) {
-                $resultados[] = $this->crearFila($fechaActualStr, null, 'F', '');
+                $resultados[] = $this->crearFila($fechaActualStr, $reg, 'F', '');
 
                 continue;
             }
