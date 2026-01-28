@@ -196,9 +196,10 @@ class TarjetaService
                 $entradaReal = Carbon::parse($reg->clock_in);
                 $puntoMedio = (clone $entradaOficial)->addMinutes(($reg->duration ?? 480) / 2);
                 
-                // Regla de los 30 minutos antes
-                if ($entradaReal->lt($entradaOficial) && $entradaReal->diffInMinutes($entradaOficial, false) > 30) {
+                /*// Regla de los 30 minutos antes
+                if ($entradaReal->lt($entradaOficial) && $entradaReal->diffInMinutes($entradaOficial, false) > 180) {
                     // Anulamos la entrada por ser muy temprana
+                    error_log('Anulando entrada muy temprana en fecha '.$fechaActualStr);
                     $reg->clock_in = null;
 
                     // Lógica de Rescate (Atrasar): Si la 2da checada existe y es antes del punto medio, es la entrada real
@@ -209,7 +210,7 @@ class TarjetaService
                             $reg->clock_out = null;
                         }
                     }
-                }
+                }*/
 
                 // Lógica de Posicionamiento (Adelantar): Si queda una checada única después del punto medio, es salida
                 if ($reg->clock_in && !$reg->clock_out) {
@@ -264,10 +265,16 @@ class TarjetaService
             // AGREGADO: Si no hay entrada del reloj (y no hubo motivo arriba), es Falta
             if (! $reg->clock_in) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'F', '');
-
+                error_log('Falta detectada para empleado ID '.' en fecha '.$fechaActualStr);
                 continue;
             }
 
+
+            if (! $reg->clock_out) {
+                $resultados[] = $this->crearFila($fechaActualStr, $reg, 'F', '');
+                error_log('Falta detectada para empleado ID '.' en fecha '.$fechaActualStr);
+                continue;
+            }
             // --- AGREGADO: NUEVA LÓGICA DE CLASIFICACIÓN SIN ACUMULACIÓN ---
             $calificacion = $this->evaluarRetardo($reg, $retardosLevesPrevios);
 
@@ -281,6 +288,7 @@ class TarjetaService
                     $entradaRealRef = Carbon::parse($reg->clock_in);
                     if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) {
                         $reg->clock_in = null; 
+                        error_log('Ajuste de entrada a null por justificación en fecha '.$fechaActualStr);
                     }
                 }
 
