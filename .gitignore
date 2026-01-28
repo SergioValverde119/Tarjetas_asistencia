@@ -30,3 +30,5 @@ empleados.csv
 consulta1.csv
 consulta2.csv
 servicio.php
+composer.json
+composer.lock
