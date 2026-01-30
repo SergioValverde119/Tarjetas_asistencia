@@ -32,21 +32,9 @@ class TarjetaRepository
         return DB::connection('pgsql_biotime')->select($query);
     }
 
-    public function getAttendanceRecords($empId, $startDate, $endDate)
+ public function getAttendanceRecords($empId, $startDate, $endDate)
     {
-        //  $query = "
-        //       SELECT apb.*, tt.*, al.*, pe.enable_holiday
-        //      FROM public.att_payloadbase apb
-        //      LEFT JOIN public.att_timeinterval tt ON apb.timetable_id = tt.id
-        //      LEFT JOIN public.att_leave al ON apb.emp_id = al.employee_id AND DATE(apb.check_in) = DATE(al.start_time) 
-        //      LEFT JOIN public.personnel_employee pe ON apb.emp_id = pe.id
-        //      WHERE apb.att_date BETWEEN ? AND ? 
-        //      AND apb.emp_id = ? 
-        //      ORDER BY apb.check_in ASC; 
-        //  ";
-        // return DB::connection('pgsql_biotime')->select($query, [$startDate, $endDate, $empId]);
-
-        $query = "
+         $query = "
             WITH RECURSIVE calendario_dias AS (
                 SELECT ?::date AS fecha
                 UNION ALL
@@ -84,6 +72,7 @@ class TarjetaRepository
                     ah.enable_holiday,
                     ah.department_name,
                     ti.alias as timetable_alias,
+                    ti.id as timetable_id,
                     ti.in_time,
                     ti.work_time_duration as duration, 
                     ti.allow_late,
@@ -100,32 +89,29 @@ class TarjetaRepository
                 je.fecha as att_date,
                 je.timetable_alias as timetable_name,
                 je.department_name,
-                
-                -- Procesamiento de huellas del reloj
-                TO_CHAR(p.entrada, 'YYYY-MM-DD HH24:MI:SS') as clock_in,
-                TO_CHAR(p.salida, 'YYYY-MM-DD HH24:MI:SS') as clock_out,
 
-                -- Datos de horario y duración
+                -- 1. TODAS LAS ASISTENCIAS EN UNA SOLA COLUMNA (Sin MIN/MAX)
+                COALESCE((
+                    SELECT STRING_AGG(TO_CHAR(punch_time, 'YYYY-MM-DD HH24:MI:SS'), ',' ORDER BY punch_time ASC)
+                    FROM public.iclock_transaction 
+                    WHERE emp_id = je.emp_id AND punch_time::date = je.fecha
+                ), '') as all_punches,
+
+                -- 2. COLUMNAS DE HORARIO (Mantenemos nombres para el Servicio)
                 COALESCE(je.in_time, je.shift_in_time) as in_time,
                 COALESCE(je.duration, je.shift_duration) as duration,
                 je.allow_late,
                 (je.fecha || ' ' || COALESCE(je.in_time, je.shift_in_time, '00:00:00'))::timestamp as check_in,
-                (COALESCE(je.in_time, je.shift_in_time, '00:00:00')::time + (COALESCE(je.duration, je.shift_duration, 0) || ' minutes')::interval)::time as off_time,
-                
                 je.enable_holiday,
+                
+                -- Calculamos off_time para que el Service no truene
+                (COALESCE(je.in_time, je.shift_in_time, '00:00:00')::time + (COALESCE(je.duration, je.shift_duration, 0) || ' minutes')::interval)::time as off_time,
+
                 al.nombre_categoria as nombre_permiso,
                 al.motivo_original as motivo_permiso
 
             FROM jornada_esperada je
-            LEFT JOIN LATERAL (
-                SELECT 
-                    MIN(punch_time) as entrada,
-                    CASE WHEN MAX(punch_time) > MIN(punch_time) THEN MAX(punch_time) ELSE NULL END as salida
-                FROM public.iclock_transaction 
-                WHERE emp_id = je.emp_id AND punch_time::date = je.fecha
-            ) p ON true
             
-            -- LÓGICA DE INCIDENCIAS: Prioriza la que inicia el día actual y resta 1 segundo al final
             LEFT JOIN LATERAL (
                 SELECT 
                     cat.category_name as nombre_categoria, 
@@ -144,15 +130,14 @@ class TarjetaRepository
             ORDER BY je.fecha ASC;
         ";
 
-         return DB::connection('pgsql_biotime')->select($query, [
-            $startDate, // Inicio calendario
-            $endDate,   // Fin calendario
-            $startDate, // Inicio validación horario
-            $empId      // ID Empleado
+
+        return DB::connection('pgsql_biotime')->select($query, [
+            $startDate, $endDate, $startDate, $empId
         ]);
+    }
 
         
-        }
+        
 
     public function getHolidays($startDate, $endDate)
     {

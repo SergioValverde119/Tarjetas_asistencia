@@ -27,7 +27,7 @@ class TarjetaService
         try {
             return $this->repository->getAllEmployees();
         } catch (Exception $e) {
-            Log::error('Error en TarjetaService@obtenerTodosLosEmpleados: '.$e->getMessage());
+            Log::error('Error en TarjetaService@obtenerTodosLosEmpleados: ' . $e->getMessage());
 
             return [];
         }
@@ -50,7 +50,7 @@ class TarjetaService
                 }
             }
         } catch (Exception $e) {
-            Log::error('Error en TarjetaService@buscarEmpleado: '.$e->getMessage());
+            Log::error('Error en TarjetaService@buscarEmpleado: ' . $e->getMessage());
         }
 
         return null;
@@ -87,13 +87,138 @@ class TarjetaService
                     $resumenFaltas[$m] = $diasMalos;
                 }
             }
-
         } catch (Exception $e) {
-            Log::error('Error calculando resumen anual: '.$e->getMessage());
+            Log::error('Error calculando resumen anual: ' . $e->getMessage());
         }
 
         return $resumenFaltas;
     }
+
+
+    private function procesarHuellas($reg)
+    {
+        // 1. Inicialización Total
+        $reg->clock_in = null;
+        $reg->clock_out = null;
+
+        $fechaStr = Carbon::parse($reg->att_date)->format('Y-m-d');
+
+        // LOG INICIAL: Ver qué recibimos del Repositorio
+        // error_log("--- [INICIO PROCESO] FECHA: {$fechaStr} ---");
+        
+        if (empty($reg->all_punches) || empty($reg->in_time)) {
+            error_log("DÍA SALTADO: No hay huellas o no tiene horario asignado.");
+            return;
+        }
+
+        // --- A. CÁLCULO DE AJUSTE DE HORARIO (DST) ---
+        $date = Carbon::parse($reg->att_date);
+        $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
+        $finOtono = Carbon::parse("last sunday of october $date->year");
+        $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
+        $horasAjuste = $esVerano ? 1 : 0;
+
+        // --- B. DEFINIR HORARIOS OBJETIVO ---
+        $duracionMinutos = $reg->duration ?? 480;
+        $targetIn = Carbon::parse($fechaStr . ' ' . $reg->in_time);
+        $targetOut = (clone $targetIn)->addMinutes($duracionMinutos);
+
+        // error_log("OBJETIVOS -> ENTRADA: {$targetIn->format('H:i:s')} | SALIDA: {$targetOut->format('H:i:s')} | AJUSTE DST APLICADO: {$horasAjuste}h");
+
+        // --- C. PROCESAR Y AJUSTAR TODAS LAS HUELLAS ---
+        $punchesRaw = array_filter(explode(',', $reg->all_punches), fn($p) => !empty(trim($p)));
+        $punchesAjustados = [];
+        $lastAdded = null;
+
+        foreach ($punchesRaw as $pStr) {
+            try {
+                $p = Carbon::parse(trim($pStr));
+                
+                if ($horasAjuste != 0) {
+                    $p->addHours($horasAjuste);
+                }
+                
+                if (!$lastAdded || abs($p->diffInSeconds($lastAdded)) > 30) {
+                    $punchesAjustados[] = $p;
+                    $lastAdded = $p;
+                }
+            } catch (Exception $e) {
+                error_log("ERROR PARSEANDO HUELLA: [{$pStr}]");
+            }
+        }
+        
+        //$listaHuellasLog = collect($punchesAjustados)->map(fn($p) => $p->format('H:i:s'))->implode(', ');
+        // error_log("HUELLAS LISTAS TRAS AJUSTE (" . count($punchesAjustados) . "): [{$listaHuellasLog}]");
+
+        // --- D. BUSCAR CHECADAS ÓPTIMAS (ENTRADA Y SALIDA EN UN SOLO LOOP) ---
+        $bestIn = null;
+        $bestOut = null;
+        $minDistIn = 999999;
+        $minDistOut = 999999;
+        
+
+        foreach ($punchesAjustados as $punch) {
+            $distIn = abs($targetIn->diffInMinutes($punch, false));
+            $distOut = abs($targetOut->diffInMinutes($punch, false));
+
+            // Asignar a ENTRADA o SALIDA según cuál es más cercano
+            if ($distIn < $distOut) {
+                // Más cercano a hora de entrada
+                if ($distIn < $minDistIn) {
+                    $minDistIn = $distIn;
+                    $bestIn = $punch;
+                }
+            } else {
+                // Más cercano a hora de salida
+                if ($distOut < $minDistOut) {
+                    $minDistOut = $distOut;
+                    $bestOut = $punch;
+                }
+            }
+        }
+
+        // if ($bestIn) error_log("CANDIDATO ENTRADA: {$bestIn->format('H:i:s')} (Distancia: " . round($minDistIn, 2) . " min)");
+        // if ($bestOut) error_log("CANDIDATO SALIDA: {$bestOut->format('H:i:s')} (Distancia: " . round($minDistOut, 2) . " min)");
+
+        // --- E. REGLA DE LOS 45 MINUTOS ---
+        $umbral = 30; 
+
+        if ($bestIn && $minDistIn <= $umbral) {
+            $reg->clock_in = $bestIn->format('Y-m-d H:i:s');
+        } 
+        // elseif ($bestIn) {
+        //      error_log("REGLA {$umbral} MIN: Entrada descartada por estar a " . round($minDistIn, 2) . " min.");
+        // }
+
+        if ($bestOut && $minDistOut <= $umbral) {
+            $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
+        } 
+        // elseif ($bestOut) {
+        //     error_log("REGLA {$umbral} MIN: Salida descartada por estar a " . round($minDistOut, 2) . " min.");
+        // }
+
+        // --- F. AMORTIGUACIÓN DE CHECADA ÚNICA ---
+        // if ($reg->clock_in && $reg->clock_out && $reg->clock_in === $reg->clock_out) {
+        //     if ($minDistIn <= $minDistOut) { $reg->clock_out = null; } 
+        //     else { $reg->clock_in = null; }
+        // }
+
+        // if ($reg->clock_in && !$reg->clock_out) {
+        //     $puntoMedio = (clone $targetIn)->addMinutes($duracionMinutos / 2);
+        //     $huellaReal = Carbon::parse($reg->clock_in);
+        //     if ($huellaReal->greaterThan($puntoMedio)) {
+        //         $reg->clock_out = $reg->clock_in;
+        //         $reg->clock_in = null;
+        //         // error_log("POSICIONAMIENTO: Movida a SALIDA por punto medio.");
+        //     }
+        // }
+
+        // $finalIn = $reg->clock_in ? Carbon::parse($reg->clock_in)->format('H:i:s') : 'VACÍO';
+        // $finalOut = $reg->clock_out ? Carbon::parse($reg->clock_out)->format('H:i:s') : 'VACÍO';
+        //  error_log("RESULTADO FINAL -> IN: {$finalIn} | OUT: {$finalOut}");
+        // error_log("------------------------------------------");
+    }
+   
 
     /**
      * Obtiene el detalle completo mensual.
@@ -125,7 +250,7 @@ class TarjetaService
 
             // AGREGADO: Usamos off_time que viene del Repositorio (Garantiza horario aunque sea descanso el día 1)
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->off_time) {
-                $horarioTexto = $registrosRaw[0]->in_time.' A '.$registrosRaw[0]->off_time;
+                $horarioTexto = $registrosRaw[0]->in_time . ' A ' . $registrosRaw[0]->off_time;
             }
 
             return [
@@ -133,9 +258,8 @@ class TarjetaService
                 'department_name' => $departmentName,
                 'registros' => $registrosProcesados,
             ];
-
         } catch (Exception $e) {
-            Log::error('Error en TarjetaService@obtenerDatosPorMes: '.$e->getMessage());
+            Log::error('Error en TarjetaService@obtenerDatosPorMes: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -153,73 +277,7 @@ class TarjetaService
             $date = Carbon::parse($reg->att_date);
             $fechaActualStr = $date->format('Y-m-d');
 
-            // --- CÁLCULO AUTOMÁTICO DE AJUSTE (Lógica corregida) ---
-            $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
-            $finOtono = Carbon::parse("last sunday of october $date->year");
-
-            // Determinamos si estamos en el periodo de "verano" (Abril a Octubre)
-            $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
-
-            if ($esVerano) {
-                // En verano el dato viene retrasado de origen -> SUMAMOS 1 hora
-                $horasAjuste = 1;
-            } else {
-                // En invierno (Nov-Mar) el dato sale adelantado -> RESTAMOS 1 hora
-                $horasAjuste = -1;
-            }
-
-            // Aplicamos el ajuste si existe checada
-            if ($horasAjuste > 0) {
-                if ($reg->clock_in) {
-                    $reg->clock_in = Carbon::parse($reg->clock_in)->addHours($horasAjuste)->format('Y-m-d H:i:s');
-                }
-                if ($reg->clock_out) {
-                    $reg->clock_out = Carbon::parse($reg->clock_out)->addHours($horasAjuste)->format('Y-m-d H:i:s');
-                }
-            }
-            // Segundo filtro de rebote de checadas
-
-            if ($reg->clock_in && $reg->clock_out) {
-                $c_in = Carbon::parse($reg->clock_in);
-                $c_out = Carbon::parse($reg->clock_out);
-                
-                // Si la diferencia entre entrada y salida es menor a 5 minutos, es un error del usuario.
-                // Anulamos la salida para tratarla como una checada única en el siguiente paso.
-                if ($c_in->diffInMinutes($c_out) < 5) {
-                    $reg->clock_out = null;
-                }
-            }
-
-
-            if ($reg->clock_in && $reg->in_time) {
-                $entradaOficial = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
-                $entradaReal = Carbon::parse($reg->clock_in);
-                $puntoMedio = (clone $entradaOficial)->addMinutes(($reg->duration ?? 480) / 2);
-                
-                /*// Regla de los 30 minutos antes
-                if ($entradaReal->lt($entradaOficial) && $entradaReal->diffInMinutes($entradaOficial, false) > 180) {
-                    // Anulamos la entrada por ser muy temprana
-                    error_log('Anulando entrada muy temprana en fecha '.$fechaActualStr);
-                    $reg->clock_in = null;
-
-                    // Lógica de Rescate (Atrasar): Si la 2da checada existe y es antes del punto medio, es la entrada real
-                    if ($reg->clock_out) {
-                        $salidaDudosa = Carbon::parse($reg->clock_out);
-                        if ($salidaDudosa->lessThanOrEqualTo($puntoMedio)) {
-                            $reg->clock_in = $reg->clock_out;
-                            $reg->clock_out = null;
-                        }
-                    }
-                }*/
-
-                // Lógica de Posicionamiento (Adelantar): Si queda una checada única después del punto medio, es salida
-                if ($reg->clock_in && !$reg->clock_out) {
-                    if (Carbon::parse($reg->clock_in)->greaterThan($puntoMedio)) {
-                        $reg->clock_out = $reg->clock_in;
-                        $reg->clock_in = null;
-                    }
-                }
-            }
+            $this->procesarHuellas($reg);
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
             // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
             $incidenciaAMostrar = ! empty(trim($reg->nombre_permiso ?? '')) ? $reg->nombre_permiso : null;
@@ -246,7 +304,7 @@ class TarjetaService
                     $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
                     $entradaRealRef = Carbon::parse($reg->clock_in);
                     if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) {
-                        $reg->clock_in = null; 
+                        $reg->clock_in = null;
                     }
                 }
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
@@ -263,18 +321,14 @@ class TarjetaService
             }
 
             // AGREGADO: Si no hay entrada del reloj (y no hubo motivo arriba), es Falta
-            if (! $reg->clock_in) {
+            if (! $reg->clock_in || ! $reg->clock_out) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'F', '');
-                error_log('Falta detectada para empleado ID '.' en fecha '.$fechaActualStr);
+                // error_log('Falta detectada para empleado ID ' . ' en fecha ' . $fechaActualStr);
                 continue;
             }
 
 
-            if (! $reg->clock_out) {
-                $resultados[] = $this->crearFila($fechaActualStr, $reg, 'F', '');
-                error_log('Falta detectada para empleado ID '.' en fecha '.$fechaActualStr);
-                continue;
-            }
+            
             // --- AGREGADO: NUEVA LÓGICA DE CLASIFICACIÓN SIN ACUMULACIÓN ---
             $calificacion = $this->evaluarRetardo($reg, $retardosLevesPrevios);
 
@@ -287,16 +341,13 @@ class TarjetaService
                     $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
                     $entradaRealRef = Carbon::parse($reg->clock_in);
                     if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) {
-                        $reg->clock_in = null; 
-                        error_log('Ajuste de entrada a null por justificación en fecha '.$fechaActualStr);
+                        $reg->clock_in = null;
+                        // error_log('Ajuste de entrada a null por justificación en fecha ' . $fechaActualStr);
                     }
                 }
-
-                
-                
             }
 
-            
+
 
             $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
         }
@@ -323,14 +374,14 @@ class TarjetaService
 
         // RESTAURADO: Lógica basada en check_in como el original
         $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
-        $horaEntradaEstandar = Carbon::parse($fechaCheckIn.' '.$registro->in_time);
+        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
         $horaRealEntrada = Carbon::parse($registro->clock_in);
 
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
 
         //$tolerance = $registro->allow_late - 1;
-        $tolerance=11;
-     
+        $tolerance = 11;
+
         if ($diferenciaMinutos <= $tolerance) {
             return 'OK';
         }
