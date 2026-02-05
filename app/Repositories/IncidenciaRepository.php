@@ -142,8 +142,16 @@ class IncidenciaRepository
     public function findIncidenciaById($id)
     {
         return DB::connection('pgsql_biotime')
-            ->table('att_leave')
-            ->where('abstractexception_ptr_id', $id)
+            ->table('att_leave as l')
+            ->join('personnel_employee as e', 'l.employee_id', '=', 'e.id')
+            ->select(
+                'l.*', 
+                'l.abstractexception_ptr_id as id', 
+                'e.first_name', 
+                'e.last_name', 
+                'e.emp_code'
+            )
+            ->where('l.abstractexception_ptr_id', $id)
             ->first();
     }
 
@@ -161,6 +169,27 @@ class IncidenciaRepository
                 'apply_reason'=> $data['reason'],
                 // No actualizamos apply_time para conservar la fecha de creación original
             ]);
+    }
+
+    /**
+     * Borrar incidencia por CÓDIGO DE NÓMINA
+     */
+
+    public function deleteIncidencia($id)
+    {
+        return DB::connection('pgsql_biotime')->transaction(function () use ($id) {
+            // Borrar primero detalle
+            DB::connection('pgsql_biotime')
+                ->table('att_leave')
+                ->where('abstractexception_ptr_id', $id)
+                ->delete();
+
+            // Borrar encabezado de flujo
+            DB::connection('pgsql_biotime')
+                ->table('workflow_abstractexception')
+                ->where('id', $id)
+                ->delete();
+        });
     }
 
     /**

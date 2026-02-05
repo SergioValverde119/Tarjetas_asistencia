@@ -1,15 +1,19 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import ErrorModal from '@/components/ErrorModal.vue'; 
-import { PlusCircle, List, FileText, Calendar, CheckCircle, Clock, Search, Filter, FileUp, Download, X, Loader2, AlertTriangle, Info, BookOpen } from 'lucide-vue-next';
+import { 
+    PlusCircle, List, FileText, Calendar, CheckCircle, Clock, 
+    Search, Filter, FileUp, Download, X, Loader2, AlertTriangle, 
+    Info, BookOpen, Edit2 // Se agregó Edit2 para el botón
+} from 'lucide-vue-next';
 import { debounce } from 'lodash';
 import axios from 'axios';
 
-// Importamos la ruta de creación (Wayfinder)
-import { create as createIncidencia } from '@/routes/incidencias';
+// Importamos las rutas (Wayfinder) - Se agregó editIncidencia
+import { create as createIncidencia, edit as editIncidencia } from '@/routes/incidencias';
 
 const props = defineProps({
     incidencias: Object, 
@@ -17,6 +21,22 @@ const props = defineProps({
     flash: Object,
     filters: Object
 });
+
+// --- GESTIÓN DE VENTANA DE ÉXITO (MODAL) ---
+const showSuccessModal = ref(false); 
+const successMessage = ref(''); 
+const page = usePage(); // Necesario para detectar el mensaje flash del controlador
+
+/**
+ * Escuchamos los mensajes flash del servidor.
+ * Si llega un mensaje de éxito (como al editar), se activa la ventana modal.
+ */
+watch(() => page.props.flash.success, (val) => {
+    if (val) {
+        successMessage.value = val;
+        showSuccessModal.value = true;
+    }
+}, { immediate: true });
 
 // --- FILTROS ---
 const search = ref(props.filters.search || '');
@@ -58,9 +78,7 @@ const changePage = (url) => {
 const showImportModal = ref(false);
 const isImporting = ref(false);
 const showErrorModal = ref(false);
-const showSuccessModal = ref(false); 
 const errorMessage = ref('');
-const successMessage = ref(''); 
 
 const handleImportSubmit = async (event) => {
     const formElement = event.target;
@@ -184,6 +202,7 @@ const formatDate = (dateString) => {
                                         <th class="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Registro</th>
                                         <th class="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Vigencia</th>
                                         <th class="px-6 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Motivo</th>
+                                        <th class="px-6 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Acción</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200 bg-white">
@@ -212,9 +231,19 @@ const formatDate = (dateString) => {
                                         <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" :title="inc.apply_reason">
                                             {{ inc.apply_reason || '-' }}
                                         </td>
+                                        <!-- BOTÓN EDITAR -->
+                                        <td class="px-6 py-4 text-right">
+                                            <Link 
+                                                v-if="editIncidencia"
+                                                :href="editIncidencia(inc.id).url" 
+                                                class="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1 font-bold uppercase text-[10px]"
+                                            >
+                                                <Edit2 class="h-3 w-3" /> Editar
+                                            </Link>
+                                        </td>
                                     </tr>
                                     <tr v-if="incidencias.data.length === 0">
-                                        <td colspan="6" class="px-6 py-12 text-center text-gray-500 bg-gray-50">
+                                        <td colspan="7" class="px-6 py-12 text-center text-gray-500 bg-gray-50">
                                             <div class="flex flex-col items-center justify-center gap-2">
                                                 <Filter class="h-8 w-8 text-gray-300" />
                                                 <p class="text-sm font-medium">No se encontraron incidencias con esos filtros.</p>

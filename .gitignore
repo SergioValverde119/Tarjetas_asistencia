@@ -27,8 +27,9 @@ yarn-error.log
 /.vscode
 /.zed
 empleados.csv
-consulta1.csv
-consulta2.csv
+consulta1.sql
+consulta2.sql
+consulta3.sql
 servicio.php
 composer.json
 composer.lock

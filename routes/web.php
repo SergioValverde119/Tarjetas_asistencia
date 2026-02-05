@@ -52,12 +52,14 @@ Route::middleware(['auth', 'verified', 'role:admin,supervisor'])->group(function
     // Gestión de Incidencias (CRUD + Importación)
     Route::get('/incidencias', [IncidenciaController::class, 'index'])->name('incidencias.index');
     Route::get('/incidencias/crear', [IncidenciaController::class, 'create'])->name('incidencias.create');
+    Route::get('/incidencias/{id}/editar', [IncidenciaController::class, 'edit'])->name('incidencias.edit');
     Route::post('/incidencias', [IncidenciaController::class, 'store'])->name('incidencias.store');
     Route::post('/incidencias/categoria', [IncidenciaController::class, 'storeCategory'])->name('incidencias.category.store');
     Route::get('/incidencias/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('incidencias.template');
     Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
-    Route::get('/incidencias/{id}/editar', [IncidenciaController::class, 'edit'])->name('incidencias.edit');
+    
     Route::put('/incidencias/{id}', [IncidenciaController::class, 'update'])->name('incidencias.update');
+    Route::delete('/incidencias/{id}', [IncidenciaController::class, 'destroy'])->name('incidencias.destroy');
 });
 
 // --- NIVEL 3: ADMINISTRADOR SUPREMO ---

@@ -276,7 +276,7 @@ class TarjetaService
                 continue;
             }
             
-            $incidenciaAMostrar = ! empty(trim($reg->nombre_permiso ?? '')) ? $reg->nombre_permiso : null;
+            $incidenciaAMostrar = ! empty(trim($reg->nombre_permiso ?? '')) ? $reg->motivo_permiso : null;
             if ($incidenciaAMostrar) {
                 if ($reg->clock_in) {
                     $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);

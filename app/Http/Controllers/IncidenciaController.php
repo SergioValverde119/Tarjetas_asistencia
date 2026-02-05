@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Repositories\IncidenciaRepository; 
+use App\Models\LogModificacionIncidencia;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Exception;
 use Carbon\Carbon;
@@ -77,8 +80,23 @@ class IncidenciaController extends Controller
         ]);
 
         try {
-            $id = $this->repository->createIncidencia($validated);
-            return redirect()->route('incidencias.index')->with('success', 'Incidencia registrada correctamente. Folio: ' . $id);
+            // Se usa transacción para asegurar que si falla el log, no se guarde en BioTime
+            return DB::transaction(function () use ($request, $validated) {
+                // 1. Crear registro en la base de datos de BioTime
+                $id = $this->repository->createIncidencia($validated);
+
+                // 2. NUEVA CREACIÓN: Registro en la bitácora local de Laravel (CREACION)
+                LogModificacionIncidencia::create([
+                    'user_id' => Auth::id(),
+                    'tipo_accion' => 'CREACION',
+                    'incidencia_id' => $id,
+                    'valores_anteriores' => null, // No existen valores previos en creación
+                    'valores_nuevos' => $validated,
+                    'ip_address' => $request->ip()
+                ]);
+
+                return redirect()->route('incidencias.index')->with('success', 'Incidencia registrada. Folio: ' . $id);
+            });
         } catch (Exception $e) {
             return redirect()->back()->with('error', 'Error al guardar: ' . $e->getMessage());
         }
@@ -87,24 +105,27 @@ class IncidenciaController extends Controller
     public function edit($id, Request $request)
     {
         try {
+            
+            
             $incidencia = $this->repository->findIncidenciaById($id);
             
             if (!$incidencia) {
+                
                 return redirect()->route('incidencias.index')->with('error', 'La incidencia no existe.');
             }
 
-            $searchEmployee = $request->input('search');
             
+
             return Inertia::render('Incidencias/Edit', [
                 'incidencia' => $incidencia,
-                'employees'  => $this->repository->getActiveEmployees($searchEmployee),
+                'employees'  => $this->repository->getActiveEmployees($request->input('search')),
                 'categories' => $this->repository->getLeaveCategories(),
-                'filters'    => [
-                    'search' => $searchEmployee
-                ]
+                'filters'    => ['search' => $request->input('search')]
             ]);
         } catch (Exception $e) {
-            return redirect()->route('incidencias.index')->with('error', 'Error al cargar edición: ' . $e->getMessage());
+            // Cambio solicitado: Log::error reemplazado por error_log
+           
+            return redirect()->route('incidencias.index')->with('error', 'Error de sistema al cargar datos.');
         }
     }
 
@@ -119,10 +140,72 @@ class IncidenciaController extends Controller
         ]);
 
         try {
-            $this->repository->updateIncidencia($id, $validated);
-            return redirect()->route('incidencias.index')->with('success', 'Incidencia actualizada correctamente.');
+            return DB::transaction(function () use ($request, $id, $validated) {
+                // 1. MODIFICACIÓN: Obtener datos originales ANTES del cambio para la auditoría
+                $original = $this->repository->findIncidenciaById($id);
+                if (!$original) throw new Exception("Registro no encontrado para auditar.");
+
+                $valoresAnteriores = [
+                    'employee_id' => $original->employee_id,
+                    'category_id' => $original->category_id,
+                    'start_time'  => $original->start_time,
+                    'end_time'    => $original->end_time,
+                    'reason'      => $original->apply_reason,
+                ];
+
+                // 2. Actualizar en la base de datos de BioTime
+                $this->repository->updateIncidencia($id, $validated);
+
+                // 3. NUEVA CREACIÓN: Registro en bitácora (EDICION) vinculando valores viejos y nuevos
+                LogModificacionIncidencia::create([
+                    'user_id' => Auth::id(),
+                    'tipo_accion' => 'EDICION',
+                    'incidencia_id' => $id,
+                    'valores_anteriores' => $valoresAnteriores,
+                    'valores_nuevos' => $validated,
+                    'ip_address' => $request->ip()
+                ]);
+
+                return redirect()->route('incidencias.index')->with('success', 'Se ha realizado la modificación de la incidencia');
+            });
         } catch (Exception $e) {
             return back()->with('error', 'Error al actualizar: ' . $e->getMessage());
+        }
+    }
+
+    public function destroy(Request $request, $id)
+    {
+        try {
+            return DB::transaction(function () use ($request, $id) {
+                // 1. Capturar los datos de lo que se va a borrar para que quede evidencia
+                $original = $this->repository->findIncidenciaById($id);
+                if (!$original) throw new Exception("El registro ya no existe.");
+
+                $datosBorrados = [
+                    'employee_id' => $original->employee_id,
+                    'category_id' => $original->category_id,
+                    'start_time'  => $original->start_time,
+                    'end_time'    => $original->end_time,
+                    'reason'      => $original->apply_reason,
+                ];
+
+                // 2. Borrar físicamente de BioTime (limpiando tablas padre e hija vía repositorio)
+                $this->repository->deleteIncidencia($id);
+
+                // 3. Registro en bitácora (ELIMINACION)
+                LogModificacionIncidencia::create([
+                    'user_id' => Auth::id(),
+                    'tipo_accion' => 'ELIMINACION',
+                    'incidencia_id' => $id,
+                    'valores_anteriores' => $datosBorrados,
+                    'valores_nuevos' => null, // No queda nada nuevo después de borrar
+                    'ip_address' => $request->ip()
+                ]);
+
+                return redirect()->route('incidencias.index')->with('success', 'Justificación eliminada y movimiento registrado.');
+            });
+        } catch (Exception $e) {
+            return redirect()->back()->with('error', 'Error al eliminar: ' . $e->getMessage());
         }
     }
 
@@ -240,13 +323,30 @@ class IncidenciaController extends Controller
                     }
 
                     // D. Insertar
-                    $this->repository->createIncidencia([
-                        'employee_id' => $empId,
-                        'category_id' => $catId,
-                        'start_time' => $start->format('Y-m-d H:i:s'),
-                        'end_time' => $end->format('Y-m-d H:i:s'),
-                        'reason' => $reason
-                    ]);
+                    DB::transaction(function() use ($empId, $catId, $start, $end, $reason, $request) {
+                        $newId = $this->repository->createIncidencia([
+                            'employee_id' => $empId,
+                            'category_id' => $catId,
+                            'start_time' => $start->format('Y-m-d H:i:s'),
+                            'end_time' => $end->format('Y-m-d H:i:s'),
+                            'reason' => $reason
+                        ]);
+
+                        LogModificacionIncidencia::create([
+                            'user_id' => Auth::id(),
+                            'tipo_accion' => 'CREACION',
+                            'incidencia_id' => $newId,
+                            'valores_anteriores' => null,
+                            'valores_nuevos' => [
+                                'employee_id' => $empId, 
+                                'category_id' => $catId, 
+                                'start_time' => $start->format('Y-m-d H:i:s'),
+                                'end_time' => $end->format('Y-m-d H:i:s'),
+                                'reason' => $reason
+                            ],
+                            'ip_address' => $request->ip()
+                        ]);
+                    });
 
                     $status = 'INGRESADO';
                     $mensaje = 'OK';
