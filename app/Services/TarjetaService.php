@@ -105,10 +105,10 @@ class TarjetaService
 
 
 
-        if (empty($reg->all_punches) || empty($reg->in_time)) {
-            error_log("DÍA SALTADO: No hay huellas o no tiene horario asignado.");
-            return;
-        }
+        // if (empty($reg->all_punches) || empty($reg->in_time)) {
+        //     error_log("DÍA SALTADO: No hay huellas o no tiene horario asignado.");
+        //     return;
+        // }
 
         // --- A. CÁLCULO DE AJUSTE DE HORARIO (DST) ---
         $date = Carbon::parse($reg->att_date);

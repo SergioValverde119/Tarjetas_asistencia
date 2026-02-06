@@ -103,7 +103,7 @@ class AdminUserController extends Controller
             // Obligatorios de sistema
             'username' => 'required|string|max:20|unique:users,username', 
             'password' => ['required', 'confirmed', 'min:1'], 
-            'role'     => 'required|in:admin,empleado,disponibilidad',
+            'role'     => 'required|in:admin,empleado,disponibilidad,capturista',
             
             'biotime_id' => 'nullable|integer', 
             'emp_code'   => 'nullable|string|max:20', 

@@ -213,7 +213,12 @@ const closeResultModal = () => { showResultModal.value = false; };
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-                                        <select v-model="form.role" class="w-full rounded-lg border-gray-300 shadow-sm bg-white"><option value="empleado">Empleado</option><option value="admin">Administrador</option></select>
+                                        <select v-model="form.role" class="w-full rounded-lg border-gray-300 shadow-sm bg-white">
+                                            <option value="empleado">Empleado</option>
+                                            <option value="admin">Administrador</option>
+                                            <option value="disponibilidad">Monitor de tarjetas</option>
+                                            <option value="capturista">Capturista de Incidencias</option>
+                                        </select>
                                     </div>
                                 </div>
                             </div>

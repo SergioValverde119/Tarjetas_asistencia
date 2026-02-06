@@ -32,6 +32,7 @@ const user = page.props.auth.user;
 const role = user ? user.role : 'empleado';
 const isAdmin = role === 'admin';
 const isSupervisor = role === 'supervisor';
+const isCapturista = role === 'capturista';
 
 const mainNavItems = computed(() => {
     
@@ -53,14 +54,15 @@ const mainNavItems = computed(() => {
         { title: 'Configuración Mi tarjeta', href: mi_tarjeta ? mi_tarjeta().url : '#', icon: User },
     ];
 
-    // Módulo INCIDENCIAS (Supervisor + Admin)
-    if (isAdmin || isSupervisor) {
+    if (isAdmin || isSupervisor || isCapturista) {
         items.push({ 
             title: 'Incidencias', 
             href: incidencias.index ? incidencias.index().url : '#', 
             icon: TriangleAlert 
         });
     }
+
+    
 
     // Módulos EXCLUSIVOS DE ADMIN
     if (isAdmin) {

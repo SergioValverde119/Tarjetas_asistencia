@@ -47,19 +47,27 @@ Route::middleware(['auth', 'verified', 'role:admin,disponibilidad'])->group(func
 
 // --- NIVEL 2: SUPERVISOR DE INCIDENCIAS ---
 // Acceso: Administradores Y Usuarios con rol 'supervisor'
-Route::middleware(['auth', 'verified', 'role:admin,supervisor'])->group(function () {
+Route::middleware(['auth', 'verified'])->group(function () {
     
-    // Gestión de Incidencias (CRUD + Importación)
-    Route::get('/incidencias', [IncidenciaController::class, 'index'])->name('incidencias.index');
-    Route::get('/incidencias/crear', [IncidenciaController::class, 'create'])->name('incidencias.create');
-    Route::get('/incidencias/{id}/editar', [IncidenciaController::class, 'edit'])->name('incidencias.edit');
-    Route::post('/incidencias', [IncidenciaController::class, 'store'])->name('incidencias.store');
-    Route::post('/incidencias/categoria', [IncidenciaController::class, 'storeCategory'])->name('incidencias.category.store');
-    Route::get('/incidencias/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('incidencias.template');
-    Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
-    
-    Route::put('/incidencias/{id}', [IncidenciaController::class, 'update'])->name('incidencias.update');
-    Route::delete('/incidencias/{id}', [IncidenciaController::class, 'destroy'])->name('incidencias.destroy');
+    // --- BLOQUE 1: LECTURA, CREACIÓN E IMPORTACIÓN ---
+    // Accesible por Admin, Supervisor y el nuevo rol Capturista
+    Route::middleware(['role:admin,supervisor,capturista'])->group(function () {
+        Route::get('/incidencias', [IncidenciaController::class, 'index'])->name('incidencias.index');
+        Route::get('/incidencias/crear', [IncidenciaController::class, 'create'])->name('incidencias.create');
+        Route::post('/incidencias', [IncidenciaController::class, 'store'])->name('incidencias.store');
+        Route::post('/incidencias/categoria', [IncidenciaController::class, 'storeCategory'])->name('incidencias.category.store');
+        Route::get('/incidencias/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('incidencias.template');
+        Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
+    });
+
+    // --- BLOQUE 2: EDICIÓN Y ELIMINACIÓN (RESTRINGIDO) ---
+    // Solo Admin y Supervisor. El 'capturista' recibirá un error 403 si intenta entrar aquí.
+    Route::middleware(['role:admin,supervisor'])->group(function () {
+        Route::get('/incidencias/{id}/editar', [IncidenciaController::class, 'edit'])->name('incidencias.edit');
+        Route::put('/incidencias/{id}', [IncidenciaController::class, 'update'])->name('incidencias.update');
+        Route::delete('/incidencias/{id}', [IncidenciaController::class, 'destroy'])->name('incidencias.destroy');
+    });
+
 });
 
 // --- NIVEL 3: ADMINISTRADOR SUPREMO ---
