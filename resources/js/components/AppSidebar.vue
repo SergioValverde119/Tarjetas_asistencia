@@ -50,11 +50,10 @@ const mainNavItems = computed(() => {
 
     // CASO 2: BASE COMÚN (Para Empleado, Supervisor y Admin)
     const items = [
-        { title: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
-        { title: 'Configuración Mi tarjeta', href: mi_tarjeta ? mi_tarjeta().url : '#', icon: User },
+        
     ];
 
-    if (isAdmin || isSupervisor || isCapturista) {
+    if (role === 'capturista') {
         items.push({ 
             title: 'Incidencias', 
             href: incidencias.index ? incidencias.index().url : '#', 
@@ -62,7 +61,14 @@ const mainNavItems = computed(() => {
         });
     }
 
-    
+    // Módulo INCIDENCIAS (Supervisor + Admin)
+    if (isAdmin || isSupervisor) {
+        items.push({ 
+            title: 'Incidencias', 
+            href: incidencias.index ? incidencias.index().url : '#', 
+            icon: TriangleAlert 
+        });
+    }
 
     // Módulos EXCLUSIVOS DE ADMIN
     if (isAdmin) {
