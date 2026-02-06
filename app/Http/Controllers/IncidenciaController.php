@@ -12,7 +12,8 @@ use Exception;
 use Carbon\Carbon;
 use Maatwebsite\Excel\Facades\Excel; 
 use App\Exports\IncidenciasResultExport; 
-use App\Exports\IncidenciasTemplateExport; // <--- NUEVO IMPORT
+use App\Exports\IncidenciasTemplateExport;
+use Illuminate\Validation\ValidationException;
 
 class IncidenciaController extends Controller
 {
@@ -80,6 +81,20 @@ class IncidenciaController extends Controller
         ]);
 
         try {
+
+            
+            // 1. VALIDACIÓN DE TRASLAPE
+            $overlap = $this->repository->findOverlap(
+                $validated['employee_id'], 
+                $validated['start_time'], 
+                $validated['end_time']
+            );
+
+            if ($overlap) {
+                throw ValidationException::withMessages([
+                    'start_time' => "El empleado ya tiene un permiso registrado del {$overlap->start_time} al {$overlap->end_time}."
+                ]);
+            }
             // Se usa transacción para asegurar que si falla el log, no se guarde en BioTime
             return DB::transaction(function () use ($request, $validated) {
                 // 1. Crear registro en la base de datos de BioTime
@@ -97,6 +112,8 @@ class IncidenciaController extends Controller
 
                 return redirect()->route('incidencias.index')->with('success', 'Incidencia registrada. Folio: ' . $id);
             });
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Exception $e) {
             return redirect()->back()->with('error', 'Error al guardar: ' . $e->getMessage());
         }
@@ -140,6 +157,22 @@ class IncidenciaController extends Controller
         ]);
 
         try {
+
+           
+            // 1. VALIDACIÓN DE TRASLAPE (Ignorando el registro actual)
+            $overlap = $this->repository->findOverlap(
+                $validated['employee_id'], 
+                $validated['start_time'], 
+                $validated['end_time'],
+                $id
+            );
+
+            if ($overlap) {
+                throw ValidationException::withMessages([
+                    'start_time' => "Error: Se traslapa con otro permiso existente (#{$overlap->abstractexception_ptr_id})."
+                ]);
+            }
+
             return DB::transaction(function () use ($request, $id, $validated) {
                 // 1. MODIFICACIÓN: Obtener datos originales ANTES del cambio para la auditoría
                 $original = $this->repository->findIncidenciaById($id);
@@ -168,6 +201,8 @@ class IncidenciaController extends Controller
 
                 return redirect()->route('incidencias.index')->with('success', 'Se ha realizado la modificación de la incidencia');
             });
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Exception $e) {
             return back()->with('error', 'Error al actualizar: ' . $e->getMessage());
         }
@@ -319,8 +354,12 @@ class IncidenciaController extends Controller
                         $end = Carbon::parse($endStr);
                         if ($end->lt($start)) throw new Exception("Fecha fin menor a inicio.");
                     } catch (Exception $e) {
+                        if ($e->getMessage() === "Fecha fin menor a inicio.") throw $e;
                         throw new Exception("Formato de fecha inválido. Use AAAA-MM-DD HH:MM");
                     }
+
+                    $overlap = $this->repository->findOverlap($empId, $start->format('Y-m-d H:i:s'), $end->format('Y-m-d H:i:s'));
+                    if ($overlap) throw new Exception("Se traslapa con el permiso #{$overlap->abstractexception_ptr_id} ({$overlap->start_time} al {$overlap->end_time})");
 
                     // D. Insertar
                     DB::transaction(function() use ($empId, $catId, $start, $end, $reason, $request) {

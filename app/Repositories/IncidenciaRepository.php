@@ -54,7 +54,12 @@ class IncidenciaRepository
         }
 
         if ($fechaRegistro) $query->whereDate('l.apply_time', $fechaRegistro);
-        if ($fechaIncidencia) $query->whereDate('l.start_time', $fechaIncidencia);
+        if ($fechaIncidencia) {
+            $query->where(function($q) use ($fechaIncidencia) {
+                $q->whereDate('l.start_time', '<=', $fechaIncidencia)
+                  ->whereDate('l.end_time', '>=', $fechaIncidencia);
+            });
+        }
 
         return $query->orderBy('l.apply_time', 'desc')->paginate(15);
     }
@@ -78,6 +83,25 @@ class IncidenciaRepository
         }
 
         return $query->orderBy('first_name', 'asc')->get();
+    }
+
+    public function findOverlap($employeeId, $start, $end, $ignoreId = null)
+    {
+        $query = DB::connection('pgsql_biotime')
+            ->table('att_leave')
+            ->where('employee_id', $employeeId)
+            ->where(function($q) use ($start, $end) {
+                // Lógica de traslape: (InicioA < FinB) AND (FinA > InicioB)
+                $q->where('start_time', '<', $end)
+                  ->where('end_time', '>', $start);
+            });
+
+        // En caso de estar editando, ignoramos el registro actual
+        if ($ignoreId) {
+            $query->where('abstractexception_ptr_id', '!=', $ignoreId);
+        }
+
+        return $query->first();
     }
 
     // --- FUNCIONES DE CREACIÓN (Transacciones) ---
