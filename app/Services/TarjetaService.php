@@ -281,7 +281,10 @@ class TarjetaService
                 if ($reg->clock_in) {
                     $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
                     $entradaRealRef = Carbon::parse($reg->clock_in);
-                    if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) {
+                    //if (abs($entradaOficialRef->diffInMinutes($entradaRealRef, false)) > 21) 
+                        
+                    if ($entradaRealRef->greaterThan($entradaOficialRef) && $entradaRealRef->diffInMinutes($entradaOficialRef, false) > 21)
+                        {
                         $reg->clock_in = null;
                     }
                 }
