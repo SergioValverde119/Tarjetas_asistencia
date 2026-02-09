@@ -10,6 +10,7 @@ use App\Models\User;
 use Inertia\Inertia;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Exception;
+use Carbon\Carbon;
 
 class TarjetaController extends Controller
 {
@@ -18,6 +19,22 @@ class TarjetaController extends Controller
     public function __construct(TarjetaService $tarjetaService)
     {
         $this->tarjetaService = $tarjetaService;
+    }
+
+    private function getRollingMonths()
+    {
+        $months = [];
+        // Queremos los últimos 12 meses terminando en el mes que acaba de concluir
+        for ($i = 12; $i >= 1; $i--) {
+            $date = Carbon::now()->subMonths($i);
+            $months[] = [
+                'id'    => $date->month,
+                'year'  => $date->year,
+                'name'  => $date->translatedFormat('F'), // Nombre completo (Enero, Febrero...)
+                'label' => $date->translatedFormat('M Y')  // Etiqueta corta (Ene 2026)
+            ];
+        }
+        return $months;
     }
 
     public function indexIndividual()
@@ -58,106 +75,75 @@ class TarjetaController extends Controller
      * REPORTE DE DISPONIBILIDAD (Backend Filtering)
      */
     public function indexDisponibilidad(Request $request)
-    {
-        // 1. Evitar Timeout en cálculos masivos
-        set_time_limit(0); 
-        ini_set('memory_limit', '512M');
+{
+    set_time_limit(0); 
+    ini_set('memory_limit', '512M');
 
-        $year = 2025;
-        
-        // 2. Obtener empleados
-        $allEmployees = $this->tarjetaService->obtenerTodosLosEmpleados();
+    $rollingMonths = $this->getRollingMonths();
+    $allEmployees = $this->tarjetaService->obtenerTodosLosEmpleados();
 
-        // 3. Filtrar solo usuarios con cuenta local
-        $idsConCuenta = User::whereNotNull('biotime_id')
-            ->pluck('biotime_id')
-            ->map(fn($id) => (string)$id)
-            ->toArray();
+    // Filtro usuarios locales
+    $idsConCuenta = User::whereNotNull('biotime_id')->pluck('biotime_id')->map(fn($id) => (string)$id)->toArray();
+    $allEmployees = array_filter($allEmployees, fn($emp) => in_array((string)$emp->id, $idsConCuenta));
 
-        $allEmployees = array_filter($allEmployees, function($emp) use ($idsConCuenta) {
-            return in_array((string)$emp->id, $idsConCuenta);
-        });
-
-        // 4. Filtro de Búsqueda (Texto)
-        if ($request->has('search') && $request->search) {
-            $search = strtolower($request->search);
-            $allEmployees = array_filter($allEmployees, function($emp) use ($search) {
-                return str_contains(strtolower($emp->first_name ?? ''), $search) ||
-                       str_contains(strtolower($emp->last_name ?? ''), $search) ||
-                       str_contains($emp->emp_code ?? '', $search);
-            });
-        }
-
-        // 5. FILTRO DE ESTATUS Y MES (Lógica Backend)
-        $filterMonth = $request->input('month');
-        $filterStatus = $request->input('status'); // 'blocked' | 'ok'
-
-        if ($filterStatus) {
-            $filtered = [];
-            foreach ($allEmployees as $emp) {
-                $isBlocked = false;
-
-                // Optimización: Si hay mes, solo consultamos ese mes
-                if ($filterMonth) {
-                    $m = (int)$filterMonth;
-                    $datosMes = $this->tarjetaService->obtenerDatosPorMes($emp->id, $m, $year);
-                    
-                    // Buscamos incidencias (F o RG)
-                    foreach ($datosMes['registros'] as $dia) {
-                        if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
-                            $isBlocked = true;
-                            break;
-                        }
-                    }
-                } 
-                // Si es global, calculamos todo (más lento)
-                else {
-                    $resumen = $this->tarjetaService->calcularResumenFaltasAnual($emp->id, $year);
-                    $isBlocked = count($resumen) > 0;
-                    $emp->cached_resumen = $resumen; // Guardar para reusar
-                }
-
-                if ($filterStatus === 'blocked' && $isBlocked) {
-                    $filtered[] = $emp;
-                } elseif ($filterStatus === 'ok' && !$isBlocked) {
-                    $filtered[] = $emp;
-                }
-            }
-            $allEmployees = $filtered;
-        }
-
-        // 6. Paginación (100 por página)
-        $currentPage = LengthAwarePaginator::resolveCurrentPage();
-        $perPage = 10;
-        $currentItems = array_slice($allEmployees, ($currentPage - 1) * $perPage, $perPage);
-        
-        // 7. Armado visual del Semáforo
-        foreach ($currentItems as &$emp) {
-            $resumen = $emp->cached_resumen ?? $this->tarjetaService->calcularResumenFaltasAnual($emp->id, $year);
-            
-            $semaforo = [];
-            for ($m = 1; $m <= 12; $m++) {
-                if ($year == now()->year && $m > now()->month) {
-                    $semaforo[] = 'future';
-                } elseif (isset($resumen[$m]) && count($resumen[$m]) > 0) {
-                    $semaforo[] = 'blocked';
-                } else {
-                    $semaforo[] = 'ok';
-                }
-            }
-            $emp->semaforo = $semaforo;
-            unset($emp->cached_resumen);
-        }
-
-        $paginatedItems = new LengthAwarePaginator($currentItems, count($allEmployees), $perPage);
-        $paginatedItems->setPath($request->url());
-
-        return Inertia::render('DisponibilidadTarjetas', [
-            'empleados' => $paginatedItems,
-            'filters' => $request->only(['search', 'month', 'status']),
-            'year' => $year
-        ]);
+    // 1. Filtro de Búsqueda (Nómina/Nombre)
+    if ($request->search) {
+        $search = strtolower($request->search);
+        $allEmployees = array_filter($allEmployees, fn($emp) => 
+            str_contains(strtolower($emp->first_name ?? ''), $search) ||
+            str_contains(strtolower($emp->last_name ?? ''), $search) ||
+            str_contains($emp->emp_code ?? '', $search)
+        );
     }
+
+    // --- 2. LÓGICA DE FILTRADO POR ESTATUS (FIX) ---
+    $month = $request->month;
+    $status = $request->status;
+
+    if ($month && $status) {
+        // Buscamos el año que corresponde a ese mes en nuestra ventana deslizante
+        $targetMonth = collect($rollingMonths)->firstWhere('id', (int)$month);
+        $year = $targetMonth ? $targetMonth['year'] : Carbon::now()->year;
+
+        $filtered = [];
+        foreach ($allEmployees as $emp) {
+            $tieneFaltas = $this->tarjetaService->tieneFaltasEnMes($emp->id, $month, $year);
+            
+            if ($status === 'blocked' && $tieneFaltas) {
+                $filtered[] = $emp;
+            } elseif ($status === 'ok' && !$tieneFaltas) {
+                $filtered[] = $emp;
+            }
+        }
+        $allEmployees = $filtered;
+    }
+
+    // 3. Paginación
+    $currentPage = LengthAwarePaginator::resolveCurrentPage();
+    $perPage = 10;
+    $currentItems = array_slice($allEmployees, ($currentPage - 1) * $perPage, $perPage);
+    
+    foreach ($currentItems as &$emp) {
+        $semaforo = [];
+        foreach ($rollingMonths as $m) {
+            $tieneFaltas = $this->tarjetaService->tieneFaltasEnMes($emp->id, $m['id'], $m['year']);
+            $semaforo[] = $tieneFaltas ? 'blocked' : 'ok';
+        }
+        $emp->semaforo = $semaforo;
+    }
+
+    return Inertia::render('DisponibilidadTarjetas', [
+        'empleados' => new LengthAwarePaginator($currentItems, count($allEmployees), $perPage, $currentPage, ['path' => $request->url()]),
+        // IMPORTANTE: Devolver todos los filtros para que la vista no se limpie
+        'filters' => $request->only(['search', 'month', 'status']), 
+        'rollingMonths' => $rollingMonths,
+        'year' => Carbon::now()->year
+    ]);
+}
+
+
+
+
 
     public function indexUsers(Request $request)
     {

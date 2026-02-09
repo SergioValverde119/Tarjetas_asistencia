@@ -1,5 +1,5 @@
-routes<script setup>
-import { ref, watch, computed, nextTick } from 'vue';
+<script setup>
+import { ref, watch, nextTick } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue'; 
 import { SidebarProvider } from '@/components/ui/sidebar'; 
@@ -15,6 +15,7 @@ import { getSchedule } from '@/routes';
 const props = defineProps({
     empleados: Object, 
     filters: Object,
+    rollingMonths: Array, // Lista dinámica de 12 meses (id, year, name, label)
     year: Number
 });
 
@@ -41,7 +42,7 @@ const getDayFromDateString = (dateString) => {
     return parseInt(dateString.split('-')[2], 10);
 };
 
-const processDataForPdf = (apiData, monthId) => {
+const processDataForPdf = (apiData, monthId, year) => {
     const registrosRaw = apiData.registros || [];
     const processedRegistros = registrosRaw.map(registro => {
         const hasObservation = registro.observaciones && registro.observaciones.trim().length > 0;
@@ -58,14 +59,14 @@ const processDataForPdf = (apiData, monthId) => {
 
     pdfData.value.schedule = apiData;
     pdfData.value.selectedMonth = monthId;
-    pdfData.value.selectedYear = props.year;
-    pdfData.value.daysInMonth = new Date(props.year, monthId, 0).getDate();
+    pdfData.value.selectedYear = year; 
+    pdfData.value.daysInMonth = new Date(year, monthId, 0).getDate();
     pdfData.value.firstFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) <= 15);
     pdfData.value.secondFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) > 15);
 };
 
 const downloadCard = async (emp, monthIndex) => {
-    const monthId = monthIndex + 1; 
+    const monthObj = props.rollingMonths[monthIndex];
     const cellId = `${emp.id}-${monthIndex}`;
     
     if (loadingCell.value) return;
@@ -80,11 +81,11 @@ const downloadCard = async (emp, monthIndex) => {
 
         const response = await axios.post(getSchedule().url, {
             emp_id: emp.id, 
-            month: monthId,
-            year: props.year
+            month: monthObj.id,
+            year: monthObj.year // Mandamos el año real de la columna
         });
 
-        processDataForPdf(response.data, monthId);
+        processDataForPdf(response.data, monthObj.id, monthObj.year);
         generatingPdf.value = true;
         await nextTick(); 
 
@@ -98,26 +99,15 @@ const downloadCard = async (emp, monthIndex) => {
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Tarjeta_${emp.emp_code}_${monthsFull[monthIndex].name}_${props.year}.pdf`);
+        pdf.save(`Tarjeta_${emp.emp_code}_${monthObj.name}_${monthObj.year}.pdf`);
 
     } catch (e) {
         console.error(e);
-        alert("Error al generar la tarjeta.");
     } finally {
         generatingPdf.value = false;
         loadingCell.value = null;
     }
 };
-
-// --- FILTROS ---
-const monthsFull = [
-    { id: 1, name: 'Enero' }, { id: 2, name: 'Febrero' }, { id: 3, name: 'Marzo' },
-    { id: 4, name: 'Abril' }, { id: 5, name: 'Mayo' }, { id: 6, name: 'Junio' },
-    { id: 7, name: 'Julio' }, { id: 8, name: 'Agosto' }, { id: 9, name: 'Septiembre' },
-    { id: 10, name: 'Octubre' }, { id: 11, name: 'Noviembre' }, { id: 12, name: 'Diciembre' }
-];
-
-watch(monthFilter, (val) => { if (!val) statusFilter.value = ''; });
 
 const refreshData = debounce(() => {
     router.get('/reporte-disponibilidad', { 
@@ -129,8 +119,6 @@ const refreshData = debounce(() => {
 }, 500);
 
 watch([search, monthFilter, statusFilter], () => { refreshData(); });
-
-const monthsHeader = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 const getStatusClasses = (status) => {
     if (status === 'blocked') return 'bg-red-100 text-red-600 border-red-200 hover:bg-red-200 hover:border-red-300 cursor-pointer'; 
@@ -149,20 +137,17 @@ const changePage = (url) => {
 </script>
 
 <template>
-    <Head title="Disponibilidad Anual" />
+    <Head title="Disponibilidad de Tarjetas" />
 
     <SidebarProvider>
         <AppSidebar>
-            <!-- CONTENEDOR PRINCIPAL: h-screen y overflow-hidden para eliminar el scroll del body -->
             <div class="flex flex-col h-screen max-h-screen bg-gray-50 p-6 overflow-hidden">
-                
-                <!-- Wrapper que ocupa todo el alto disponible -->
                 <div class="flex flex-col w-full h-full max-w-full mx-auto">
                     
-                    <!-- 1. ENCABEZADO Y FILTROS (Altura fija, flex-none) -->
+                    <!-- 1. ENCABEZADO Y FILTROS -->
                     <div class="flex-none flex flex-col gap-4 mb-4">
                         <div>
-                            <h1 class="text-2xl font-bold text-gray-900">Disponibilidad de Tarjetas {{ year }}</h1>
+                            <h1 class="text-2xl font-bold text-gray-900">Disponibilidad de Tarjetas</h1>
                             <p class="text-sm text-gray-500">Haga clic en los círculos de color para descargar.</p>
                         </div>
                         
@@ -176,8 +161,9 @@ const changePage = (url) => {
 
                             <div class="w-full sm:w-48">
                                 <select v-model="monthFilter" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm h-10 bg-gray-50">
-                                    <option value="">Seleccionar Mes</option>
-                                    <option v-for="m in monthsFull" :key="m.id" :value="m.id">{{ m.name }}</option>
+                                    <option value="">Cualquier Mes</option>
+                                    <!-- Usamos rollingMonths para que el filtro incluya el año y funcione -->
+                                    <option v-for="m in rollingMonths" :key="`${m.id}-${m.year}`" :value="m.id">{{ m.label }}</option>
                                 </select>
                             </div>
 
@@ -191,10 +177,8 @@ const changePage = (url) => {
                         </div>
                     </div>
 
-                    <!-- 2. TABLA (Flex-1 para ocupar el resto del espacio + min-h-0 para permitir scroll interno) -->
+                    <!-- 2. TABLA -->
                     <div class="flex-1 bg-white shadow border-b border-gray-200 sm:rounded-lg flex flex-col min-h-0 overflow-hidden">
-                        
-                        <!-- Contenedor con scroll -->
                         <div class="flex-1 overflow-auto relative">
                             <table class="min-w-full divide-y divide-gray-200 text-sm">
                                 <thead class="bg-gray-50 sticky top-0 z-20 shadow-sm">
@@ -202,8 +186,12 @@ const changePage = (url) => {
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 top-0 bg-gray-50 z-30 shadow-sm min-w-[250px] border-b border-gray-200">
                                             Empleado
                                         </th>
-                                        <th v-for="m in monthsHeader" :key="m" class="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky top-0 bg-gray-50 z-20 border-b border-gray-200">
-                                            {{ m }}
+                                        <!-- CABECERAS CON COLOR POR AÑO (Azul 2025, Naranja 2026) -->
+                                        <th v-for="m in rollingMonths" :key="`${m.id}-${m.year}`" 
+                                            class="px-2 py-3 text-center text-[10px] font-black uppercase tracking-wider w-16 sticky top-0 z-20 border-b border-gray-200 transition-colors"
+                                            :class="m.year === 2025 ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'"
+                                        >
+                                            {{ m.name.substring(0, 3) }}
                                         </th>
                                     </tr>
                                 </thead>
@@ -223,9 +211,9 @@ const changePage = (url) => {
                                         
                                         <td v-for="(status, index) in emp.semaforo" :key="index" class="px-2 py-4 text-center whitespace-nowrap">
                                             <button 
-                                                class="mx-auto flex items-center justify-center h-8 w-8 rounded-full border text-xs transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                                                class="mx-auto flex items-center justify-center h-8 w-8 rounded-full border text-xs transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 shadow-sm"
                                                 :class="getStatusClasses(status)"
-                                                :style="monthFilter && parseInt(monthFilter) !== (index + 1) ? 'opacity: 0.2' : ''"
+                                                :style="monthFilter && parseInt(monthFilter) === rollingMonths[index].id ? 'border-width: 2px; border-color: currentColor;' : (monthFilter ? 'opacity: 0.2' : '')"
                                                 :disabled="status === 'future' || loadingCell"
                                                 @click="status !== 'future' && downloadCard(emp, index)"
                                                 :title="status === 'blocked' ? 'Descargar (Incidencias)' : (status === 'ok' ? 'Descargar (Limpio)' : 'Mes Futuro')"
@@ -249,7 +237,7 @@ const changePage = (url) => {
                         </div>
                     </div>
 
-                    <!-- 3. PAGINACIÓN (Altura fija, flex-none) -->
+                    <!-- 3. PAGINACIÓN -->
                     <div class="flex-none mt-4 flex items-center justify-between" v-if="empleados.total > 0">
                         <div class="text-sm text-gray-700 hidden sm:block">
                             Mostrando {{ empleados.from }} a {{ empleados.to }} de {{ empleados.total }} resultados
@@ -268,7 +256,7 @@ const changePage = (url) => {
             v-if="generatingPdf"
             :employee="employeeForPdf"
             :schedule="pdfData.schedule"
-            :months="monthsFull.map(m => m.name)" 
+            :months="['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']" 
             :first-fortnight="pdfData.firstFortnight"
             :second-fortnight="pdfData.secondFortnight"
             :days-in-month="pdfData.daysInMonth"

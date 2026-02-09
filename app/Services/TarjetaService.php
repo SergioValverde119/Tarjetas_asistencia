@@ -56,6 +56,52 @@ class TarjetaService
         return null;
     }
 
+
+
+    
+    /**
+     * NUEVA FUNCIÓN PARA SEMÁFORO DINÁMICO:
+     * Verifica si existe algún bloqueo (F o RG) en un mes y año específicos.
+     * Esta función es la que llama el controlador dentro del loop de los 12 meses.
+     */
+    public function tieneFaltasEnMes($empleadoId, $month, $year)
+    {
+        try {
+            // Reutilizamos la lógica de obtención de datos que ya funciona
+            $datos = $this->obtenerDatosPorMes($empleadoId, $month, $year);
+            
+            foreach ($datos['registros'] as $dia) {
+                // Si encontramos una sola falta o retardo grave, el mes se bloquea
+                if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
+                    return true; 
+                }
+            }
+        } catch (Exception $e) {
+            Log::error("Error verificando faltas en $month-$year: " . $e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * NUEVA FUNCIÓN PARA LISTADO INDIVIDUAL:
+     * Devuelve solo los números de día que tienen falta en un mes/año.
+     */
+    public function obtenerFaltasEspecificas($empleadoId, $month, $year)
+    {
+        try {
+            $datos = $this->obtenerDatosPorMes($empleadoId, $month, $year);
+            $diasConFalta = [];
+            
+            foreach ($datos['registros'] as $dia) {
+                if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
+                    $diasConFalta[] = Carbon::parse($dia['dia'])->day;
+                }
+            }
+            return $diasConFalta;
+        } catch (Exception $e) {
+            return [];
+        }
+    }
     /**
      * Calcula el resumen de faltas Y RETARDOS GRAVES anual.
      * Esto alimenta los semáforos rojos/verdes.
