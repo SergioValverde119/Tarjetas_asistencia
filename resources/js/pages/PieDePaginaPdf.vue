@@ -18,12 +18,15 @@
       </p>
     </div>
     <!-- Contenedor para los logos derechos. --><div class="footer-right">
-      <!-- Logo Ciudad Innovadora --><img src="/images/logo_mujer_indigena.jpeg" alt="Ciudad Innovadora" class="logo-footer">
-      <!-- Nuevo Logo de Tenochtitlan --><img src="/images/tenochtitlan_logo.png" alt="Logo Tenochtitlan" class="logo-tenochtitlan">
+      <!-- Logo Ciudad Innovadora <img src="/images/logo_mujer_indigena.jpeg" alt="Ciudad Innovadora" class="logo-footer">-->
+      <!-- Nuevo Logo de Tenochtitlan <img src="/images/tenochtitlan_logo.png" alt="Logo Tenochtitlan" class="logo-tenochtitlan">-->
+
+      <!-- Logo Ciudad Innovadora --><img src="/images/logo_Margarita_Maza.png" alt="Ciudad Innovadora" class="logo-Margarita">
+      <!-- Nuevo Logo de Tenochtitlan --><img src="/images/logo_ajolote.png" alt="Logo Tenochtitlan" class="logo-ajolote">
     </div>
   </div>
 </template>
-
+s
 <style scoped>
 /**
  * Estilo base del componente, optimizado para dos casos de uso:
@@ -78,6 +81,16 @@
   height: auto; 
 }
 
+.pdf-page-footer .logo-Margarita {
+  width: auto; 
+  height: 75px;
+}
+
+/* Estilo para el nuevo logo de Tenochtitlan */
+.pdf-page-footer .logo-ajolote {
+  width: auto; 
+  height: 80px; 
+}
 
 /**
  * Sobrescribe los estilos base exclusivamente para el contexto de impresión (`window.print()`).

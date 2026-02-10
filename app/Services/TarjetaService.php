@@ -317,8 +317,18 @@ class TarjetaService
 
             // AGREGADO: Lógica de descanso si no hay huellas y es festivo
             // AGREGADO: Si el SQL trae motivo, es Justificado ('J')
-            if (! $reg->clock_in && ! $reg->clock_out && (! $reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
-                $resultados[] = $this->crearFila($fechaActualStr, null, 'J', $holidayDia ? $holidayDia->alias : '');
+            // if (! $reg->clock_in && ! $reg->clock_out && (! $reg->timetable_name || ($holidayDia && isset($reg->enable_holiday) && $reg->enable_holiday === true))) {
+            //     $resultados[] = $this->crearFila($fechaActualStr, null, 'J', $holidayDia ? $holidayDia->alias : 'No hay datos');
+            //     continue;
+            // }
+
+            if (!$reg->clock_in && !$reg->clock_out && $holidayDia && ($reg->enable_holiday ?? false)) {
+                $resultados[] = $this->crearFila($fechaActualStr, null, 'J', $holidayDia->alias);
+                continue;
+            }
+
+            if (!$reg->clock_in && !$reg->clock_out && !$reg->timetable_name) {
+                $resultados[] = $this->crearFila($fechaActualStr, null, 'F', 'Sin horario asignado');
                 continue;
             }
             
