@@ -336,7 +336,7 @@ const formatDate = (day) => {
   margin: 0 auto;
   padding-top: 5px;
   text-align: center;
-  font-size: 8pt;
+  font-size: 9pt;
   width: 70%;
 }
 </style>

@@ -4,17 +4,21 @@ namespace App\Repositories;
 
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Exception;
 
 class KardexRepository
 {
     private $connection = 'pgsql_biotime';
+
+    // =============================================================================================
+    // 1. MÉTODOS DE SOPORTE (Catálogos y Horarios)
+    // =============================================================================================
 
     public function getNominas()
     {
         return DB::connection($this->connection)
             ->table('personnel_area')
             ->where('area_name', '!=', 'Default (Reservado)')
-            ->where('area_name', '!=', 'SEDUVI') 
             ->orderBy('area_name')
             ->get(['id', 'area_name']);
     }
@@ -25,6 +29,48 @@ class KardexRepository
             ->table('att_leavecategory')
             ->pluck('category_name', 'report_symbol'); 
     }
+
+    public function getDiasFestivos(Carbon $fechaInicio, Carbon $fechaFin)
+    {
+        return DB::connection($this->connection)
+            ->table('att_holiday')
+            ->whereBetween('start_date', [$fechaInicio->toDateString(), $fechaFin->toDateString()])
+            ->get();
+    }
+
+    /**
+     * Obtiene el horario actual asignado (para mostrar en encabezados o detalles)
+     */
+    public function getHorarioActual($empleadoId)
+    {
+        $turnoAsignado = DB::connection($this->connection)
+            ->table('att_attschedule as s')
+            ->join('att_attshift as sh', 's.shift_id', '=', 'sh.id')
+            ->where('s.employee_id', $empleadoId)
+            ->where('s.start_date', '<=', now()->toDateString())
+            ->where('s.end_date', '>=', now()->toDateString())
+            ->select('sh.id', 'sh.alias as nombre_turno')
+            ->first();
+
+        if (!$turnoAsignado) return null;
+
+        $detalles = DB::connection($this->connection)
+            ->table('att_shiftdetail as sd')
+            ->join('att_timeinterval as ti', 'sd.time_interval_id', '=', 'ti.id')
+            ->where('sd.shift_id', $turnoAsignado->id)
+            ->select('sd.day_index', 'sd.in_time', 'sd.out_time', 'ti.duration')
+            ->orderBy('sd.day_index')
+            ->get();
+
+        return [
+            'nombre' => $turnoAsignado->nombre_turno,
+            'dias' => $detalles 
+        ];
+    }
+
+    // =============================================================================================
+    // 2. CONSULTAS DE EMPLEADOS (Buscador del Kárdex)
+    // =============================================================================================
 
     public function getEmpleadosPaginados(array $filtros)
     {
@@ -40,6 +86,7 @@ class KardexRepository
 
     private function getBaseEmpleadosQuery(array $filtros)
     {
+        // ... (Configuración de fechas igual que antes) ...
         $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
         $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
         $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $fechaBase->daysInMonth;
@@ -66,10 +113,7 @@ class KardexRepository
                 ) as nomina")
             )
             ->where('personnel_employee.enable_att', true)
-            ->where(function($query) {
-                $query->where('personnel_employee.is_truly_active', true)
-                      ->orWhere('personnel_employee.status', 0); 
-            })
+            ->where('personnel_employee.status', 0) // Solo activos
             ->where(function ($query) use ($mostrarSinHorario, $inicioPeriodo, $finPeriodo) {
                 if ($mostrarSinHorario) {
                     $query->whereNotExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
@@ -108,13 +152,41 @@ class KardexRepository
             ->orderBy('personnel_employee.emp_code');
     }
 
+    // =============================================================================================
+    // 3. EXTRACCIÓN DE DATOS MASIVOS (Aquí está la clave de la unificación)
+    // =============================================================================================
+
     public function getPayloadData(array $empleadoIDs, Carbon $fechaInicio, Carbon $fechaFin)
     {
+        // Hacemos una consulta masiva usando WhereIn para optimizar el Kárdex,
+        // pero trayendo LAS MISMAS COLUMNAS que usa el Servicio de Tarjetas (all_punches, duration, etc.)
         return DB::connection($this->connection)
-            ->table('att_payloadbase')
-            ->select('emp_id', 'att_date', 'clock_in', 'clock_out', 'late', 'early_leave', 'absent', 'leave', 'day_off')
-            ->whereIn('emp_id', $empleadoIDs)
-            ->whereBetween('att_date', [$fechaInicio->toDateString(), $fechaFin->toDateString()])
+            ->table('att_payloadbase as apb')
+            ->leftJoin('att_timeinterval as ti', 'apb.timetable_id', '=', 'ti.id')
+            ->select(
+                'apb.emp_id', 
+                'apb.att_date', 
+                'apb.clock_in', 
+                'apb.clock_out', 
+                'apb.late', 
+                'apb.early_leave', 
+                'apb.absent', 
+                'apb.leave', 
+                'apb.day_off',
+                
+                // GENERAMOS 'all_punches' AL VUELO: Esto arregla el error de "columna no existe".
+                // Buscamos en iclock_transaction todas las checadas de ese día y las juntamos.
+                DB::raw("(
+                    SELECT STRING_AGG(TO_CHAR(punch_time, 'YYYY-MM-DD HH24:MI:SS'), ',' ORDER BY punch_time ASC)
+                    FROM public.iclock_transaction 
+                    WHERE emp_id = apb.emp_id AND punch_time::date = apb.att_date
+                ) as all_punches"),
+                
+                'ti.in_time',      
+                'ti.work_time_duration as duration' 
+            )
+            ->whereIn('apb.emp_id', $empleadoIDs)
+            ->whereBetween('apb.att_date', [$fechaInicio->toDateString(), $fechaFin->toDateString()])
             ->get()
             ->groupBy('emp_id');
     }
@@ -134,63 +206,27 @@ class KardexRepository
             ->groupBy('employee_id');
     }
 
-    public function getHorarioActual($empleadoId)
-    {
-        $turnoAsignado = DB::connection($this->connection)
-            ->table('att_attschedule as s')
-            ->join('att_attshift as sh', 's.shift_id', '=', 'sh.id')
-            ->where('s.employee_id', $empleadoId)
-            ->where('s.start_date', '<=', now()->toDateString())
-            ->where('s.end_date', '>=', now()->toDateString())
-            ->select('sh.id', 'sh.alias as nombre_turno')
-            ->first();
+    // =============================================================================================
+    // 4. LÓGICA DE NEGOCIO (EL CEREBRO COMPARTIDO)
+    // =============================================================================================
 
-        if (!$turnoAsignado) return null;
-
-        $detalles = DB::connection($this->connection)
-            ->table('att_shiftdetail as sd')
-            ->join('att_timeinterval as ti', 'sd.time_interval_id', '=', 'ti.id')
-            ->where('sd.shift_id', $turnoAsignado->id)
-            ->select('sd.day_index', 'sd.in_time', 'sd.out_time', 'ti.duration')
-            ->orderBy('sd.day_index')
-            ->get();
-
-        return [
-            'nombre' => $turnoAsignado->nombre_turno,
-            'dias' => $detalles 
-        ];
-    }
-    
     public function procesarKardex($empleados, $payloadData, $permisos, $mes, $ano, $diaInicio, $diaFin)
     {
-        // 1. Cargar el mapa (Relación ID -> Categoría)
-        $mapaDeReglas = DB::table('mapeo_de_permisos')
-                           ->pluck('nuestra_categoria', 'biotime_id');
+        try {
+            $mapaDeReglas = DB::connection('pgsql')->table('leave_mappings')->pluck('leave_policy_id', 'external_leave_id');
+        } catch (Exception $e) { $mapaDeReglas = collect(); }
         
-        // 2. Obtener todas las categorías únicas que existen en la BD para inicializar contadores
-        // (Esto nos prepara para el futuro: si agregas SINDICATO, aquí aparecerá)
-        $categoriasPosibles = $mapaDeReglas->unique()->values()->all();
-        // Aseguramos que existan las básicas aunque no estén en la BD aún
-        $categoriasPosibles = array_unique(array_merge($categoriasPosibles, ['VACACION', 'OTRO']));
+        $fechaInicioMes = Carbon::createFromDate($ano, $mes, 1)->startOfDay();
+        $fechaFinMes = Carbon::createFromDate($ano, $mes, 1)->endOfMonth()->endOfDay();
+        $festivos = $this->getDiasFestivos($fechaInicioMes, $fechaFinMes);
 
         $empleados = collect($empleados);
-
         $filasDelKardex = [];
+
         foreach ($empleados as $empleado) {
             
-            // Inicializamos contadores fijos (los de siempre)
-            $contadoresFijos = [
-                'total_retardos' => 0, 
-                'total_omisiones' => 0, 
-                'total_faltas' => 0,
-            ];
-
-            // Inicializamos contadores dinámicos (basados en las reglas)
-            $contadoresDinamicos = [];
-            foreach ($categoriasPosibles as $cat) {
-                $contadoresDinamicos[$cat] = 0;
-            }
-
+            $contadores = ['retardos' => 0, 'omisiones' => 0, 'faltas' => 0];
+            
             $filaEmpleado = [
                 'id' => $empleado->id, 
                 'emp_code' => $empleado->emp_code,
@@ -201,102 +237,175 @@ class KardexRepository
 
             $payloadParaEmpleado = $payloadData->get($empleado->id) ?? collect();
             $permisosParaEmpleado = $permisos->get($empleado->id) ?? collect();
-            
-            $fechaContratacion = null;
-            if ($empleado->hire_date) {
-                $fechaContratacion = Carbon::parse($empleado->hire_date)->startOfDay();
-            }
+            $fechaContratacion = $empleado->hire_date ? Carbon::parse($empleado->hire_date)->startOfDay() : null;
 
             for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
-                $incidenciaDelDia = ""; 
-                
                 $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
                 $fechaString = $fechaActual->toDateString();
 
-                if ($fechaActual->greaterThanOrEqualTo(Carbon::today())) {
+                // Filtros de fecha
+                if ($fechaActual->greaterThanOrEqualTo(Carbon::today()) || ($fechaContratacion && $fechaActual->isBefore($fechaContratacion))) {
                     $filaEmpleado['incidencias_diarias'][$dia] = null;
                     continue; 
                 }
 
-                if ($fechaContratacion && $fechaActual->isBefore($fechaContratacion)) {
-                    $filaEmpleado['incidencias_diarias'][$dia] = null;
-                    continue; 
-                }
-
+                // 1. Buscar Datos
+                $esFestivo = $festivos->contains(fn($h) => str_starts_with($h->start_date, $fechaString));
+                $permiso = $this->buscarPermiso($permisosParaEmpleado, $fechaActual);
                 $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
 
-                if (!$payloadDia) {
-                    $incidenciaDelDia = "Descanso";
-                } else {
-                    if ($payloadDia->day_off > 0) {
-                        $incidenciaDelDia = "Descanso";
-                    } else if ($payloadDia->leave > 0) {
-                        $permiso = $this->buscarPermiso($permisosParaEmpleado, $fechaActual);
-                        $incidenciaDelDia = $permiso ? $permiso->report_symbol : "Permiso";
+                $incidencia = "";
 
-                        if ($permiso) {
-                            // --- LÓGICA DINÁMICA ---
-                            // Buscamos qué categoría es este permiso en la BD
-                            $categoria = $mapaDeReglas->get($permiso->category_id, 'OTRO');
-                            
-                            // Incrementamos el contador de esa categoría específica
-                            if (isset($contadoresDinamicos[$categoria])) {
-                                $contadoresDinamicos[$categoria]++;
-                            } else {
-                                // Si por alguna razón la categoría no estaba inicializada
-                                $contadoresDinamicos[$categoria] = 1;
-                            }
+                // --- ÁRBOL DE DECISIÓN UNIFICADO ---
+
+                // A. Fin de Semana
+                if ($fechaActual->isWeekend()) {
+                    $incidencia = "DESC";
+                }
+                // B. Festivo (Prioridad sobre faltas)
+                else if ($esFestivo && (!$payloadDia || (!$payloadDia->clock_in && !$payloadDia->clock_out))) {
+                    $incidencia = "J"; 
+                }
+                // C. Permiso (Prioridad sobre faltas)
+                else if ($permiso) {
+                    $incidencia = $permiso->report_symbol; 
+                }
+                // D. Sin registro en absoluto
+                else if (!$payloadDia) {
+                    $incidencia = "Falto";
+                    $contadores['faltas']++;
+                }
+                else {
+                    // E. Análisis de Asistencia (Aquí aplicamos la magia de la Tarjeta)
+                    
+                    // 1. Ejecutamos la limpieza de huellas (Salida anticipada, etc.)
+                    $this->procesarHuellas($payloadDia);
+
+                    // 2. Evaluamos el resultado limpio
+                    
+                    // Si no tiene horario asignado, es Falta (regla de tu servicio)
+                    // a menos que tenga checadas, en cuyo caso es asistencia fuera de horario
+                    if (!$payloadDia->clock_in && !$payloadDia->clock_out && empty($payloadDia->in_time)) {
+                        $incidencia = "Falto"; // O "S/H"
+                        $contadores['faltas']++;
+                    }
+                    else if ($payloadDia->clock_in && $payloadDia->clock_out) {
+                        // Tiene ambas, evaluamos retardo con tolerancia
+                        $eval = $this->evaluarRetardo($payloadDia);
+                        if ($eval === 'OK') {
+                            $incidencia = "OK";
                         } else {
-                            // Si no encontramos regla, va a 'OTRO' o un genérico
-                            $contadoresDinamicos['OTRO']++;
+                            $incidencia = "R";
+                            $contadores['retardos']++;
                         }
-                    } else if ($payloadDia->absent > 0) {
-                        $incidenciaDelDia = "Falto";
-                        $contadoresFijos['total_faltas']++;
-                    } else if ($payloadDia->clock_in == null) {
-                        $incidenciaDelDia = "Sin Entrada";
-                        $contadoresFijos['total_omisiones']++;
-                    } else if ($payloadDia->clock_out == null) {
-                        $incidenciaDelDia = "Sin Salida";
-                        $contadoresFijos['total_omisiones']++;
-                    } else if ($payloadDia->late > 0) {
-                        $incidenciaDelDia = "R";
-                        $contadoresFijos['total_retardos']++;
                     } else {
-                        $incidenciaDelDia = "OK"; 
+                        // Le falta una checada
+                        if (!$payloadDia->clock_in && !$payloadDia->clock_out) {
+                            $incidencia = "Falto";
+                            $contadores['faltas']++;
+                        } else {
+                            // Aquí caen las "Salidas Anticipadas" que borró procesarHuellas
+                            $incidencia = !$payloadDia->clock_in ? "S/E" : "S/S";
+                            $contadores['omisiones']++;
+                        }
                     }
                 }
                 
-                $filaEmpleado['incidencias_diarias'][$dia] = $incidenciaDelDia;
+                $filaEmpleado['incidencias_diarias'][$dia] = $incidencia;
             }
 
-            // --- ASIGNACIÓN FINAL (La Promesa) ---
-            // Aquí traducimos lo dinámico a lo estático que espera la vista
-            
-            // 1. Vacaciones: Directo de su categoría
-            $filaEmpleado['total_vacaciones'] = $contadoresDinamicos['VACACION'] ?? 0;
-            
-            // 2. Permisos: Sumamos TODO lo que no sea vacación
-            // (Incapacidad, Permiso Goce, Permiso Sin Goce, etc.)
-            $totalOtrosPermisos = 0;
-            foreach ($contadoresDinamicos as $cat => $val) {
-                if ($cat !== 'VACACION') {
-                    $totalOtrosPermisos += $val;
-                }
-            }
-            $filaEmpleado['total_permisos'] = $totalOtrosPermisos;
-
-            // 3. Los fijos
-            $filaEmpleado['total_faltas'] = $contadoresFijos['total_faltas'];
-            $filaEmpleado['total_retardos'] = $contadoresFijos['total_retardos'];
-            $filaEmpleado['total_omisiones'] = $contadoresFijos['total_omisiones'];
-            
-            // Opcional: Pasamos el desglose completo por si el frontend lo quiere usar después
-            $filaEmpleado['desglose_permisos'] = $contadoresDinamicos;
+            // Asignar totales
+            $filaEmpleado['total_faltas'] = $contadores['faltas'];
+            $filaEmpleado['total_retardos'] = $contadores['retardos'];
+            $filaEmpleado['total_omisiones'] = $contadores['omisiones'];
 
             $filasDelKardex[] = $filaEmpleado;
         }
         return $filasDelKardex;
+    }
+
+    // =============================================================================================
+    // 5. FUNCIONES PRIVADAS (Clonadas de TarjetaService)
+    // =============================================================================================
+
+    private function procesarHuellas($reg)
+    {
+        // Si no tiene horario, no tocamos nada
+        if (empty($reg->in_time)) return;
+
+        // Reset para recalcular limpio
+        $reg->clock_in = null;
+        $reg->clock_out = null;
+
+        $fechaStr = Carbon::parse($reg->att_date)->format('Y-m-d');
+        
+        // DST
+        $date = Carbon::parse($reg->att_date);
+        $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
+        $finOtono = Carbon::parse("last sunday of october $date->year");
+        $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
+        $horasAjuste = $esVerano ? 1 : 0;
+
+        $duracionMinutos = $reg->duration ?? 480;
+        $targetIn = Carbon::parse($fechaStr . ' ' . $reg->in_time);
+        $targetOut = (clone $targetIn)->addMinutes($duracionMinutos);
+
+        $punchesRaw = array_filter(explode(',', $reg->all_punches ?? ''), fn($p) => !empty(trim($p)));
+        $punchesAjustados = [];
+        $lastAdded = null;
+
+        foreach ($punchesRaw as $pStr) {
+            try {
+                $p = Carbon::parse(trim($pStr));
+                if ($horasAjuste != 0) $p->addHours($horasAjuste);
+
+                if (!$lastAdded || abs($p->diffInSeconds($lastAdded)) > 30) {
+                    $punchesAjustados[] = $p;
+                    $lastAdded = $p;
+                }
+            } catch (Exception $e) {}
+        }
+
+        $bestIn = null; $bestOut = null;
+        $minDistIn = 999999; $minDistOut = 999999;
+
+        foreach ($punchesAjustados as $punch) {
+            $distIn = abs($targetIn->diffInMinutes($punch, false));
+            $distOut = abs($targetOut->diffInMinutes($punch, false));
+
+            if ($distIn < $distOut) {
+                if ($distIn < $minDistIn) { $minDistIn = $distIn; $bestIn = $punch; }
+            } else {
+                if ($distOut < $minDistOut) { $minDistOut = $distOut; $bestOut = $punch; }
+            }
+        }
+
+        $umbral = 30; // Tolerancia de búsqueda de huella
+
+        if ($bestIn && $minDistIn <= $umbral) $reg->clock_in = $bestIn->format('Y-m-d H:i:s');
+        
+        if ($bestOut && $minDistOut <= $umbral) {
+            // REGLA: Si salió antes de la hora objetivo, se borra la salida
+            if ($bestOut->lessThan($targetOut)) {
+                $reg->clock_out = null; 
+            } else {
+                $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
+            }
+        }
+    }
+
+    private function evaluarRetardo($registro)
+    {
+        if (!$registro->clock_in || !$registro->in_time) return 'OK';
+
+        $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
+        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
+        $horaRealEntrada = Carbon::parse($registro->clock_in);
+        
+        $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
+        
+        // Tolerancia de 11 minutos
+        return ($diferenciaMinutos <= 11) ? 'OK' : 'R';
     }
 
     private function buscarPermiso($permisosEmpleado, $fechaActual) {

@@ -4,7 +4,7 @@ import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { LogOut } from 'lucide-vue-next'; // Icono para el botón
+import { LogOut, AlertCircle, FileDown, CheckCircle, Loader2, Lock } from 'lucide-vue-next';
 
 // --- IMPORTS ---
 import { getSchedule } from '@/routes'; 
@@ -13,37 +13,29 @@ import TarjetaPdf from './TarjetaPdf.vue';
 
 const props = defineProps({
     empleado: { type: Object, required: true },
-    descargasPrevias: { type: Array, default: () => [] },
-    resumenFaltas: { type: Object, default: () => ({}) }
+    descargasPrevias: { type: Array, default: () => [] }, // Formato: ["1-2025", "2-2025"]
+    resumenFaltas: { type: Object, default: () => ({}) },   // Formato: { 2025: { 1: [days] } }
+    rollingMonths: { type: Array, default: () => [] }     // Lista de 12 meses deslizantes
 });
 
-const year = 2025;
 const loadingId = ref(null);
 const generatingPdf = ref(false);
-const downloadedMonths = ref(new Set(props.descargasPrevias));
 
-// Estado para el Modal de Error (Bloqueo)
+// Estado para el Modal de Bloqueo (Error)
 const showModal = ref(false);
 
 // Estado para el Modal de Confirmación (Aviso de descarga única)
 const showConfirmModal = ref(false);
-const pendingMonthId = ref(null);
+const pendingMonth = ref(null); // Guardará el objeto mes completo {id, year, name...}
 
 const pdfData = ref({
     schedule: { horario: '', registros: [] },
     selectedMonth: 1,
-    selectedYear: year,
+    selectedYear: 2025,
     daysInMonth: 30,
     firstFortnight: [],
     secondFortnight: []
 });
-
-const months = [
-    { id: 1, name: 'Enero' }, { id: 2, name: 'Febrero' }, { id: 3, name: 'Marzo' },
-    { id: 4, name: 'Abril' }, { id: 5, name: 'Mayo' }, { id: 6, name: 'Junio' },
-    { id: 7, name: 'Julio' }, { id: 8, name: 'Agosto' }, { id: 9, name: 'Septiembre' },
-    { id: 10, name: 'Octubre' }, { id: 11, name: 'Noviembre' }, { id: 12, name: 'Diciembre' },
-];
 
 const employeeForPdf = computed(() => ({
     ...props.empleado,
@@ -59,43 +51,46 @@ const handleImageError = (e) => {
     e.target.src = "https://placehold.co/90x90/D1D5DB/4B5563?text=LOGO";
 };
 
-// --- HELPER: DETECTAR FALTAS ---
-const hasFaults = (monthId) => {
-    return props.resumenFaltas && props.resumenFaltas[monthId] && props.resumenFaltas[monthId].length > 0;
+// --- HELPER: DETECTAR FALTAS (Considerando Año) ---
+const hasFaults = (monthId, year) => {
+    return props.resumenFaltas[year] && 
+           props.resumenFaltas[year][monthId] && 
+           props.resumenFaltas[year][monthId].length > 0;
+};
+
+// --- HELPER: DETECTAR DESCARGA (Considerando Año) ---
+const isDownloaded = (monthId, year) => {
+    return props.descargasPrevias.includes(`${monthId}-${year}`);
 };
 
 // --- ESTILOS DE FILA ---
-const getRowClass = (monthId) => {
-    if (hasFaults(monthId)) {
-        return 'bg-red-50 border-l-4 border-l-red-500'; // Estilo bloqueado
+const getRowClass = (monthId, year) => {
+    if (hasFaults(monthId, year)) {
+        return 'bg-red-50 border-l-4 border-l-red-500';
     }
     return 'hover:bg-blue-50'; 
 };
 
 // --- MANEJO DE CLIC EN EL BOTÓN ---
-const handleAction = (monthId) => {
-    // 1. Si tiene faltas, mostramos el modal de error/bloqueo
-    if (hasFaults(monthId)) {
+const handleAction = (monthObj) => {
+    if (hasFaults(monthObj.id, monthObj.year)) {
         showModal.value = true;
         return;
     }
     
-    // 2. Si está disponible, pedimos confirmación con el aviso legal
-    pendingMonthId.value = monthId;
+    pendingMonth.value = monthObj;
     showConfirmModal.value = true;
 };
 
-// --- CONFIRMAR DESCARGA ---
 const confirmDownload = () => {
-    if (pendingMonthId.value !== null) {
-        descargarTarjeta(pendingMonthId.value);
+    if (pendingMonth.value) {
+        descargarTarjeta(pendingMonth.value);
     }
     showConfirmModal.value = false;
-    pendingMonthId.value = null;
 };
 
 // --- PROCESAMIENTO PDF ---
-const processDataForPdf = (apiData, monthId) => {
+const processDataForPdf = (apiData, monthId, year) => {
     const registrosRaw = apiData.registros || [];
     const processedRegistros = registrosRaw.map(registro => {
         const hasObservation = registro.observaciones && registro.observaciones.trim().length > 0;
@@ -118,15 +113,19 @@ const processDataForPdf = (apiData, monthId) => {
     pdfData.value.secondFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) > 15);
 };
 
-const registrarDescargaEnBackend = async (monthId) => {
+const registrarDescargaEnBackend = async (monthId, year) => {
     try {
         await axios.post(download_pdf().url, { month: monthId, year: year });
-        downloadedMonths.value.add(monthId);
+        // Recargamos la página para actualizar el estatus de descarga en los props
+        router.reload({ only: ['descargasPrevias'] });
     } catch (e) { console.error(e); }
 };
 
-const descargarTarjeta = async (monthId) => {
-    loadingId.value = monthId;
+const descargarTarjeta = async (monthObj) => {
+    const monthId = monthObj.id;
+    const year = monthObj.year;
+
+    loadingId.value = `${monthId}-${year}`;
     try {
         const response = await axios.post(getSchedule().url, {
             emp_id: props.empleado.id, 
@@ -134,7 +133,7 @@ const descargarTarjeta = async (monthId) => {
             year: year
         });
 
-        processDataForPdf(response.data, monthId);
+        processDataForPdf(response.data, monthId, year);
         generatingPdf.value = true;
         await nextTick(); 
 
@@ -148,24 +147,25 @@ const descargarTarjeta = async (monthId) => {
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Tarjeta_${props.empleado.emp_code}_${months[monthId-1].name}_${year}.pdf`);
+        pdf.save(`Tarjeta_${props.empleado.emp_code}_${monthObj.name}_${year}.pdf`);
         
-        await registrarDescargaEnBackend(monthId);
+        await registrarDescargaEnBackend(monthId, year);
     } catch (e) {
+        console.error(e);
         alert("Error al generar PDF.");
     } finally {
         generatingPdf.value = false;
         loadingId.value = null;
+        pendingMonth.value = null;
     }
 };
 </script>
 
 <template>
-    <Head title="Tarjetas de asistencia del año 2025" />
+    <Head title="Mis Tarjetas de Asistencia" />
 
     <div class="schedule-card-wrapper">
         <div class="nav-bar">
-            <!-- Botón Cerrar Sesión (Alineado a la derecha) -->
             <Link 
                 href="/logout" 
                 method="post" 
@@ -182,14 +182,18 @@ const descargarTarjeta = async (monthId) => {
                 <img src="/images/logo_cdmx.jpeg" alt="Logo CDMX" class="logo" @error="handleImageError">
                 <div class="header-text">
                     <h2 class="font-bold text-2xl text-gray-800">{{ empleado.first_name }} {{ empleado.last_name }}</h2>
-                    <p class="text-sm text-gray-500">Expediente: {{ empleado.emp_code }} | Departamento: {{ empleado.department_name }}</p>
+                    <p class="text-sm text-gray-500">
+                        Expediente: {{ empleado.emp_code }} | 
+                        Departamento: {{ empleado.department_name }}
+                    </p>
                 </div>
-                <img src="/images/logo_mujer_indigena.jpeg" alt="Logo" class="logo" @error="handleImageError">
+                <!-- <img src="/images/logo_mujer_indigena.jpeg" alt="Logo" class="logo" @error="handleImageError"> -->
+                <img src="/images/logo_Margarita_Maza.png" alt="Logo" class="logo" @error="handleImageError">
             </div>
 
             <div class="content-body">
                 <div class="table-header">
-                    <h3 class="text-lg font-semibold text-gray-700">Tarjetas de asistencia</h3>
+                    <h3 class="text-lg font-semibold text-gray-700">Historial de Tarjetas (Últimos 12 meses)</h3>
                 </div>
 
                 <div class="table-wrapper">
@@ -203,30 +207,26 @@ const descargarTarjeta = async (monthId) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="month in months" :key="month.id" :class="getRowClass(month.id)" class="transition-colors duration-150">
-                                <td class="font-medium text-gray-700">{{ month.name }}</td>
-                                <td class="text-center text-gray-500">{{ year }}</td>
+                            <tr v-for="m in rollingMonths" :key="`${m.id}-${m.year}`" :class="getRowClass(m.id, m.year)" class="transition-colors duration-150">
+                                <td class="font-medium text-gray-700">{{ m.name }}</td>
+                                <td class="text-center text-gray-500 font-bold">{{ m.year }}</td>
                                 <td class="text-center">
                                     
-                                    <!-- LÓGICA DE ESTATUS -->
-                                    <template v-if="hasFaults(month.id)">
-                                        <!-- CASO 1: CON FALTAS (Bloqueado) -->
+                                    <template v-if="hasFaults(m.id, m.year)">
                                         <div class="flex flex-col items-center">
                                             <span class="status-badge blocked">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                <AlertCircle class="w-3 h-3 inline mr-1" />
                                                 No disponible
                                             </span>
-                                            <!-- Detalle de días -->
-                                            <div class="text-[11px] text-red-600 font-bold mt-1">
-                                                Falta día(s): {{ resumenFaltas[month.id].join(', ') }}
+                                            <div class="text-[11px] text-red-600 font-bold mt-1 uppercase tracking-tighter">
+                                                Falta día(s): {{ resumenFaltas[m.year][m.id].join(', ') }}
                                             </div>
                                         </div>
                                     </template>
                                     
                                     <template v-else>
-                                        <!-- CASO 2: SIN FALTAS -->
-                                        <span v-if="downloadedMonths.has(month.id)" class="status-badge generated">
-                                            <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        <span v-if="isDownloaded(m.id, m.year)" class="status-badge generated">
+                                            <CheckCircle class="w-3 h-3 inline mr-1" />
                                             Descargada
                                         </span>
                                         <span v-else class="status-badge available">Disponible</span>
@@ -234,29 +234,29 @@ const descargarTarjeta = async (monthId) => {
 
                                 </td>
                                 <td class="text-right align-middle">
-                                    <!-- BOTÓN INTELIGENTE -->
                                     <button 
-                                        @click="handleAction(month.id)" 
+                                        @click="handleAction(m)" 
                                         :disabled="loadingId !== null"
                                         class="download-button-small"
-                                        :class="{'btn-blocked': hasFaults(month.id)}"
+                                        :class="{'btn-blocked': hasFaults(m.id, m.year)}"
                                     >
-                                        <template v-if="hasFaults(month.id)">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="-ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                            </svg>
+                                        <template v-if="hasFaults(m.id, m.year)">
+                                            <Lock class="-ml-1 mr-2 h-4 w-4" />
                                             Ver Detalle
                                         </template>
-                                        <template v-else-if="loadingId === month.id">
-                                            <svg class="animate-spin -ml-1 mr-2 h-3 w-3 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        <template v-else-if="loadingId === `${m.id}-${m.year}`">
+                                            <Loader2 class="animate-spin -ml-1 mr-2 h-3 w-3 inline" />
                                             Cargando...
                                         </template>
                                         <template v-else>
-                                            <svg class="-ml-1 mr-2 h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                                            <FileDown class="-ml-1 mr-2 h-4 w-4 inline" />
                                             Descargar
                                         </template>
                                     </button>
                                 </td>
+                            </tr>
+                            <tr v-if="rollingMonths.length === 0">
+                                <td colspan="4" class="text-center py-10 text-gray-400 italic">No hay tarjetas disponibles en este periodo.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -266,23 +266,17 @@ const descargarTarjeta = async (monthId) => {
     </div>
 
     <!-- MODAL DE BLOQUEO (ERROR) -->
-    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 transition-opacity">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up">
-            <!-- Icono Alerta -->
+    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-all">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up border-t-4 border-red-600">
             <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-                <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+                <AlertCircle class="h-6 w-6 text-red-600" />
             </div>
-            
             <h3 class="text-lg font-bold text-center text-gray-900 mb-2">Acceso Restringido</h3>
-            
             <p class="text-sm text-gray-600 text-center mb-6 leading-relaxed">
                 Se encuentran faltas o retardos graves no justificados en ese mes. Si considera esto un error, por favor acérquese a planta baja al área de Administración.
             </p>
-            
             <div class="flex justify-center">
-                <button @click="showModal = false" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-md transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                <button @click="showModal = false" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-md transition-colors shadow-sm focus:outline-none">
                     Entendido
                 </button>
             </div>
@@ -290,26 +284,20 @@ const descargarTarjeta = async (monthId) => {
     </div>
 
     <!-- MODAL DE CONFIRMACIÓN (AVISO) -->
-    <div v-if="showConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 transition-opacity">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up">
-            <!-- Icono Info -->
+    <div v-if="showConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-all">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up border-t-4 border-blue-600">
             <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
-                <svg class="h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                </svg>
+                <AlertCircle class="h-6 w-6 text-blue-600" />
             </div>
-            
             <h3 class="text-lg font-bold text-center text-gray-900 mb-2">Aviso Importante</h3>
-            
             <p class="text-sm text-gray-600 text-center mb-6 leading-relaxed">
-                Solo se puede descargar una vez la tarjeta en formato PDF para su impresión. Si se presenta un error con la descarga de esta, por favor acérquese a planta baja al área de administración.
+                Solo se puede descargar una vez la tarjeta en formato PDF para su impresión. Asegúrese de que su impresora esté lista antes de continuar.
             </p>
-            
             <div class="flex justify-center gap-4">
                 <button @click="showConfirmModal = false" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-md transition-colors">
                     Cancelar
                 </button>
-                <button @click="confirmDownload" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                <button @click="confirmDownload" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors shadow-sm">
                     Descargar
                 </button>
             </div>
@@ -321,7 +309,7 @@ const descargarTarjeta = async (monthId) => {
         v-if="generatingPdf"
         :employee="employeeForPdf"
         :schedule="pdfData.schedule"
-        :months="months.map(m => m.name)" 
+        :months="['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']" 
         :first-fortnight="pdfData.firstFortnight"
         :second-fortnight="pdfData.secondFortnight"
         :days-in-month="pdfData.daysInMonth"
@@ -332,56 +320,46 @@ const descargarTarjeta = async (monthId) => {
 
 <style scoped>
 .schedule-card-wrapper { min-height: 100vh; background-color: #f3f4f6; padding: 24px; }
+.nav-bar { max-width: 1000px; margin: 0 auto 16px auto; display: flex; justify-content: flex-end; }
 
-/* Barra de navegación: Alineación a la derecha */
-.nav-bar { 
-    max-width: 1000px; 
-    margin: 0 auto 16px auto; 
-    display: flex; 
-    justify-content: flex-end; 
-}
-
-.back-link { color: #6b7280; text-decoration: none; font-weight: 500; font-size: 14px; transition: color 0.2s; }
-.back-link:hover { color: #2563eb; }
-
-/* ESTILO NUEVO: Botón Cerrar Sesión */
 .logout-link {
     display: flex;
     align-items: center;
-    color: #ef4444; /* Rojo suave */
+    color: #ef4444; 
     text-decoration: none;
-    font-weight: 500;
+    font-weight: 700;
     font-size: 14px;
-    background: none;
-    border: none;
+    background: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #fee2e2;
     cursor: pointer;
-    transition: color 0.2s;
+    transition: all 0.2s;
 }
-.logout-link:hover { color: #b91c1c; }
+.logout-link:hover { color: white; background-color: #b91c1c; }
 
-.schedule-card { max-width: 1000px; margin: 0 auto; padding: 32px; background-color: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+.schedule-card { max-width: 1000px; margin: 0 auto; padding: 32px; background-color: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
 .header { display: flex; justify-content: space-between; align-items: center; text-align: center; margin-bottom: 24px; border-bottom: 1px solid #e5e7eb; padding-bottom: 24px; }
-.header .logo { height: 90px; width: auto; }
+.header .logo { height: 80px; width: auto; }
+.header .logo .logo-Margarita { height: 50px; width: auto; }
 .header .header-text { flex-grow: 1; }
 .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-th { background-color: #f9fafb; font-weight: 600; color: #374151; }
-td { color: #4b5563; }
+th { background-color: #f9fafb; font-weight: 600; color: #374151; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+td { color: #4b5563; font-size: 14px; }
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 
-/* BADGES */
-.status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+.status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 800; border: 1px solid transparent; text-transform: uppercase; }
 .status-badge.available { background-color: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
 .status-badge.generated { background-color: #ecfdf5; color: #059669; border-color: #d1fae5; }
 .status-badge.blocked { background-color: #fef2f2; color: #dc2626; border-color: #fecaca; }
 
-/* BOTONES */
 .download-button-small {
-    padding: 6px 12px;
-    font-size: 13px;
-    font-weight: 500;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 700;
     cursor: pointer;
     background-color: white;
     color: #374151;
@@ -391,11 +369,11 @@ td { color: #4b5563; }
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    text-transform: uppercase;
 }
-.download-button-small:hover:not(:disabled) { border-color: #2563eb; color: #2563eb; background-color: #eff6ff; }
+.download-button-small:hover:not(:disabled) { border-color: #2563eb; color: white; background-color: #2563eb; }
 .download-button-small:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Estilo para botón bloqueado */
 .download-button-small.btn-blocked {
     color: #991b1b;
     border-color: #fecaca;
@@ -406,7 +384,6 @@ td { color: #4b5563; }
     border-color: #f87171;
 }
 
-/* Animación simple modal */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }

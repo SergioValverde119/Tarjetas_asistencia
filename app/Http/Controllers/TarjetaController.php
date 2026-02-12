@@ -40,6 +40,7 @@ class TarjetaController extends Controller
     public function indexIndividual()
     {
         $user = Auth::user();
+        // Buscamos los datos reales del empleado en BioTime
         $empleadoData = $this->tarjetaService->buscarEmpleadoPorBiotimeId($user->biotime_id);
 
         if ($empleadoData) {
@@ -47,27 +48,50 @@ class TarjetaController extends Controller
         }
 
         $resumenFaltas = [];
-        $year = 2025;
+        $rollingMonths = $this->getRollingMonths();
 
         if ($empleadoData) {
-            $resumenFaltas = $this->tarjetaService->calcularResumenFaltasAnual($empleadoData->id, $year);
+            // Recorremos los 12 meses dinámicos para armar el mapa de faltas
+            foreach ($rollingMonths as $m) {
+                // Consultamos las faltas específicas de ese mes y ESE año
+                $faltas = $this->tarjetaService->obtenerFaltasEspecificas($empleadoData->id, $m['id'], $m['year']);
+                
+                if (!empty($faltas)) {
+                    // Estructura: resumenFaltas[2026][1] = [5, 12, 15]
+                    $resumenFaltas[$m['year']][$m['id']] = $faltas;
+                }
+            }
         } else {
+            // Datos de respaldo si el usuario no está vinculado a BioTime
             $empleadoData = [
-                'id' => $user->biotime_id ?? 'N/A', 'emp_code' => 'N/A',
-                'first_name' => $user->name, 'last_name' => '',
-                'department_name' => 'No vinculado', 'job_title' => ''
+                'id' => $user->biotime_id ?? 'N/A', 
+                'emp_code' => 'N/A',
+                'first_name' => $user->name, 
+                'last_name' => '',
+                'department_name' => 'No vinculado', 
+                'job_title' => ''
             ];
         }
 
+        // Buscamos el historial de descargas del usuario para estos 12 meses específicos
+        // Para que la vista lo reconozca fácil, mandamos una lista de "mes-año"
         $descargasPrevias = HistorialDescarga::where('user_id', $user->id)
-            ->where('year', $year)
-            ->pluck('month')
+            ->where(function($query) use ($rollingMonths) {
+                foreach ($rollingMonths as $m) {
+                    $query->orWhere(function($q) use ($m) {
+                        $q->where('month', $m['id'])->where('year', $m['year']);
+                    });
+                }
+            })
+            ->get(['month', 'year'])
+            ->map(fn($d) => "{$d->month}-{$d->year}")
             ->toArray();
 
         return Inertia::render('MiTarjeta', [
             'empleado' => $empleadoData,
-            'descargasPrevias' => $descargasPrevias,
-            'resumenFaltas' => $resumenFaltas
+            'descargasPrevias' => $descargasPrevias, // Ejemplo: ["12-2025", "1-2026"]
+            'resumenFaltas' => $resumenFaltas,       // Ejemplo: { 2026: { 1: [5, 8] } }
+            'rollingMonths' => $rollingMonths       // Lista para el v-for de la tabla
         ]);
     }
 

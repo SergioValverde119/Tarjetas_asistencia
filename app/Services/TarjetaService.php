@@ -233,6 +233,17 @@ class TarjetaService
             $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
         }
 
+        if ($bestOut && $minDistOut <= $umbral) {
+            
+            
+            if ($bestOut->lessThan($targetOut)) {
+                $reg->clock_out = null; 
+            } else {
+                $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
+            }
+        }
+        
+
     }
 
 
