@@ -182,17 +182,24 @@ class IncidenciaRepository
 
     public function updateIncidencia($id, $data)
     {
-        return DB::connection('pgsql_biotime')
-            ->table('att_leave')
-            ->where('abstractexception_ptr_id', $id)
-            ->update([
-                'employee_id' => $data['employee_id'],
-                'category_id' => $data['category_id'],
-                'start_time'  => $data['start_time'],
-                'end_time'    => $data['end_time'],
-                'apply_reason'=> $data['reason'],
-                // No actualizamos apply_time para conservar la fecha de creación original
-            ]);
+        return DB::connection('pgsql_biotime')->transaction(function () use ($id, $data) {
+            // Limpiamos el vínculo para forzar el recálculo en BioTime
+            DB::connection('pgsql_biotime')
+                ->table('att_payloadexception')
+                ->where('item_id', (string)$id)
+                ->delete();
+
+            return DB::connection('pgsql_biotime')
+                ->table('att_leave')
+                ->where('abstractexception_ptr_id', $id)
+                ->update([
+                    'employee_id' => $data['employee_id'],
+                    'category_id' => $data['category_id'],
+                    'start_time'  => $data['start_time'],
+                    'end_time'    => $data['end_time'],
+                    'apply_reason'=> $data['reason'],
+                ]);
+        });
     }
 
     /**
@@ -202,20 +209,28 @@ class IncidenciaRepository
     public function deleteIncidencia($id)
     {
         return DB::connection('pgsql_biotime')->transaction(function () use ($id) {
-            // Borrar primero detalle
+            
+            // 1. Limpiamos la tabla de excepciones de cálculo (att_payloadexception)
+            // BioTime usa esta tabla para ligar la incidencia con el resultado del día.
+            // Si no borramos esto primero, arroja el error de Foreign Key Violation.
+            DB::connection('pgsql_biotime')
+                ->table('att_payloadexception')
+                ->where('item_id', (string)$id) // El ID de la incidencia se guarda en item_id
+                ->delete();
+
+            // 2. Borramos el registro de la tabla hija (att_leave)
             DB::connection('pgsql_biotime')
                 ->table('att_leave')
                 ->where('abstractexception_ptr_id', $id)
                 ->delete();
 
-            // Borrar encabezado de flujo
+            // 3. Borramos el registro de la tabla padre (workflow_abstractexception)
             DB::connection('pgsql_biotime')
                 ->table('workflow_abstractexception')
                 ->where('id', $id)
                 ->delete();
         });
     }
-
     /**
      * Buscar ID por CÓDIGO DE NÓMINA
      */
