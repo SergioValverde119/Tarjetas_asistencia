@@ -137,7 +137,7 @@ class IncidenciaController extends Controller
                 'incidencia' => $incidencia,
                 'employees'  => $this->repository->getActiveEmployees($request->input('search')),
                 'categories' => $this->repository->getLeaveCategories(),
-                'filters'    => ['search' => $request->input('search')]
+                'filters'    => $request->only(['search', 'date_apply', 'date_incidence', 'page'])
             ]);
         } catch (Exception $e) {
             // Cambio solicitado: Log::error reemplazado por error_log
@@ -173,7 +173,8 @@ class IncidenciaController extends Controller
                 ]);
             }
 
-            return DB::transaction(function () use ($request, $id, $validated) {
+             $filters = $request->only(['search', 'date_apply', 'date_incidence', 'page']);
+            return DB::transaction(function () use ($request, $id, $validated, $filters) {
                 // 1. MODIFICACIÓN: Obtener datos originales ANTES del cambio para la auditoría
                 $original = $this->repository->findIncidenciaById($id);
                 if (!$original) throw new Exception("Registro no encontrado para auditar.");
@@ -199,7 +200,7 @@ class IncidenciaController extends Controller
                     'ip_address' => $request->ip()
                 ]);
 
-                return redirect()->route('incidencias.index')->with('success', 'Se ha realizado la modificación de la incidencia');
+                return redirect()->route('incidencias.index',   $filters)->with('success', 'Se ha realizado la modificación de la incidencia');
             });
         } catch (ValidationException $e) {
             throw $e;
@@ -211,7 +212,8 @@ class IncidenciaController extends Controller
     public function destroy(Request $request, $id)
     {
         try {
-            return DB::transaction(function () use ($request, $id) {
+            $filters = $request->only(['search', 'date_apply', 'date_incidence', 'page']);
+            return DB::transaction(function () use ($request, $id, $filters) {
                 // 1. Capturar los datos de lo que se va a borrar para que quede evidencia
                 $original = $this->repository->findIncidenciaById($id);
                 if (!$original) throw new Exception("El registro ya no existe.");
@@ -237,7 +239,7 @@ class IncidenciaController extends Controller
                     'ip_address' => $request->ip()
                 ]);
 
-                return redirect()->route('incidencias.index')->with('success', 'Justificación eliminada y movimiento registrado.');
+                return redirect()->route('incidencias.index', $filters)->with('success', 'Justificación eliminada y movimiento registrado.');
             });
         } catch (Exception $e) {
             return redirect()->back()->with('error', 'Error al eliminar: ' . $e->getMessage());

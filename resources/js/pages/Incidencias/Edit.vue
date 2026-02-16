@@ -24,7 +24,8 @@ const props = defineProps({
     employees: { type: Array, default: () => [] },
     categories: { type: Array, default: () => [] },
     errors: { type: Object, default: () => ({}) },
-    flash: { type: Object, default: () => ({}) }
+    flash: { type: Object, default: () => ({}) },
+    filters: { type: Object, default: () => ({}) }
 });
 
 // Helper para formatear fechas de la BD al formato del input local
@@ -39,7 +40,11 @@ const form = useForm({
     category_id: props.incidencia.category_id,
     start_time: formatForInput(props.incidencia.start_time),
     end_time: formatForInput(props.incidencia.end_time),
-    reason: props.incidencia.apply_reason || ''
+    reason: props.incidencia.apply_reason || '',
+    search: props.filters?.search || '',
+    date_apply: props.filters?.date_apply || '',
+    date_incidence: props.filters?.date_incidence || '',
+    page: props.filters?.page || 1,
 });
 
 /**
@@ -66,10 +71,7 @@ const isDeleting = ref(false);
 const confirmDelete = () => {
     isDeleting.value = true;
     // Extraemos la info de Wayfinder para el borrado
-    const routeData = destroyIncidencia(props.incidencia.id);
-    
-    router.visit(routeData.url, {
-        method: routeData.method, // DELETE
+    form.delete(destroyIncidencia(props.incidencia.id).url, {
         onFinish: () => {
             isDeleting.value = false;
             showDeleteModal.value = false;
@@ -92,7 +94,7 @@ const showFlash = ref(true);
                     <div class="flex-none mb-6 flex justify-between items-center">
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                                <Link :href="indexIncidencias().url" class="p-1.5 hover:bg-gray-200 rounded-full transition-colors">
+                                <Link :href="indexIncidencias().url" :data="filters" class="p-1.5 hover:bg-gray-200 rounded-full transition-colors">
                                     <ArrowLeft class="h-5 w-5 text-gray-500" />
                                 </Link>
                                 Editar Incidencia #{{ incidencia.id }}
@@ -211,7 +213,7 @@ const showFlash = ref(true);
 
                         <!-- FOOTER FIJO -->
                         <div class="flex-none bg-gray-50 px-8 py-5 border-t border-gray-200 flex justify-end gap-4">
-                            <Link :href="indexIncidencias().url" class="px-6 py-2.5 text-sm font-bold text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-all uppercase tracking-widest">
+                            <Link :href="indexIncidencias().url" :data="filters" class="px-6 py-2.5 text-sm font-bold text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-all uppercase tracking-widest">
                                 Cancelar
                             </Link>
                             <button 

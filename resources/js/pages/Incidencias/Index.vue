@@ -236,6 +236,12 @@ const formatDate = (dateString) => {
                                             <Link 
                                                 v-if="editIncidencia"
                                                 :href="editIncidencia(inc.id).url" 
+                                                :data="{ 
+                                                    search: search, 
+                                                    date_apply: dateApply, 
+                                                    date_incidence: dateIncidence, 
+                                                    page: incidencias.current_page 
+                                                }"
                                                 class="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1 font-bold uppercase text-[10px]"
                                             >
                                                 <Edit2 class="h-3 w-3" /> Editar
