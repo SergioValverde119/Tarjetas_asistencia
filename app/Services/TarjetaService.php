@@ -201,9 +201,11 @@ class TarjetaService
         $minDistOut = 999999;
 
 
-        foreach ($punchesAjustados as $punch) {
+        foreach ($punchesAjustados as $punchStr) {
+             $punch = Carbon::parse($punchStr);
             $distIn = abs($targetIn->diffInMinutes($punch, false));
-            $distOut = abs($targetOut->diffInMinutes($punch, false));
+            $outDiff = $targetOut->diffInMinutes($punch, false);
+            $distOut = abs($outDiff);
 
 
             if ($distIn < $distOut) {
@@ -214,10 +216,38 @@ class TarjetaService
                 }
             } else {
                 // Más cercano a hora de salida
-                if ($distOut < $minDistOut) {
+                // if ($distOut < $minDistOut) {
+                //     $minDistOut = $distOut;
+                //     $bestOut = $punch;
+                // }
+                // --- AGREGADO: Lógica de validación para salida ---
+
+                // 2. CANDIDATO A SALIDA (Lógica basada en minutos de diferencia)
+                
+                // ALTERNATIVA: En lugar de greaterThanOrEqualTo, usamos la diferencia en minutos.
+                // Si la diferencia es 0 o positiva, significa que checó a tiempo o después.
+                $isPunchValid = $outDiff >= 0;
+
+                // Evaluamos si la que ya teníamos guardada era válida
+                $isCurrentBestValid = false;
+                if ($bestOut) {
+                    $currentOutDiff = $targetOut->diffInMinutes($bestOut, false);
+                    $isCurrentBestValid = $currentOutDiff >= 0;
+                }
+
+                // REGLA DE ORO: Reemplazamos la salida guardada si...
+                if (
+                    // A. No teníamos ninguna salida guardada todavía
+                    !$bestOut || 
+                    // B. El nuevo registro es VÁLIDO y el que teníamos era TEMPRANO (Prioridad de cumplimiento)
+                    ($isPunchValid && !$isCurrentBestValid) ||
+                    // C. Ambos son del mismo tipo (los dos válidos o los dos tempranos) pero el nuevo está más cerca
+                    ($isPunchValid === $isCurrentBestValid && $distOut < $minDistOut)
+                ) {
                     $minDistOut = $distOut;
                     $bestOut = $punch;
                 }
+                
             }
         }
 

@@ -191,7 +191,7 @@ const formatDate = (day) => {
         </div>
       </div>
 
-      <PieDePaginaPdf />
+      <PieDePaginaPdf :year="selectedYear"/>
     </div>
   </div>
 </template>

@@ -11,7 +11,7 @@ class KardexRepository
     private $connection = 'pgsql_biotime';
 
     // =============================================================================================
-    // 1. MÉTODOS DE SOPORTE (Catálogos y Horarios)
+    // 1. MÉTODOS DE SOPORTE (Catálogos, Horarios, Festivos)
     // =============================================================================================
 
     public function getNominas()
@@ -38,9 +38,6 @@ class KardexRepository
             ->get();
     }
 
-    /**
-     * Obtiene el horario actual asignado (para mostrar en encabezados o detalles)
-     */
     public function getHorarioActual($empleadoId)
     {
         $turnoAsignado = DB::connection($this->connection)
@@ -69,7 +66,7 @@ class KardexRepository
     }
 
     // =============================================================================================
-    // 2. CONSULTAS DE EMPLEADOS (Buscador del Kárdex)
+    // 2. CONSULTAS DE EMPLEADOS
     // =============================================================================================
 
     public function getEmpleadosPaginados(array $filtros)
@@ -86,7 +83,6 @@ class KardexRepository
 
     private function getBaseEmpleadosQuery(array $filtros)
     {
-        // ... (Configuración de fechas igual que antes) ...
         $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
         $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
         $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $fechaBase->daysInMonth;
@@ -113,7 +109,7 @@ class KardexRepository
                 ) as nomina")
             )
             ->where('personnel_employee.enable_att', true)
-            ->where('personnel_employee.status', 0) // Solo activos
+            ->where('personnel_employee.status', 0)
             ->where(function ($query) use ($mostrarSinHorario, $inicioPeriodo, $finPeriodo) {
                 if ($mostrarSinHorario) {
                     $query->whereNotExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
@@ -153,13 +149,12 @@ class KardexRepository
     }
 
     // =============================================================================================
-    // 3. EXTRACCIÓN DE DATOS MASIVOS (Aquí está la clave de la unificación)
+    // 3. EXTRACCIÓN DE DATOS MASIVOS (FUSIÓN CRÍTICA)
     // =============================================================================================
 
     public function getPayloadData(array $empleadoIDs, Carbon $fechaInicio, Carbon $fechaFin)
     {
-        // Hacemos una consulta masiva usando WhereIn para optimizar el Kárdex,
-        // pero trayendo LAS MISMAS COLUMNAS que usa el Servicio de Tarjetas (all_punches, duration, etc.)
+        // Esta consulta replica lo que necesita 'procesarHuellas' y el Servicio para mostrar el horario
         return DB::connection($this->connection)
             ->table('att_payloadbase as apb')
             ->leftJoin('att_timeinterval as ti', 'apb.timetable_id', '=', 'ti.id')
@@ -174,16 +169,20 @@ class KardexRepository
                 'apb.leave', 
                 'apb.day_off',
                 
-                // GENERAMOS 'all_punches' AL VUELO: Esto arregla el error de "columna no existe".
-                // Buscamos en iclock_transaction todas las checadas de ese día y las juntamos.
+                // SIMULACIÓN DE all_punches (Vital para procesarHuellas)
                 DB::raw("(
                     SELECT STRING_AGG(TO_CHAR(punch_time, 'YYYY-MM-DD HH24:MI:SS'), ',' ORDER BY punch_time ASC)
                     FROM public.iclock_transaction 
                     WHERE emp_id = apb.emp_id AND punch_time::date = apb.att_date
                 ) as all_punches"),
                 
-                'ti.in_time',      
-                'ti.work_time_duration as duration' 
+                'ti.in_time',
+                'ti.alias as timetable_name', // Vital para detectar "Sin Horario"
+                'ti.work_time_duration as duration',
+
+                // --- AGREGADO: CÁLCULO DE HORA DE SALIDA (off_time) ---
+                // Esto soluciona que "aparece bien la entrada pero la salida no"
+                DB::raw("(ti.in_time::time + (ti.work_time_duration || ' minutes')::interval)::time as off_time")
             )
             ->whereIn('apb.emp_id', $empleadoIDs)
             ->whereBetween('apb.att_date', [$fechaInicio->toDateString(), $fechaFin->toDateString()])
@@ -256,41 +255,31 @@ class KardexRepository
 
                 $incidencia = "";
 
-                // --- ÁRBOL DE DECISIÓN UNIFICADO ---
+                // --- ÁRBOL DE DECISIÓN ---
 
-                // A. Fin de Semana
                 if ($fechaActual->isWeekend()) {
                     $incidencia = "DESC";
                 }
-                // B. Festivo (Prioridad sobre faltas)
                 else if ($esFestivo && (!$payloadDia || (!$payloadDia->clock_in && !$payloadDia->clock_out))) {
                     $incidencia = "J"; 
                 }
-                // C. Permiso (Prioridad sobre faltas)
                 else if ($permiso) {
                     $incidencia = $permiso->report_symbol; 
                 }
-                // D. Sin registro en absoluto
                 else if (!$payloadDia) {
                     $incidencia = "Falto";
                     $contadores['faltas']++;
                 }
                 else {
-                    // E. Análisis de Asistencia (Aquí aplicamos la magia de la Tarjeta)
-                    
-                    // 1. Ejecutamos la limpieza de huellas (Salida anticipada, etc.)
+                    // --- AQUÍ ESTÁ LA MAGIA ---
                     $this->procesarHuellas($payloadDia);
 
-                    // 2. Evaluamos el resultado limpio
-                    
-                    // Si no tiene horario asignado, es Falta (regla de tu servicio)
-                    // a menos que tenga checadas, en cuyo caso es asistencia fuera de horario
-                    if (!$payloadDia->clock_in && !$payloadDia->clock_out && empty($payloadDia->in_time)) {
-                        $incidencia = "Falto"; // O "S/H"
+                    // 5. Sin Horario Asignado
+                    if (!$payloadDia->clock_in && !$payloadDia->clock_out && empty($payloadDia->timetable_name)) {
+                        $incidencia = "Falto"; 
                         $contadores['faltas']++;
                     }
                     else if ($payloadDia->clock_in && $payloadDia->clock_out) {
-                        // Tiene ambas, evaluamos retardo con tolerancia
                         $eval = $this->evaluarRetardo($payloadDia);
                         if ($eval === 'OK') {
                             $incidencia = "OK";
@@ -298,13 +287,12 @@ class KardexRepository
                             $incidencia = "R";
                             $contadores['retardos']++;
                         }
-                    } else {
-                        // Le falta una checada
+                    } 
+                    else {
                         if (!$payloadDia->clock_in && !$payloadDia->clock_out) {
                             $incidencia = "Falto";
                             $contadores['faltas']++;
                         } else {
-                            // Aquí caen las "Salidas Anticipadas" que borró procesarHuellas
                             $incidencia = !$payloadDia->clock_in ? "S/E" : "S/S";
                             $contadores['omisiones']++;
                         }
@@ -314,7 +302,6 @@ class KardexRepository
                 $filaEmpleado['incidencias_diarias'][$dia] = $incidencia;
             }
 
-            // Asignar totales
             $filaEmpleado['total_faltas'] = $contadores['faltas'];
             $filaEmpleado['total_retardos'] = $contadores['retardos'];
             $filaEmpleado['total_omisiones'] = $contadores['omisiones'];
@@ -325,15 +312,13 @@ class KardexRepository
     }
 
     // =============================================================================================
-    // 5. FUNCIONES PRIVADAS (Clonadas de TarjetaService)
+    // 5. FUNCIONES PRIVADAS
     // =============================================================================================
 
     private function procesarHuellas($reg)
     {
-        // Si no tiene horario, no tocamos nada
         if (empty($reg->in_time)) return;
 
-        // Reset para recalcular limpio
         $reg->clock_in = null;
         $reg->clock_out = null;
 
@@ -352,8 +337,6 @@ class KardexRepository
 
         $punchesRaw = array_filter(explode(',', $reg->all_punches ?? ''), fn($p) => !empty(trim($p)));
         $punchesAjustados = [];
-        $lastAdded = null;
-
         foreach ($punchesRaw as $pStr) {
             try {
                 $p = Carbon::parse(trim($pStr));
@@ -380,12 +363,11 @@ class KardexRepository
             }
         }
 
-        $umbral = 30; // Tolerancia de búsqueda de huella
+        $umbral = 30; 
 
         if ($bestIn && $minDistIn <= $umbral) $reg->clock_in = $bestIn->format('Y-m-d H:i:s');
         
         if ($bestOut && $minDistOut <= $umbral) {
-            // REGLA: Si salió antes de la hora objetivo, se borra la salida
             if ($bestOut->lessThan($targetOut)) {
                 $reg->clock_out = null; 
             } else {
@@ -403,8 +385,6 @@ class KardexRepository
         $horaRealEntrada = Carbon::parse($registro->clock_in);
         
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
-        
-        // Tolerancia de 11 minutos
         return ($diferenciaMinutos <= 11) ? 'OK' : 'R';
     }
 

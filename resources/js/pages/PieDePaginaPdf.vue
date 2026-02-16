@@ -5,6 +5,19 @@
  * Responsable únicamente del renderizado estático de la información de contacto y logos.
  * No contiene lógica de negocio.
  */
+
+
+/**
+* Se define el año el cual es ocupado para cambiar los logos de acuerdo al año seleccionado
+* en el componente padre, el cual es el encargado de generar el PDF.
+*/
+
+const props = defineProps({
+  year: {
+    type: Number,
+    required: true
+  }
+});
 </script>
 
 <template>
@@ -17,12 +30,21 @@
         Tel.55513002100 EXT 2159, 2133
       </p>
     </div>
-    <!-- Contenedor para los logos derechos. --><div class="footer-right">
-      <!-- Logo Ciudad Innovadora <img src="/images/logo_mujer_indigena.jpeg" alt="Ciudad Innovadora" class="logo-footer">-->
-      <!-- Nuevo Logo de Tenochtitlan <img src="/images/tenochtitlan_logo.png" alt="Logo Tenochtitlan" class="logo-tenochtitlan">-->
+      <div class="footer-right">
+      
+      <template v-if="year == 2026">
 
-      <!-- Logo Ciudad Innovadora --><img src="/images/logo_Margarita_Maza.png" alt="Ciudad Innovadora" class="logo-Margarita">
-      <!-- Nuevo Logo de Tenochtitlan --><img src="/images/logo_ajolote.png" alt="Logo Tenochtitlan" class="logo-ajolote">
+              <!-- Logo Ciudad Innovadora 2026--><img src="/images/logo_Margarita_Maza.png" alt="Margarita Maza" class="logo-Margarita">
+        <!-- Logo de Tenochtitlan 2026--><img src="/images/logo_ajolote.png" alt="Logo Ajolote 2026" class="logo-ajolote">
+
+      </template>
+      
+      <template v-else>
+        
+      <!-- Logo Ciudad Innovadora 2025 --> <img src="/images/logo_mujer_indigena.jpeg" alt="Ciudad Innovadora" class="logo-footer">
+      <!-- Logo de Tenochtitlan 2025--> <img src="/images/tenochtitlan_logo.png" alt="Logo Tenochtitlan" class="logo-tenochtitlan">
+      
+      </template>
     </div>
   </div>
 </template>
