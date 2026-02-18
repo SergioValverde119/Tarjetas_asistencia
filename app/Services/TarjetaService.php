@@ -199,6 +199,7 @@ class TarjetaService
         $bestOut = null;
         $minDistIn = 999999;
         $minDistOut = 999999;
+        $umbral = 30;
 
 
         foreach ($punchesAjustados as $punchStr) {
@@ -208,13 +209,18 @@ class TarjetaService
             $distOut = abs($outDiff);
 
 
-            if ($distIn < $distOut) {
-                // Más cercano a hora de entrada
-                if ($distIn < $minDistIn) {
+            if ($distIn < $distOut <= $umbral) {
+                $isNewOnTime = $punch->lessThanOrEqualTo($targetIn);
+                $isCurrentOnTime = $bestIn ? $bestIn->lessThanOrEqualTo($targetIn) : false;
+
+                // Prioridad: A tiempo > Retardo (dentro de los 30 min)
+                if (!$bestIn || ($isNewOnTime && !$isCurrentOnTime) || ($isNewOnTime === $isCurrentOnTime && $distIn < $minDistIn)) {
                     $minDistIn = $distIn;
                     $bestIn = $punch;
                 }
-            } else {
+            }
+            
+            else {
                 // Más cercano a hora de salida
                 // if ($distOut < $minDistOut) {
                 //     $minDistOut = $distOut;
@@ -327,7 +333,7 @@ class TarjetaService
      */
     private function transformarRegistros($registros, $holidays, $startDate, $endDate)
     {
-        
+        $retardosLevesAcumulados = 0;
         $resultados = [];
 
         foreach ($registros as $reg) {
@@ -395,6 +401,17 @@ class TarjetaService
 
             // --- AGREGADO: NUEVA LÓGICA DE CLASIFICACIÓN SIN ACUMULACIÓN ---
             $calificacion = $this->evaluarRetardo($reg);
+
+            if ($calificacion === 'RL') {
+                $retardosLevesAcumulados++;
+                
+                // Si llegamos al cuarto retardo leve
+                if ($retardosLevesAcumulados >= 4) {
+                    $calificacion = 'RG'; // Se transforma en Grave
+                    $retardosLevesAcumulados = 0; // Reiniciamos el ciclo
+                    
+                } 
+            } 
 
             $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
         }
