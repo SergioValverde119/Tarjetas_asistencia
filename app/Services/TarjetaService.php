@@ -209,7 +209,7 @@ class TarjetaService
             $distOut = abs($outDiff);
 
 
-            if ($distIn < $distOut <= $umbral) {
+            if ($distIn < $distOut && $distIn <= $umbral) {
                 $isNewOnTime = $punch->lessThanOrEqualTo($targetIn);
                 $isCurrentOnTime = $bestIn ? $bestIn->lessThanOrEqualTo($targetIn) : false;
 
