@@ -1,19 +1,20 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
-import AppSidebar from '@/components/AppSidebar.vue'; 
-import { SidebarProvider } from '@/components/ui/sidebar'; 
+import AppSidebar from '@/components/AppSidebar.vue';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import { Search, AlertCircle, CheckCircle, Loader2 } from 'lucide-vue-next';
 import { debounce } from 'lodash';
 
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import TarjetaPdf from './TarjetaPdf.vue'; 
-import { getSchedule } from '@/routes'; 
+import TarjetaPdf from './TarjetaPdf.vue';
+import PreviewModal from './Disponibilidad/PreviewModal.vue';
+import { getSchedule } from '@/routes';
 
 const props = defineProps({
-    empleados: Object, 
+    empleados: Object,
     filters: Object,
     rollingMonths: Array, // Lista dinámica de 12 meses (id, year, name, label)
     year: Number
@@ -22,6 +23,7 @@ const props = defineProps({
 // --- ESTADO ---
 const generatingPdf = ref(false);
 const loadingCell = ref(null);
+const showPreview = ref(false);
 const pdfData = ref({
     schedule: { horario: '', registros: [] },
     selectedMonth: 1,
@@ -30,7 +32,7 @@ const pdfData = ref({
     firstFortnight: [],
     secondFortnight: []
 });
-const employeeForPdf = ref({}); 
+const employeeForPdf = ref({});
 
 const search = ref(props.filters.search || '');
 const monthFilter = ref(props.filters.month || '');
@@ -42,13 +44,35 @@ const getDayFromDateString = (dateString) => {
     return parseInt(dateString.split('-')[2], 10);
 };
 
+const handlePrintFromModal = async () => {
+    generatingPdf.value = true;
+    await nextTick(); 
+    try {
+        const element = document.getElementById('pdf-content');
+        const canvas = await html2canvas(element, { scale: 2 });
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const pdf = new jsPDF('p', 'mm', 'letter');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+        // ESTA ES LA CLAVE PARA IMPRIMIR EN VEZ DE DESCARGAR:
+        window.open(pdf.output('bloburl'), '_blank'); 
+
+    } catch (e) {
+        console.error(e);
+    } finally {
+        generatingPdf.value = false;
+    }
+};
+
 const processDataForPdf = (apiData, monthId, year) => {
     const registrosRaw = apiData.registros || [];
     const processedRegistros = registrosRaw.map(registro => {
         const hasObservation = registro.observaciones && registro.observaciones.trim().length > 0;
         let displayCalificacion = registro.calificacion;
         if (registro.calificacion === 'DESC' && hasObservation) displayCalificacion = 'J';
-        
+
         return {
             ...registro,
             checkin: registro.checkin ? registro.checkin.substring(0, 5) : '',
@@ -59,35 +83,69 @@ const processDataForPdf = (apiData, monthId, year) => {
 
     pdfData.value.schedule = apiData;
     pdfData.value.selectedMonth = monthId;
-    pdfData.value.selectedYear = year; 
+    pdfData.value.selectedYear = year;
     pdfData.value.daysInMonth = new Date(year, monthId, 0).getDate();
     pdfData.value.firstFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) <= 15);
     pdfData.value.secondFortnight = processedRegistros.filter(r => getDayFromDateString(r.dia) > 15);
 };
 
-const downloadCard = async (emp, monthIndex) => {
+
+const openPreview = async (emp, monthIndex) => {
     const monthObj = props.rollingMonths[monthIndex];
     const cellId = `${emp.id}-${monthIndex}`;
-    
+
     if (loadingCell.value) return;
     loadingCell.value = cellId;
-    
+
     try {
         employeeForPdf.value = {
             ...emp,
-            emp_code: emp.emp_code || emp.id, 
-            department_name: emp.department_name 
+            emp_code: emp.emp_code || emp.id,
+            department_name: emp.department_name
         };
 
         const response = await axios.post(getSchedule().url, {
-            emp_id: emp.id, 
+            emp_id: emp.id,
+            month: monthObj.id,
+            year: monthObj.year
+        });
+
+        processDataForPdf(response.data, monthObj.id, monthObj.year);
+
+        // En lugar de disparar html2canvas aquí, abrimos el modal
+        showPreview.value = true;
+
+    } catch (e) {
+        console.error(e);
+    } finally {
+        loadingCell.value = null;
+    }
+};
+
+
+const downloadCard = async (emp, monthIndex) => {
+    const monthObj = props.rollingMonths[monthIndex];
+    const cellId = `${emp.id}-${monthIndex}`;
+
+    if (loadingCell.value) return;
+    loadingCell.value = cellId;
+
+    try {
+        employeeForPdf.value = {
+            ...emp,
+            emp_code: emp.emp_code || emp.id,
+            department_name: emp.department_name
+        };
+
+        const response = await axios.post(getSchedule().url, {
+            emp_id: emp.id,
             month: monthObj.id,
             year: monthObj.year // Mandamos el año real de la columna
         });
 
         processDataForPdf(response.data, monthObj.id, monthObj.year);
         generatingPdf.value = true;
-        await nextTick(); 
+        await nextTick();
 
         const element = document.getElementById('pdf-content');
         if (!element) throw new Error("Render error");
@@ -109,21 +167,46 @@ const downloadCard = async (emp, monthIndex) => {
     }
 };
 
+const handleDownloadFromModal = async () => {
+    generatingPdf.value = true;
+    await nextTick();
+
+    try {
+        const element = document.getElementById('pdf-content');
+        if (!element) throw new Error("Render error");
+
+        const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false });
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const pdf = new jsPDF('p', 'mm', 'letter');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+        const monthObj = props.rollingMonths.find(m => m.id === pdfData.value.selectedMonth);
+        pdf.save(`Tarjeta_${employeeForPdf.value.emp_code}_${monthObj.name}_${pdfData.value.selectedYear}.pdf`);
+    } catch (e) {
+        console.error(e);
+    } finally {
+        generatingPdf.value = false;
+    }
+};
+
 const refreshData = debounce(() => {
-    router.get('/reporte-disponibilidad', { 
+    router.get('/reporte-disponibilidad', {
         search: search.value,
         month: monthFilter.value,
         status: statusFilter.value,
-        page: 1 
+        page: 1
     }, { preserveState: true, replace: true, preserveScroll: true });
 }, 500);
 
 watch([search, monthFilter, statusFilter], () => { refreshData(); });
 
 const getStatusClasses = (status) => {
-    if (status === 'blocked') return 'bg-red-100 text-red-600 border-red-200 hover:bg-red-200 hover:border-red-300 cursor-pointer'; 
+    if (status === 'blocked') return 'bg-red-100 text-red-600 border-red-200 hover:bg-red-200 hover:border-red-300 cursor-pointer';
     if (status === 'ok') return 'bg-green-100 text-green-600 border-green-200 hover:bg-green-200 hover:border-green-300 cursor-pointer';
-    return 'bg-gray-50 text-gray-300 border-gray-100 cursor-default'; 
+    return 'bg-gray-50 text-gray-300 border-gray-100 cursor-default';
 };
 
 const changePage = (url) => {
@@ -143,14 +226,14 @@ const changePage = (url) => {
         <AppSidebar>
             <div class="flex flex-col h-screen max-h-screen bg-gray-50 p-6 overflow-hidden">
                 <div class="flex flex-col w-full h-full max-w-full mx-auto">
-                    
+
                     <!-- 1. ENCABEZADO Y FILTROS -->
                     <div class="flex-none flex flex-col gap-4 mb-4">
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900">Disponibilidad de Tarjetas</h1>
                             <p class="text-sm text-gray-500">Haga clic en los círculos de color para descargar.</p>
                         </div>
-                        
+
                         <div class="flex flex-col sm:flex-row gap-3 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
                             <div class="relative flex-grow">
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -187,7 +270,7 @@ const changePage = (url) => {
                                             Empleado
                                         </th>
                                         <!-- CABECERAS CON COLOR POR AÑO (Azul 2025, Naranja 2026) -->
-                                        <th v-for="m in rollingMonths" :key="`${m.id}-${m.year}`" 
+                                        <th v-for="m in rollingMonths" :key="`${m.id}-${m.year}`"
                                             class="px-2 py-3 text-center text-[10px] font-black uppercase tracking-wider w-16 sticky top-0 z-20 border-b border-gray-200 transition-colors"
                                             :class="m.year === 2025 ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'"
                                         >
@@ -208,16 +291,19 @@ const changePage = (url) => {
                                                 </div>
                                             </div>
                                         </td>
-                                        
+
                                         <td v-for="(status, index) in emp.semaforo" :key="index" class="px-2 py-4 text-center whitespace-nowrap">
                                             <button 
                                                 class="mx-auto flex items-center justify-center h-8 w-8 rounded-full border text-xs transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 shadow-sm"
                                                 :class="getStatusClasses(status)"
                                                 :style="monthFilter && parseInt(monthFilter) === rollingMonths[index].id ? 'border-width: 2px; border-color: currentColor;' : (monthFilter ? 'opacity: 0.2' : '')"
                                                 :disabled="status === 'future' || loadingCell"
-                                                @click="status !== 'future' && downloadCard(emp, index)"
-                                                :title="status === 'blocked' ? 'Descargar (Incidencias)' : (status === 'ok' ? 'Descargar (Limpio)' : 'Mes Futuro')"
-                                            >
+                                                @click="status !== 'future' && openPreview(emp, index)"
+                                                >
+
+                                                <!-- @click="status !== 'future' && downloadCard(emp, index)"
+                                                :title="status === 'blocked' ? 'Descargar (Incidencias)' : (status === 'ok' ? 'Descargar (Limpio)' : 'Mes Futuro')" -->
+                                            
                                                 <Loader2 v-if="loadingCell === `${emp.id}-${index}`" class="h-4 w-4 animate-spin" />
                                                 <template v-else>
                                                     <AlertCircle v-if="status === 'blocked'" class="h-4 w-4" />
@@ -252,11 +338,22 @@ const changePage = (url) => {
             </div>
         </AppSidebar>
 
-        <TarjetaPdf 
+        <PreviewModal
+            :show="showPreview"
+            :employee="employeeForPdf"
+            :pdf-data="pdfData"
+            :generating-pdf="generatingPdf"
+            :rolling-months="rollingMonths"
+            @close="showPreview = false"
+            @generate-pdf="handleDownloadFromModal"
+            @print-pdf="handlePrintFromModal"
+        />
+
+        <TarjetaPdf
             v-if="generatingPdf"
             :employee="employeeForPdf"
             :schedule="pdfData.schedule"
-            :months="['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']" 
+            :months="['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']"
             :first-fortnight="pdfData.firstFortnight"
             :second-fortnight="pdfData.secondFortnight"
             :days-in-month="pdfData.daysInMonth"

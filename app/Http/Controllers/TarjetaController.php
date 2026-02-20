@@ -11,6 +11,9 @@ use Inertia\Inertia;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Exception;
 use Carbon\Carbon;
+use App\Exports\RegistrosTemplateExport;
+use App\Exports\RegistrosResultExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class TarjetaController extends Controller
 {
@@ -253,5 +256,50 @@ class TarjetaController extends Controller
             'logs' => $query->paginate(15)->withQueryString(),
             'filters' => $request->only(['search'])
         ]);
+    }
+
+    /**
+     * Descarga la plantilla de Excel.
+     */
+    public function descargarPlantillaRegistros()
+    {
+        return Excel::download(new RegistrosTemplateExport(), 'plantilla_rescate_registros.xlsx');
+    }
+
+    /**
+     * Recibe el archivo de la vista, lo lee y se lo pasa al Servicio para inyectar
+     * las checadas en BioTime. Devuelve un Excel con los resultados.
+     */
+    public function importarRegistros(Request $request)
+    {
+        // 1. Validamos que el archivo venga y sea un Excel
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv'
+        ]);
+
+        try {
+            // 2. Leemos el archivo usando Laravel Excel
+            $data = Excel::toArray(new \stdClass, $request->file('file'));
+            
+            // Tomamos la primera hoja del Excel
+            $rows = $data[0]; 
+            
+            // Quitamos la primera fila porque son los encabezados (Nómina, Nombre, Entrada, Salida)
+            array_shift($rows); 
+            
+            // 3. Pasamos las filas al motor que construimos en TarjetaService
+            $resultados = $this->tarjetaService->procesarImportacionRegistros($rows);
+
+            // 4. Retornamos la descarga directa del Excel de resultados
+            // Como usamos Axios con 'responseType: blob', Vue procesará esto y bajará el archivo.
+            return Excel::download(
+                new RegistrosResultExport($resultados), 
+                'Reporte_Rescate_Registros_' . date('Ymd_His') . '.xlsx'
+            );
+
+        } catch (Exception $e) {
+            // Si algo falla catastróficamente, mandamos error 500 para que Vue muestre el ErrorModal
+            return response()->json(['message' => 'Error al leer el archivo: ' . $e->getMessage()], 500);
+        }
     }
 }

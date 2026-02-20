@@ -23,10 +23,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     
     // Dashboard (Página de inicio por defecto)
     Route::get('/dashboard', function () {
-        return Inertia::render('Dashboard');
+        return Inertia::render('Formatos/notabuena');
     })->name('dashboard');
 
     // Módulo: Mi Tarjeta (Personal)
+    Route::get('/registro-nota-buena', function()
+    {
+        return Inertia::render('Formatos/notabuena');
+    })->name('notabuena');
+
+    Route::get('/pdf-maqueta', function()
+    {
+        return Inertia::render('Formatos/pdfmaquetado');
+    })->name('maqueta');
+
     Route::get('/MiTarjeta', [TarjetaController::class, 'indexIndividual'])->name('tarjetas.mi_tarjeta');
     Route::post('/MiTarjeta/descargar', [TarjetaController::class, 'downloadPdf'])->name('tarjetas.download_pdf');
     
@@ -85,6 +95,8 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
     // 2. TARJETAS GENERALES (Buscador Global)
     Route::get('/tarjetas-generales', [TarjetaController::class, 'indexUsers'])->name('tarjetas.general');
+    Route::get('/tarjetas/plantilla-registros', [\App\Http\Controllers\TarjetaController::class, 'descargarPlantillaRegistros'])->name('tarjetas.plantilla_registros');
+    Route::post('/tarjetas/importar-registros', [\App\Http\Controllers\TarjetaController::class, 'importarRegistros'])->name('tarjetas.importar_registros');
 
     // 3. BITÁCORA DE DESCARGAS (Logs)
     Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');

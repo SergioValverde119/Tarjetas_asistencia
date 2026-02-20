@@ -4,15 +4,10 @@ namespace App\Repositories;
 
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-use Exception;
 
 class KardexRepository
 {
     private $connection = 'pgsql_biotime';
-
-    // =============================================================================================
-    // 1. MÉTODOS DE SOPORTE (Catálogos, Horarios, Festivos)
-    // =============================================================================================
 
     public function getNominas()
     {
@@ -55,7 +50,12 @@ class KardexRepository
             ->table('att_shiftdetail as sd')
             ->join('att_timeinterval as ti', 'sd.time_interval_id', '=', 'ti.id')
             ->where('sd.shift_id', $turnoAsignado->id)
-            ->select('sd.day_index', 'sd.in_time', 'sd.out_time', 'ti.duration')
+            ->select(
+                'sd.day_index', 
+                'ti.in_time', 
+                'ti.work_time_duration as duration',
+                DB::raw("(ti.in_time::time + (ti.work_time_duration || ' minutes')::interval)::time as out_time")
+            )
             ->orderBy('sd.day_index')
             ->get();
 
@@ -64,10 +64,6 @@ class KardexRepository
             'dias' => $detalles 
         ];
     }
-
-    // =============================================================================================
-    // 2. CONSULTAS DE EMPLEADOS
-    // =============================================================================================
 
     public function getEmpleadosPaginados(array $filtros)
     {
@@ -86,10 +82,8 @@ class KardexRepository
         $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
         $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
         $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $fechaBase->daysInMonth;
-        
         $inicioPeriodo = $fechaBase->copy()->day($diaInicio)->format('Y-m-d');
         $finPeriodo = $fechaBase->copy()->day($diaFin)->format('Y-m-d');
-
         $mostrarSinHorario = isset($filtros['sin_horario']) && filter_var($filtros['sin_horario'], FILTER_VALIDATE_BOOLEAN);
 
         return DB::connection($this->connection)
@@ -112,29 +106,24 @@ class KardexRepository
             ->where('personnel_employee.status', 0)
             ->where(function ($query) use ($mostrarSinHorario, $inicioPeriodo, $finPeriodo) {
                 if ($mostrarSinHorario) {
-                    $query->whereNotExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
-                        $subQuery->select(DB::raw(1))
-                                ->from('public.att_attschedule as s')
-                                ->whereColumn('s.employee_id', 'personnel_employee.id')
-                                ->where('s.end_date', '>=', $inicioPeriodo)
-                                ->where('s.start_date', '<=', $finPeriodo);
+                    $query->whereNotExists(function ($sub) use ($inicioPeriodo, $finPeriodo) {
+                        $sub->select(DB::raw(1))->from('public.att_attschedule as s')
+                            ->whereColumn('s.employee_id', 'personnel_employee.id')
+                            ->where('s.end_date', '>=', $inicioPeriodo)->where('s.start_date', '<=', $finPeriodo);
                     });
                 } else {
-                    $query->whereExists(function ($subQuery) use ($inicioPeriodo, $finPeriodo) {
-                        $subQuery->select(DB::raw(1))
-                                ->from('public.att_attschedule as s')
-                                ->whereColumn('s.employee_id', 'personnel_employee.id')
-                                ->where('s.end_date', '>=', $inicioPeriodo)
-                                ->where('s.start_date', '<=', $finPeriodo);
+                    $query->whereExists(function ($sub) use ($inicioPeriodo, $finPeriodo) {
+                        $sub->select(DB::raw(1))->from('public.att_attschedule as s')
+                            ->whereColumn('s.employee_id', 'personnel_employee.id')
+                            ->where('s.end_date', '>=', $inicioPeriodo)->where('s.start_date', '<=', $finPeriodo);
                     });
                 }
             })
             ->when($filtros['nomina'] ?? null, function ($query, $nominaId) {
-                $query->whereExists(function ($subQuery) use ($nominaId) {
-                    $subQuery->select(DB::raw(1))
-                             ->from('public.personnel_employee_area')
-                             ->whereColumn('public.personnel_employee_area.employee_id', 'personnel_employee.id')
-                             ->where('public.personnel_employee_area.area_id', $nominaId);
+                $query->whereExists(function ($sub) use ($nominaId) {
+                    $sub->select(DB::raw(1))->from('public.personnel_employee_area')
+                        ->whereColumn('public.personnel_employee_area.employee_id', 'personnel_employee.id')
+                        ->where('public.personnel_employee_area.area_id', $nominaId);
                 });
             })
             ->when($filtros['search'], function ($query, $searchTerm) {
@@ -148,46 +137,123 @@ class KardexRepository
             ->orderBy('personnel_employee.emp_code');
     }
 
-    // =============================================================================================
-    // 3. EXTRACCIÓN DE DATOS MASIVOS (FUSIÓN CRÍTICA)
-    // =============================================================================================
-
+    /**
+     * ==============================================================================
+     * LA CONSULTA MAESTRA (AHORA ADAPTADA PARA MÚLTIPLES EMPLEADOS EN EL KÁRDEX)
+     * ==============================================================================
+     * Ignoramos 'att_payloadbase' por completo y generamos la asistencia en vivo
+     * usando tu estructura CTE, optimizada para un bloque de empleados.
+     */
     public function getPayloadData(array $empleadoIDs, Carbon $fechaInicio, Carbon $fechaFin)
     {
-        // Esta consulta replica lo que necesita 'procesarHuellas' y el Servicio para mostrar el horario
-        return DB::connection($this->connection)
-            ->table('att_payloadbase as apb')
-            ->leftJoin('att_timeinterval as ti', 'apb.timetable_id', '=', 'ti.id')
-            ->select(
-                'apb.emp_id', 
-                'apb.att_date', 
-                'apb.clock_in', 
-                'apb.clock_out', 
-                'apb.late', 
-                'apb.early_leave', 
-                'apb.absent', 
-                'apb.leave', 
-                'apb.day_off',
-                
-                // SIMULACIÓN DE all_punches (Vital para procesarHuellas)
-                DB::raw("(
-                    SELECT STRING_AGG(TO_CHAR(punch_time, 'YYYY-MM-DD HH24:MI:SS'), ',' ORDER BY punch_time ASC)
-                    FROM public.iclock_transaction 
-                    WHERE emp_id = apb.emp_id AND punch_time::date = apb.att_date
-                ) as all_punches"),
-                
-                'ti.in_time',
-                'ti.alias as timetable_name', // Vital para detectar "Sin Horario"
-                'ti.work_time_duration as duration',
+        $startDate = $fechaInicio->toDateString();
+        $endDate = $fechaFin->toDateString();
+        
+        // Creamos los signos de interrogación necesarios ( ?, ?, ? ) para la cláusula IN()
+        $placeholders = implode(',', array_fill(0, count($empleadoIDs), '?'));
 
-                // --- AGREGADO: CÁLCULO DE HORA DE SALIDA (off_time) ---
-                // Esto soluciona que "aparece bien la entrada pero la salida no"
-                DB::raw("(ti.in_time::time + (ti.work_time_duration || ' minutes')::interval)::time as off_time")
+        $sql = "
+            WITH RECURSIVE calendario_dias AS (
+                SELECT ?::date AS fecha
+                UNION ALL
+                SELECT (fecha + interval '1 day')::date
+                FROM calendario_dias
+                WHERE fecha < ?::date
+            ),
+            asignacion_horario AS (
+                SELECT 
+                    e.id as emp_id,
+                    e.enable_holiday,
+                    pd.dept_name as department_name,
+                    COALESCE(sch.shift_id, ds.shift_id) as shift_id
+                FROM public.personnel_employee e
+                LEFT JOIN public.personnel_department pd ON e.department_id = pd.id
+                LEFT JOIN public.att_attschedule sch ON e.id = sch.employee_id 
+                    AND ?::date BETWEEN sch.start_date AND sch.end_date
+                LEFT JOIN public.att_departmentschedule ds ON e.department_id = ds.department_id
+                WHERE e.id IN ($placeholders)
+            ),
+            horario_base AS (
+                SELECT DISTINCT ON (sd.shift_id)
+                    sd.shift_id,
+                    ti.in_time as shift_in_time,
+                    ti.work_time_duration as shift_duration
+                FROM public.att_shiftdetail sd
+                JOIN public.att_timeinterval ti ON sd.time_interval_id = ti.id
+                ORDER BY sd.shift_id, sd.day_index ASC
+            ),
+            jornada_esperada AS (
+                SELECT 
+                    cd.fecha,
+                    ah.emp_id,
+                    ah.enable_holiday,
+                    ah.department_name,
+                    ti.alias as timetable_name,
+                    ti.in_time,
+                    ti.work_time_duration as duration, 
+                    ti.allow_late,
+                    hb.shift_in_time,
+                    hb.shift_duration
+                FROM calendario_dias cd
+                CROSS JOIN asignacion_horario ah
+                LEFT JOIN horario_base hb ON ah.shift_id = hb.shift_id
+                LEFT JOIN public.att_shiftdetail sd ON ah.shift_id = sd.shift_id 
+                    AND sd.day_index = extract(dow from cd.fecha)::int 
+                LEFT JOIN public.att_timeinterval ti ON sd.time_interval_id = ti.id
             )
-            ->whereIn('apb.emp_id', $empleadoIDs)
-            ->whereBetween('apb.att_date', [$fechaInicio->toDateString(), $fechaFin->toDateString()])
-            ->get()
-            ->groupBy('emp_id');
+            SELECT 
+                je.emp_id,
+                je.fecha as att_date,
+                je.timetable_name,
+                je.department_name,
+
+                -- Recolección de huellas crudas (Vital para procesar salidas anticipadas)
+                (SELECT STRING_AGG(TO_CHAR(punch_time, 'YYYY-MM-DD HH24:MI:SS'), ',' ORDER BY punch_time ASC)
+                 FROM public.iclock_transaction 
+                 WHERE emp_id = je.emp_id AND punch_time::date = je.fecha) as all_punches,
+
+                COALESCE(je.in_time, je.shift_in_time) as in_time,
+                
+                -- Salida teórica
+                (COALESCE(je.in_time, je.shift_in_time, '00:00:00')::time + (COALESCE(je.duration, je.shift_duration, 0) || ' minutes')::interval)::time as off_time,
+                
+                COALESCE(je.duration, je.shift_duration) as duration,
+                je.allow_late,
+                je.enable_holiday,
+
+                -- Creamos campos vacíos para que el Servicio los llene con tu lógica de Ventana de 30 min
+                NULL as clock_in,
+                NULL as clock_out,
+
+                al.nombre_categoria as nombre_permiso,
+                al.motivo_original as motivo_permiso
+
+            FROM jornada_esperada je
+            
+            LEFT JOIN LATERAL (
+                SELECT 
+                    cat.category_name as nombre_categoria, 
+                    l.apply_reason as motivo_original
+                FROM public.att_leave l 
+                JOIN public.att_leavecategory cat ON l.category_id = cat.id
+                WHERE l.employee_id = je.emp_id 
+                AND je.fecha BETWEEN l.start_time::date AND (l.end_time - interval '1 second')::date
+                ORDER BY 
+                    (l.start_time::date = je.fecha) DESC,
+                    (l.end_time - l.start_time) ASC 
+                LIMIT 1
+            ) al ON true
+            
+            ORDER BY je.emp_id ASC, je.fecha ASC;
+        ";
+
+        // Parámetros: Fecha Inicio, Fecha Fin, Fecha Inicio + Arreglo de IDs
+        $bindings = array_merge([$startDate, $endDate, $startDate], $empleadoIDs);
+
+        $resultados = DB::connection($this->connection)->select($sql, $bindings);
+
+        // Agrupamos la respuesta por empleado para que el Servicio la pueda iterar fácil
+        return collect($resultados)->groupBy('emp_id');
     }
 
     public function getPermisos(array $empleadoIDs, Carbon $fechaInicio, Carbon $fechaFin)
@@ -198,201 +264,9 @@ class KardexRepository
             ->select('employee_id', 'start_time', 'end_time', 'report_symbol', 'att_leave.category_id') 
             ->whereIn('employee_id', $empleadoIDs)
             ->where(function ($q) use ($fechaInicio, $fechaFin) {
-                $q->where('start_time', '<=', $fechaFin)
-                  ->where('end_time', '>=', $fechaInicio);
+                $q->where('start_time', '<=', $fechaFin)->where('end_time', '>=', $fechaInicio);
             })
             ->get()
             ->groupBy('employee_id');
-    }
-
-    // =============================================================================================
-    // 4. LÓGICA DE NEGOCIO (EL CEREBRO COMPARTIDO)
-    // =============================================================================================
-
-    public function procesarKardex($empleados, $payloadData, $permisos, $mes, $ano, $diaInicio, $diaFin)
-    {
-        try {
-            $mapaDeReglas = DB::connection('pgsql')->table('leave_mappings')->pluck('leave_policy_id', 'external_leave_id');
-        } catch (Exception $e) { $mapaDeReglas = collect(); }
-        
-        $fechaInicioMes = Carbon::createFromDate($ano, $mes, 1)->startOfDay();
-        $fechaFinMes = Carbon::createFromDate($ano, $mes, 1)->endOfMonth()->endOfDay();
-        $festivos = $this->getDiasFestivos($fechaInicioMes, $fechaFinMes);
-
-        $empleados = collect($empleados);
-        $filasDelKardex = [];
-
-        foreach ($empleados as $empleado) {
-            
-            $contadores = ['retardos' => 0, 'omisiones' => 0, 'faltas' => 0];
-            
-            $filaEmpleado = [
-                'id' => $empleado->id, 
-                'emp_code' => $empleado->emp_code,
-                'nombre' => $empleado->first_name . ' ' . $empleado->last_name,
-                'nomina' => $empleado->nomina, 
-                'incidencias_diarias' => [],
-            ];
-
-            $payloadParaEmpleado = $payloadData->get($empleado->id) ?? collect();
-            $permisosParaEmpleado = $permisos->get($empleado->id) ?? collect();
-            $fechaContratacion = $empleado->hire_date ? Carbon::parse($empleado->hire_date)->startOfDay() : null;
-
-            for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
-                $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
-                $fechaString = $fechaActual->toDateString();
-
-                // Filtros de fecha
-                if ($fechaActual->greaterThanOrEqualTo(Carbon::today()) || ($fechaContratacion && $fechaActual->isBefore($fechaContratacion))) {
-                    $filaEmpleado['incidencias_diarias'][$dia] = null;
-                    continue; 
-                }
-
-                // 1. Buscar Datos
-                $esFestivo = $festivos->contains(fn($h) => str_starts_with($h->start_date, $fechaString));
-                $permiso = $this->buscarPermiso($permisosParaEmpleado, $fechaActual);
-                $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
-
-                $incidencia = "";
-
-                // --- ÁRBOL DE DECISIÓN ---
-
-                if ($fechaActual->isWeekend()) {
-                    $incidencia = "DESC";
-                }
-                else if ($esFestivo && (!$payloadDia || (!$payloadDia->clock_in && !$payloadDia->clock_out))) {
-                    $incidencia = "J"; 
-                }
-                else if ($permiso) {
-                    $incidencia = $permiso->report_symbol; 
-                }
-                else if (!$payloadDia) {
-                    $incidencia = "Falto";
-                    $contadores['faltas']++;
-                }
-                else {
-                    // --- AQUÍ ESTÁ LA MAGIA ---
-                    $this->procesarHuellas($payloadDia);
-
-                    // 5. Sin Horario Asignado
-                    if (!$payloadDia->clock_in && !$payloadDia->clock_out && empty($payloadDia->timetable_name)) {
-                        $incidencia = "Falto"; 
-                        $contadores['faltas']++;
-                    }
-                    else if ($payloadDia->clock_in && $payloadDia->clock_out) {
-                        $eval = $this->evaluarRetardo($payloadDia);
-                        if ($eval === 'OK') {
-                            $incidencia = "OK";
-                        } else {
-                            $incidencia = "R";
-                            $contadores['retardos']++;
-                        }
-                    } 
-                    else {
-                        if (!$payloadDia->clock_in && !$payloadDia->clock_out) {
-                            $incidencia = "Falto";
-                            $contadores['faltas']++;
-                        } else {
-                            $incidencia = !$payloadDia->clock_in ? "S/E" : "S/S";
-                            $contadores['omisiones']++;
-                        }
-                    }
-                }
-                
-                $filaEmpleado['incidencias_diarias'][$dia] = $incidencia;
-            }
-
-            $filaEmpleado['total_faltas'] = $contadores['faltas'];
-            $filaEmpleado['total_retardos'] = $contadores['retardos'];
-            $filaEmpleado['total_omisiones'] = $contadores['omisiones'];
-
-            $filasDelKardex[] = $filaEmpleado;
-        }
-        return $filasDelKardex;
-    }
-
-    // =============================================================================================
-    // 5. FUNCIONES PRIVADAS
-    // =============================================================================================
-
-    private function procesarHuellas($reg)
-    {
-        if (empty($reg->in_time)) return;
-
-        $reg->clock_in = null;
-        $reg->clock_out = null;
-
-        $fechaStr = Carbon::parse($reg->att_date)->format('Y-m-d');
-        
-        // DST
-        $date = Carbon::parse($reg->att_date);
-        $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
-        $finOtono = Carbon::parse("last sunday of october $date->year");
-        $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
-        $horasAjuste = $esVerano ? 1 : 0;
-
-        $duracionMinutos = $reg->duration ?? 480;
-        $targetIn = Carbon::parse($fechaStr . ' ' . $reg->in_time);
-        $targetOut = (clone $targetIn)->addMinutes($duracionMinutos);
-
-        $punchesRaw = array_filter(explode(',', $reg->all_punches ?? ''), fn($p) => !empty(trim($p)));
-        $punchesAjustados = [];
-        foreach ($punchesRaw as $pStr) {
-            try {
-                $p = Carbon::parse(trim($pStr));
-                if ($horasAjuste != 0) $p->addHours($horasAjuste);
-
-                if (!$lastAdded || abs($p->diffInSeconds($lastAdded)) > 30) {
-                    $punchesAjustados[] = $p;
-                    $lastAdded = $p;
-                }
-            } catch (Exception $e) {}
-        }
-
-        $bestIn = null; $bestOut = null;
-        $minDistIn = 999999; $minDistOut = 999999;
-
-        foreach ($punchesAjustados as $punch) {
-            $distIn = abs($targetIn->diffInMinutes($punch, false));
-            $distOut = abs($targetOut->diffInMinutes($punch, false));
-
-            if ($distIn < $distOut) {
-                if ($distIn < $minDistIn) { $minDistIn = $distIn; $bestIn = $punch; }
-            } else {
-                if ($distOut < $minDistOut) { $minDistOut = $distOut; $bestOut = $punch; }
-            }
-        }
-
-        $umbral = 30; 
-
-        if ($bestIn && $minDistIn <= $umbral) $reg->clock_in = $bestIn->format('Y-m-d H:i:s');
-        
-        if ($bestOut && $minDistOut <= $umbral) {
-            if ($bestOut->lessThan($targetOut)) {
-                $reg->clock_out = null; 
-            } else {
-                $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
-            }
-        }
-    }
-
-    private function evaluarRetardo($registro)
-    {
-        if (!$registro->clock_in || !$registro->in_time) return 'OK';
-
-        $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
-        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
-        $horaRealEntrada = Carbon::parse($registro->clock_in);
-        
-        $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
-        return ($diferenciaMinutos <= 11) ? 'OK' : 'R';
-    }
-
-    private function buscarPermiso($permisosEmpleado, $fechaActual) {
-        foreach ($permisosEmpleado as $permiso) {
-            $inicio = Carbon::parse($permiso->start_time)->startOfDay();
-            $fin = Carbon::parse($permiso->end_time)->endOfDay();
-            if ($fechaActual->between($inicio, $fin, true)) { return $permiso; }
-        } return null;
     }
 }

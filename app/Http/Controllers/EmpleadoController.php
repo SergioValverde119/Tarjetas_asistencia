@@ -7,14 +7,18 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Repositories\KardexRepository;
+use App\Services\KardexService; // <-- Importamos el Servicio
 
 class EmpleadoController extends Controller
 {
     protected $kardexRepo;
+    protected $kardexService;
 
-    public function __construct(KardexRepository $kardexRepo)
+    // Inyectamos el Repositorio (para consultas simples) y el Servicio (para la lógica)
+    public function __construct(KardexRepository $kardexRepo, KardexService $kardexService)
     {
         $this->kardexRepo = $kardexRepo;
+        $this->kardexService = $kardexService;
     }
 
     public function show($id)
@@ -45,7 +49,7 @@ class EmpleadoController extends Controller
                 abort(404, 'Empleado no encontrado');
             }
 
-            // 2. Calcular Kárdex del MES ACTUAL
+            // 2. Configurar Fechas
             $hoy = Carbon::now();
             $mes = request('mes') ? (int)request('mes') : $hoy->month;
             $ano = request('ano') ? (int)request('ano') : $hoy->year;
@@ -53,25 +57,10 @@ class EmpleadoController extends Controller
             $inicioMes = Carbon::createFromDate($ano, $mes, 1)->startOfDay();
             $finMes = Carbon::createFromDate($ano, $mes, 1)->endOfMonth()->endOfDay();
             
-            $payloadData = $this->kardexRepo->getPayloadData([$empleado->id], $inicioMes, $finMes);
-            $permisos = $this->kardexRepo->getPermisos([$empleado->id], $inicioMes, $finMes);
-            // --- ELIMINADO: getChecadasCrudas ---
-            
-            // Procesamos el Kárdex
-            $kardexProcesado = $this->kardexRepo->procesarKardex(
-                [$empleado], 
-                $payloadData,
-                $permisos,
-                // --- ELIMINADO: $checadasCrudas ---
-                $mes,
-                $ano,
-                1, // Día 1
-                $finMes->day // Último día
-            );
+            // 3. Obtener el Kárdex Procesado USANDO EL SERVICIO
+            $stats = $this->kardexService->obtenerReporteMensualEmpleado($empleado, $mes, $ano);
 
-            $stats = $kardexProcesado[0];
-
-            // --- CALENDARIO ---
+            // --- 4. CALENDARIO VISUAL ---
             $calendario = [];
             $primerDiaSemana = $inicioMes->dayOfWeek; 
             for ($i = 0; $i < $primerDiaSemana; $i++) {
@@ -89,7 +78,7 @@ class EmpleadoController extends Controller
                 ];
             }
             
-            // Datos Extra
+            // 5. Datos Extra de Catálogos (usando el repositorio)
             $horario = $this->kardexRepo->getHorarioActual($empleado->id);
             $catalogoPermisos = $this->kardexRepo->getCatalogoPermisos();
 

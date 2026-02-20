@@ -6,6 +6,8 @@ use App\Repositories\TarjetaRepository;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use App\Models\Configuracion;
 
 class TarjetaService
 {
@@ -82,6 +84,8 @@ class TarjetaService
         return false;
     }
 
+
+    
     /**
      * NUEVA FUNCIÓN PARA LISTADO INDIVIDUAL:
      * Devuelve solo los números de día que tienen falta en un mes/año.
@@ -199,6 +203,7 @@ class TarjetaService
         $bestOut = null;
         $minDistIn = 999999;
         $minDistOut = 999999;
+        $umbral = 30;
 
 
         foreach ($punchesAjustados as $punchStr) {
@@ -208,13 +213,19 @@ class TarjetaService
             $distOut = abs($outDiff);
 
 
-            if ($distIn < $distOut) {
-                // Más cercano a hora de entrada
-                if ($distIn < $minDistIn) {
+            if ($distIn < $distOut && $distIn <= $umbral) {
+                $isNewOnTime = $punch->lessThanOrEqualTo($targetIn);
+                $isCurrentOnTime = $bestIn ? $bestIn->lessThanOrEqualTo($targetIn) : false;
+
+                // Prioridad: A tiempo > Retardo (dentro de los 30 min)
+                if (!$bestIn || ($isNewOnTime && !$isCurrentOnTime) || ($isNewOnTime === $isCurrentOnTime && $distIn < $minDistIn)) {
                     $minDistIn = $distIn;
                     $bestIn = $punch;
                 }
-            } else {
+            } 
+            
+            
+            else {
                 // Más cercano a hora de salida
                 // if ($distOut < $minDistOut) {
                 //     $minDistOut = $distOut;
@@ -283,6 +294,9 @@ class TarjetaService
     public function obtenerDatosPorMes($empleadoId, $month, $year)
     {
         try {
+
+            $reglas = Configuracion::getAllRules();
+
             $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth()->format('Y-m-d H:i:s');
             $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth()->format('Y-m-d H:i:s');
 
@@ -299,7 +313,7 @@ class TarjetaService
             }
 
             // AGREGADO: Llamamos al transformador solo con lo que necesitamos
-            $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $startOfMonth, $endOfMonth);
+            $registrosProcesados = $this->transformarRegistros($registrosRaw, $holidaysRaw, $startOfMonth, $endOfMonth, $reglas);
 
             $departmentName = $registrosRaw[0]->department_name ?? 'Sin departamento';
 
@@ -325,9 +339,10 @@ class TarjetaService
      * LÓGICA PRIVADA PARA TRANSFORMAR REGISTROS
      * RESTAURADO: Parámetros originales ($registros, $holidays, $permisos, $startDate, $endDate)
      */
-    private function transformarRegistros($registros, $holidays, $startDate, $endDate)
+    private function transformarRegistros($registros, $holidays, $startDate, $endDate, $reglas)
     {
-        
+        $retardosLevesAcumulados = 0; 
+        $limiteConversion = $reglas['conteo_rl_para_rg']; 
         $resultados = [];
 
         foreach ($registros as $reg) {
@@ -378,7 +393,7 @@ class TarjetaService
                 if ($reg->clock_in) {
                     $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
                     $entradaRealRef = Carbon::parse($reg->clock_in);
-                    if ($entradaOficialRef->diffInMinutes($entradaRealRef, false) > 21) 
+                    if ($entradaOficialRef->diffInMinutes($entradaRealRef, false) > $reglas['limite_retardo_leve']) 
                         {
                         $reg->clock_in = null;
                     }
@@ -394,7 +409,18 @@ class TarjetaService
             }
 
             // --- AGREGADO: NUEVA LÓGICA DE CLASIFICACIÓN SIN ACUMULACIÓN ---
-            $calificacion = $this->evaluarRetardo($reg);
+            $calificacion = $this->evaluarRetardo($reg, $reglas);
+
+            if ($calificacion === 'RL') {
+                $retardosLevesAcumulados++;
+                
+                // Si llegamos al cuarto retardo leve
+                if ($retardosLevesAcumulados >= $limiteConversion) {
+                    $calificacion = 'RG'; // Se transforma en Grave
+                    $retardosLevesAcumulados = 0; // Reiniciamos el ciclo
+                    
+                } 
+            } 
 
             $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
         }
@@ -413,7 +439,7 @@ class TarjetaService
         ];
     }
 
-    private function evaluarRetardo($registro)
+    private function evaluarRetardo($registro, $reglas)
     {
         // RESTAURADO: Lógica basada en check_in como el original
         $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
@@ -421,16 +447,154 @@ class TarjetaService
         $horaRealEntrada = Carbon::parse($registro->clock_in);
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
 
-        $tolerancia = 11;
+
+        $tolerancia = $reglas['tolerancia_entrada'];
+        $limiteLeve = $reglas['limite_retardo_leve'];
+        
+        
+
+        
 
         if ($diferenciaMinutos <= $tolerancia) {
             return 'OK';
         }
 
         // --- AGREGADO: CLASIFICACIÓN DIRECTA SIN LÍMITE DE FALTA POR TIEMPO ---
-        if ($diferenciaMinutos > $tolerancia && $diferenciaMinutos <= 21) {
+        if ($diferenciaMinutos > $tolerancia && $diferenciaMinutos <= $limiteLeve ) {
             return 'RL';
         }
         return 'RG';
     }
+
+    public function procesarImportacionRegistros($rows)
+    {
+        $resultados = [];
+        
+        // 1. OBTENER UN RELOJ FÍSICO REAL PARA CLONAR SU IDENTIDAD
+        // Buscamos cualquier reloj físico que esté registrado en la BD de BioTime.
+        $relojReal = DB::connection('pgsql_biotime')
+            ->table('iclock_terminal')
+            ->select('sn', 'alias')
+            ->first();
+
+        // Si por alguna razón no tienes relojes dados de alta, usamos una máscara genérica de ZKTeco.
+        $terminal_sn    = $relojReal ? $relojReal->sn : 'DS7X211234567';
+        $terminal_alias = $relojReal ? $relojReal->alias : 'Salida 1';
+
+        foreach ($rows as $row) {
+            // Ignorar filas vacías o sin nómina
+            if (!isset($row[0]) || trim($row[0]) === '') continue;
+
+            $nomina     = trim((string)$row[0]);
+            $nombre     = isset($row[1]) ? trim((string)$row[1]) : '';
+            $entradaStr = isset($row[2]) ? trim((string)$row[2]) : '';
+            $salidaStr  = isset($row[3]) ? trim((string)$row[3]) : '';
+            
+            $status  = 'ERROR';
+            $mensaje = '';
+
+            try {
+                // 1. Validar que el empleado exista en BioTime
+                $emp = DB::connection('pgsql_biotime')
+                    ->table('personnel_employee')
+                    ->where('emp_code', $nomina)
+                    ->first();
+
+                if (!$emp) {
+                    throw new Exception("El número de empleado no existe en BioTime.");
+                }
+
+                $insertedCount = 0;
+
+                // 2. Procesar ENTRADA (Si la celda no está vacía)
+                if (!empty($entradaStr)) {
+                    try {
+                        $entrada = Carbon::parse($entradaStr);
+                        $horaEntradaFormat = $entrada->format('Y-m-d H:i:s');
+                        
+                        // Protección Anti-Duplicados
+                        $existsIn = DB::connection('pgsql_biotime')
+                            ->table('iclock_transaction')
+                            ->where('emp_id', $emp->id)
+                            ->where('punch_time', $horaEntradaFormat)
+                            ->exists();
+
+                        if (!$existsIn) {
+                            DB::connection('pgsql_biotime')->table('iclock_transaction')->insert([
+                                'emp_id'         => $emp->id,
+                                'emp_code'       => $emp->emp_code,
+                                'punch_time'     => $horaEntradaFormat,
+                                'punch_state'    => '0', // 0 = Entrada
+                                'verify_type'    => 1,   // 1 = Huella Digital
+                                'terminal_sn'    => $terminal_sn,    // CLONACIÓN: Usar número de serie del reloj real
+                                'terminal_alias' => $terminal_alias, // CLONACIÓN: Usar nombre del reloj real
+                                'upload_time'    => now()
+                            ]);
+                            $insertedCount++;
+                        }
+                    } catch (Exception $e) {
+                        throw new Exception("Formato de Entrada inválido (Use AAAA-MM-DD HH:MM).");
+                    }
+                }
+
+                // 3. Procesar SALIDA (Si la celda no está vacía)
+                if (!empty($salidaStr)) {
+                    try {
+                        $salida = Carbon::parse($salidaStr);
+                        $horaSalidaFormat = $salida->format('Y-m-d H:i:s');
+                        
+                        // Protección Anti-Duplicados
+                        $existsOut = DB::connection('pgsql_biotime')
+                            ->table('iclock_transaction')
+                            ->where('emp_id', $emp->id)
+                            ->where('punch_time', $horaSalidaFormat)
+                            ->exists();
+
+                        if (!$existsOut) {
+                            DB::connection('pgsql_biotime')->table('iclock_transaction')->insert([
+                                'emp_id'         => $emp->id,
+                                'emp_code'       => $emp->emp_code,
+                                'punch_time'     => $horaSalidaFormat,
+                                'punch_state'    => '1', // 1 = Salida
+                                'verify_type'    => 1,   // 1 = Huella Digital
+                                'terminal_sn'    => $terminal_sn,    // CLONACIÓN
+                                'terminal_alias' => $terminal_alias, // CLONACIÓN
+                                'upload_time'    => now()
+                            ]);
+                            $insertedCount++;
+                        }
+                    } catch (Exception $e) {
+                        throw new Exception("Formato de Salida inválido (Use AAAA-MM-DD HH:MM).");
+                    }
+                }
+
+                if (empty($entradaStr) && empty($salidaStr)) {
+                    throw new Exception("Debe proporcionar al menos una Entrada o una Salida.");
+                }
+
+                $status = 'INGRESADO';
+                $mensaje = $insertedCount > 0 
+                    ? "Se guardaron correctamente los $insertedCount registros en el reloj: $terminal_alias." 
+                    : "Los registros ya existían (Omitido).";
+
+            } catch (Exception $e) {
+                $status = 'NO INGRESADO';
+                $mensaje = $e->getMessage();
+            }
+
+            // Guardamos el resultado para el Excel de descarga
+            $resultados[] = [
+                $nomina,
+                $nombre,
+                $entradaStr,
+                $salidaStr,
+                $status,
+                $mensaje
+            ];
+        }
+
+        return $resultados;
+    }
 }
+
+

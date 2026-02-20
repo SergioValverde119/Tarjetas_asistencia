@@ -6,12 +6,14 @@ use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithStyles;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class IncidenciasTemplateExport implements FromArray, WithHeadings, ShouldAutoSize, WithStyles
+class IncidenciasTemplateExport implements FromArray, WithHeadings, ShouldAutoSize, WithStyles, WithColumnFormatting
 {
     protected $data;
 
@@ -34,6 +36,23 @@ class IncidenciasTemplateExport implements FromArray, WithHeadings, ShouldAutoSi
             'Fecha Inicio (AAAA-MM-DD HH:MM)',  // Col D
             'Fecha Fin (AAAA-MM-DD HH:MM)',     // Col E
             'Motivo / Justificación'            // Col F
+        ];
+    }
+
+    /**
+     * OBLIGAR A EXCEL A TRATAR TODO COMO TEXTO
+     * Evita que Excel modifique el formato de las fechas (columnas D y E)
+     * o quite ceros a la izquierda en las nóminas (columna A).
+     */
+    public function columnFormats(): array
+    {
+        return [
+            'A' => NumberFormat::FORMAT_TEXT,
+            'B' => NumberFormat::FORMAT_TEXT,
+            'C' => NumberFormat::FORMAT_TEXT,
+            'D' => NumberFormat::FORMAT_TEXT,
+            'E' => NumberFormat::FORMAT_TEXT,
+            'F' => NumberFormat::FORMAT_TEXT,
         ];
     }
 
