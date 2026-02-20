@@ -23,9 +23,9 @@ class RegistrosTemplateExport implements FromArray, WithHeadings, ShouldAutoSize
     {
         // Si no nos pasan datos, ponemos ejemplos por defecto
         $this->data = empty($data) ? [
-            ['1045', 'Juan Perez', '2026-02-01 09:00', '2026-02-01 18:00'],
-            ['802329', 'Maria Gomez', '2026-02-02 08:30', ''], // Ejemplo de solo entrada
-            ['918561', 'Carlos Lemus', '', '2026-02-03 15:30'], // Ejemplo de solo salida
+            ['1045', 'Juan Perez Peres', '2026-02-01 09:00', '2026-02-01 18:00'],
+            ['0101231', 'Maria Gomez Rojas', '2026-02-02 08:30', ''], // Ejemplo de solo entrada
+            ['1232', 'Carlos Lopez Duran', '', '2026-02-03 15:30'], // Ejemplo de solo salida
         ] : $data;
     }
 
@@ -66,7 +66,7 @@ class RegistrosTemplateExport implements FromArray, WithHeadings, ShouldAutoSize
                 'font' => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
                 'fill' => [
                     'fillType' => Fill::FILL_SOLID,
-                    'startColor' => ['argb' => 'FF1E3A8A'] 
+                    'startColor' => ['argb' => 'FF374151'] 
                 ],
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             ],

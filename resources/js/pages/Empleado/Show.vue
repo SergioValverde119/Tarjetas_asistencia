@@ -38,7 +38,7 @@ const form = useForm({
     ano: currentYear,
 });
 
-const viewMode = ref('list'); // Por defecto abrimos la lista infinita
+const viewMode = ref('list'); // Por defecto abrimos la lista detallada
 const loading = ref(false);
 
 // Estado del acordeón de resumen
@@ -57,7 +57,7 @@ const anos = computed(() => {
 });
 
 // --- PERSISTENCIA DE FILTROS ---
-// Mantiene los parámetros (search, quincena, nómina) para el botón volver
+// Guarda todo el query string actual para volver al Kárdex General sin perder búsquedas
 const backUrl = computed(() => {
     const params = new URLSearchParams(window.location.search);
     return `${kardex.index().url}?${params.toString()}`;
@@ -85,7 +85,6 @@ const getIncidencia = (dia) => {
 // --- HELPERS PARA DATOS ROBUSTOS ---
 const getCalif = (inc) => {
     if (!inc) return '';
-    // A veces el backend puede enviar un string directo o un objeto con la propiedad
     return typeof inc === 'string' ? inc : (inc.calificacion || '');
 };
 const getCheckin = (inc) => typeof inc === 'object' && inc?.checkin ? inc.checkin : '--:--';
@@ -200,57 +199,28 @@ const getStatusColor = (valor, tipo) => {
     return 'text-gray-900';
 };
 
-// --- COLORES BRILLANTES (CUADRÍCULA MENSUAL) ---
-const getCalendarSquareColor = (incidenciaObj) => {
+// --- COLORES BRILLANTES FUERTES (BLOQUE ENTERO UNIFICADO) ---
+const getBlockColor = (incidenciaObj) => {
     const calif = getCalif(incidenciaObj);
-    if (!calif) return 'bg-white border-gray-100 text-gray-400'; 
-    if (calif === 'OK') return 'bg-green-500 border-green-600 text-white shadow-sm'; 
+    
+    // Si no hay datos (ej. un día futuro) se queda en gris claro
+    if (!calif) return 'bg-gray-100 border-gray-300 text-gray-500'; 
+    
+    // Asistencia
+    if (calif === 'OK') return 'bg-green-600 border-green-700 text-white shadow-md'; 
     
     switch (calif) {
-        case 'DESC': return 'bg-gray-400 border-gray-500 text-white shadow-sm';
-        case 'F': return 'bg-red-600 border-red-700 text-white shadow-sm';
-        case 'RG': return 'bg-orange-500 border-orange-600 text-white shadow-sm';
-        case 'RL': return 'bg-yellow-400 border-yellow-500 text-black shadow-sm'; // Letra negra para contrastar con amarillo brillante
+        case 'DESC': return 'bg-gray-500 border-gray-600 text-white shadow-md'; // Gris oscuro para descanso
+        case 'F': return 'bg-red-600 border-red-700 text-white shadow-md'; // Falta en Rojo Intenso
+        case 'RG': return 'bg-orange-600 border-orange-700 text-white shadow-md'; // Retardo Grave Naranja
+        case 'RL': return 'bg-yellow-400 border-yellow-500 text-gray-900 shadow-md'; // Retardo Leve Amarillo (Letra oscura)
         case 'S/E':
-        case 'S/S': return 'bg-purple-500 border-purple-600 text-white shadow-sm';
-        case 'J': return 'bg-blue-500 border-blue-600 text-white shadow-sm';
-        default: return 'bg-blue-400 border-blue-500 text-white shadow-sm'; 
+        case 'S/S': return 'bg-purple-600 border-purple-700 text-white shadow-md'; // Omisiones en Morado
+        case 'J': return 'bg-blue-600 border-blue-700 text-white shadow-md'; // Justificado en Azul fuerte
+        default: return 'bg-white border-gray-200 text-gray-800 shadow-sm'; 
     }
 };
 
-// --- COLORES SUAVES PARA LA LISTA INFINITA ---
-const getListRowColor = (incidenciaObj) => {
-    const calif = getCalif(incidenciaObj);
-    if (!calif) return 'bg-white border-gray-100'; 
-    if (calif === 'OK') return 'bg-green-50 border-green-200'; 
-    
-    switch (calif) {
-        case 'DESC': return 'bg-gray-100 border-gray-300';
-        case 'F': return 'bg-red-50 border-red-200';
-        case 'RG': return 'bg-orange-50 border-orange-200';
-        case 'RL': return 'bg-yellow-50 border-yellow-200';
-        case 'S/E':
-        case 'S/S': return 'bg-purple-50 border-purple-200';
-        case 'J': return 'bg-blue-50 border-blue-200';
-        default: return 'bg-white border-gray-100'; 
-    }
-};
-
-// --- ETIQUETAS BRILLANTES (BADGES) ---
-const getBadgeClass = (calif) => {
-    if (!calif) return 'bg-gray-200 text-gray-600';
-    if (calif === 'OK') return 'bg-green-500 text-white';
-    switch (calif) {
-        case 'DESC': return 'bg-gray-500 text-white';
-        case 'F': return 'bg-red-600 text-white';
-        case 'RG': return 'bg-orange-500 text-white';
-        case 'RL': return 'bg-yellow-400 text-black'; // Texto negro para el amarillo
-        case 'S/E':
-        case 'S/S': return 'bg-purple-500 text-white';
-        case 'J': return 'bg-blue-500 text-white';
-        default: return 'bg-blue-400 text-white';
-    }
-};
 </script>
 
 <template>
@@ -363,7 +333,7 @@ const getBadgeClass = (calif) => {
                             
                             <!-- BLOQUE FALTAS -->
                             <div>
-                                <div @click="toggleSummary('faltas')" class="px-5 py-3 flex justify-between items-center hover:bg-red-50 cursor-pointer transition-colors group">
+                                <div @click="toggleSummary('faltas')" class="px-5 py-3 flex justify-between items-center hover:bg-rose-50 cursor-pointer transition-colors group">
                                     <div class="flex items-center gap-2">
                                         <span class="text-sm font-medium text-gray-600 group-hover:text-red-700 transition-colors">Faltas Injustificadas</span>
                                         <ChevronDownIcon :class="{'rotate-180': expandedSummary === 'faltas'}" class="w-3 h-3 text-gray-400 transition-transform" />
@@ -496,47 +466,60 @@ const getBadgeClass = (calif) => {
 
                         <div class="p-5 flex-1 bg-gray-50/30">
                             
-                            <!-- VISTA LISTA INFINITA (MES COMPLETO CON ENTRADAS Y SALIDAS) -->
-                            <div v-if="viewMode === 'list'" class="space-y-2 overflow-y-auto pr-2" style="max-height: 65vh;">
+                            <!-- VISTA LISTA INFINITA (BLOQUES GRANDES CON COLORES FUERTES) -->
+                            <div v-if="viewMode === 'list'" class="space-y-4 overflow-y-auto pr-2 pb-4" style="max-height: 65vh;">
                                 <div v-for="dia in diasDelMes.filter(d => d.type === 'day')" :key="dia.day" 
-                                     class="flex items-center rounded-lg border p-3 transition-all hover:bg-gray-50 shadow-sm"
-                                     :class="[getListRowColor(dia.incidencia), dia.isToday ? 'ring-2 ring-blue-400 ring-offset-1' : '']"
+                                     class="flex flex-col sm:flex-row items-center rounded-xl border p-4 transition-all hover:brightness-105"
+                                     :class="[
+                                         getBlockColor(dia.incidencia), 
+                                         dia.isToday ? 'ring-4 ring-blue-900 ring-offset-2' : '',
+                                         (getCalif(dia.incidencia) === 'J' || dia.incidencia?.observaciones) ? 'cursor-pointer' : ''
+                                     ]"
+                                     @click="(getCalif(dia.incidencia) === 'J' || dia.incidencia?.observaciones) ? mostrarDetallePermiso(dia.incidencia) : null"
                                 >
-                                    <!-- Número de Día y Nombre -->
-                                    <div class="w-16 text-center border-r border-gray-200 pr-3 mr-4 flex flex-col justify-center">
-                                        <span class="text-[9px] font-bold text-gray-500 uppercase">{{ diasSemana[new Date(form.ano, form.mes - 1, dia.day).getDay()] }}</span>
-                                        <span class="text-lg font-bold text-gray-800 leading-tight">{{ dia.day }}</span>
+                                    <!-- Número de Día y Nombre (Extra Grande) -->
+                                    <div class="w-full sm:w-24 text-center sm:text-left border-b sm:border-b-0 sm:border-r border-current/20 pb-2 sm:pb-0 sm:pr-4 sm:mr-6 flex flex-row sm:flex-col justify-center items-center sm:items-start gap-2 sm:gap-0">
+                                        <span class="text-xs sm:text-[10px] font-bold uppercase opacity-80">{{ diasSemana[new Date(form.ano, form.mes - 1, dia.day).getDay()] }}</span>
+                                        <span class="text-3xl sm:text-4xl font-black leading-none">{{ dia.day }}</span>
                                     </div>
                                     
-                                    <!-- Horas de Checada -->
-                                    <div class="flex-1 flex gap-6 sm:gap-10 items-center">
-                                        <div class="flex flex-col">
-                                            <span class="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Entrada</span>
-                                            <span class="font-mono text-sm font-semibold" :class="getCheckin(dia.incidencia) !== '--:--' ? 'text-gray-900' : 'text-gray-400'">
+                                    <!-- Horas de Checada Destacadas -->
+                                    <div class="flex flex-row gap-8 sm:gap-12 items-center justify-center sm:justify-start w-full sm:w-auto my-3 sm:my-0">
+                                        <div class="flex flex-col items-center sm:items-start">
+                                            <span class="text-[10px] font-bold uppercase mb-1 opacity-80 tracking-wider">Entrada</span>
+                                            <span class="font-mono text-lg sm:text-xl font-bold bg-black/10 px-3 py-1 rounded-md" :class="getCheckin(dia.incidencia) !== '--:--' ? '' : 'opacity-60'">
                                                 {{ getCheckin(dia.incidencia) }}
                                             </span>
                                         </div>
-                                        <div class="flex flex-col">
-                                            <span class="text-[10px] text-gray-500 font-bold uppercase mb-0.5">Salida</span>
-                                            <span class="font-mono text-sm font-semibold" :class="getCheckout(dia.incidencia) !== '--:--' ? 'text-gray-900' : 'text-gray-400'">
+                                        <div class="flex flex-col items-center sm:items-start">
+                                            <span class="text-[10px] font-bold uppercase mb-1 opacity-80 tracking-wider">Salida</span>
+                                            <span class="font-mono text-lg sm:text-xl font-bold bg-black/10 px-3 py-1 rounded-md" :class="getCheckout(dia.incidencia) !== '--:--' ? '' : 'opacity-60'">
                                                 {{ getCheckout(dia.incidencia) }}
                                             </span>
                                         </div>
                                     </div>
 
-                                    <!-- Calificación / Botón de Info -->
-                                    <div class="flex items-center justify-end gap-2 w-36">
-                                        <span class="px-2.5 py-1 rounded text-xs font-bold shadow-sm" :class="getBadgeClass(getCalif(dia.incidencia))">
-                                            {{ getCalif(dia.incidencia) === 'OK' ? '✓ OK' : (getCalif(dia.incidencia) || 'F') }}
+                                    <!-- Calificación / Nombre Permiso a Texto Completo -->
+                                    <div class="flex items-center justify-center sm:justify-end gap-2 w-full sm:flex-1 mt-2 sm:mt-0">
+                                        <span class="px-4 py-2 rounded-lg text-sm sm:text-base font-black shadow-inner uppercase tracking-wider text-center" 
+                                              :class="getCalif(dia.incidencia) === 'RL' ? 'bg-white/40' : 'bg-black/20'">
+                                            <template v-if="getCalif(dia.incidencia) === 'OK'">✓ ASISTENCIA</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'J'">{{ dia.incidencia?.nombre_permiso || 'JUSTIFICACIÓN' }}</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'F'">FALTA</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'DESC'">DESCANSO</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'RL'">RETARDO LEVE</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'RG'">RETARDO GRAVE</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'S/E'">FALTA ENTRADA</template>
+                                            <template v-else-if="getCalif(dia.incidencia) === 'S/S'">FALTA SALIDA</template>
+                                            <template v-else>{{ getCalif(dia.incidencia) || 'SIN DATOS' }}</template>
                                         </span>
 
                                         <button v-if="getCalif(dia.incidencia) === 'J' || (typeof dia.incidencia === 'object' && dia.incidencia?.observaciones)" 
-                                                @click="mostrarDetallePermiso(dia.incidencia)"
-                                                class="text-blue-500 hover:text-blue-700 hover:bg-blue-100 p-1.5 rounded-full transition-colors flex-shrink-0"
+                                                class="p-2 rounded-full transition-colors flex-shrink-0 hover:bg-black/20 bg-black/10"
+                                                :class="getCalif(dia.incidencia) === 'RL' ? 'text-gray-900' : 'text-white'"
                                                 title="Ver detalle del permiso/justificación">
-                                            <InformationCircleIcon class="w-5 h-5" />
+                                            <InformationCircleIcon class="w-6 h-6" />
                                         </button>
-                                        <div v-else class="w-8"></div> <!-- Espaciador para alinear -->
                                     </div>
                                 </div>
                             </div>
@@ -549,25 +532,25 @@ const getBadgeClass = (calif) => {
                                     <div v-for="dia in diasDelMes" :key="dia.id" 
                                         class="aspect-square rounded-lg flex flex-col items-center justify-center text-xs relative border transition-all cursor-default"
                                         :class="[
-                                            dia.type === 'empty' ? 'border-transparent bg-transparent' : getCalendarSquareColor(dia.incidencia),
-                                            dia.isToday ? 'ring-4 ring-blue-400 ring-offset-2 z-10' : '',
-                                            (getCalif(dia.incidencia) === 'J') ? 'cursor-pointer hover:shadow-lg hover:scale-105 z-10' : ''
+                                            dia.type === 'empty' ? 'border-transparent bg-transparent' : getBlockColor(dia.incidencia),
+                                            dia.isToday ? 'ring-4 ring-blue-600 ring-offset-2 z-10' : '',
+                                            (getCalif(dia.incidencia) === 'J' || dia.incidencia?.observaciones) ? 'cursor-pointer hover:shadow-lg hover:scale-105 z-10' : ''
                                         ]"
-                                        @click="dia.type === 'day' ? mostrarDetallePermiso(dia.incidencia) : null"
+                                        @click="(getCalif(dia.incidencia) === 'J' || dia.incidencia?.observaciones) ? mostrarDetallePermiso(dia.incidencia) : null"
                                         :title="typeof dia.incidencia === 'object' ? dia.incidencia?.nombre_permiso : ''"
                                     >
                                         <template v-if="dia.type === 'day'">
-                                            <span class="absolute top-1 left-1.5 text-[10px] font-bold opacity-80" :class="getCalif(dia.incidencia) === 'RL' ? 'text-black' : 'text-inherit'">
+                                            <span class="absolute top-1 left-1.5 text-[10px] font-bold opacity-80">
                                                 {{ dia.day }}
                                             </span>
                                             
                                             <!-- Icono Info si es justificado -->
-                                            <InformationCircleIcon v-if="getCalif(dia.incidencia) === 'J'" class="absolute top-1 right-1 w-3 h-3 opacity-90" :class="getCalif(dia.incidencia) === 'RL' ? 'text-black' : 'text-white'" />
+                                            <InformationCircleIcon v-if="getCalif(dia.incidencia) === 'J'" class="absolute top-1 right-1 w-3 h-3 opacity-90" />
 
-                                            <div class="mt-3 font-bold text-center w-full px-1 overflow-hidden flex flex-col items-center">
+                                            <div class="mt-3 font-bold text-center w-full px-0.5 overflow-hidden flex flex-col items-center">
                                                 <span v-if="getCalif(dia.incidencia) === 'OK'" class="text-xl">✓</span>
-                                                <span v-else class="leading-none block text-[11px] uppercase truncate w-full">
-                                                    {{ getCalif(dia.incidencia) || 'F' }}
+                                                <span v-else class="leading-none block text-[10px] uppercase truncate w-full">
+                                                    {{ getCalif(dia.incidencia) === 'J' ? (dia.incidencia?.nombre_permiso || 'J') : (getCalif(dia.incidencia) || 'F') }}
                                                 </span>
                                             </div>
                                         </template>
@@ -578,34 +561,34 @@ const getBadgeClass = (calif) => {
                              <!-- VISTA HORARIO DEL EMPLEADO -->
                              <div v-else-if="viewMode === 'schedule'">
                                 <div v-if="horario && horario.dias && horario.dias.length > 0" class="space-y-4">
-                                    <div class="flex items-center gap-3 mb-4 p-4 bg-white rounded-lg border border-gray-100 shadow-sm">
+                                    <div class="flex items-center gap-3 mb-4 p-4 bg-white rounded-lg border border-gray-100 shadow-sm text-gray-900">
                                         <div class="p-2.5 bg-indigo-50 rounded-full text-indigo-600">
                                             <ClockIcon class="w-6 h-6" />
                                         </div>
                                         <div>
-                                            <h4 class="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Turno Asignado Actualmente</h4>
+                                            <h4 class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Turno Asignado Actualmente</h4>
                                             <p class="text-base font-bold text-gray-800">{{ horario.nombre }}</p>
                                         </div>
                                     </div>
 
                                     <div class="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                                        <table class="min-w-full divide-y divide-gray-200">
+                                        <table class="min-w-full divide-y divide-gray-200 text-gray-900">
                                             <thead class="bg-gray-50">
                                                 <tr>
-                                                    <th class="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase">Día</th>
-                                                    <th class="px-4 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">Entrada</th>
-                                                    <th class="px-4 py-2.5 text-center text-xs font-bold text-gray-500 uppercase">Salida</th>
+                                                    <th class="px-4 py-2.5 text-left text-xs font-bold text-gray-600 uppercase">Día</th>
+                                                    <th class="px-4 py-2.5 text-center text-xs font-bold text-gray-600 uppercase">Entrada</th>
+                                                    <th class="px-4 py-2.5 text-center text-xs font-bold text-gray-600 uppercase">Salida</th>
                                                 </tr>
                                             </thead>
                                             <tbody class="divide-y divide-gray-100 bg-white">
                                                 <tr v-for="dia in diasHorario" :key="dia.nombre" :class="dia.activo ? 'hover:bg-gray-50' : 'bg-gray-50/50 text-gray-400'">
                                                     <td class="px-4 py-2.5 text-sm font-semibold">{{ dia.nombre }}</td>
                                                     <td class="px-4 py-2.5 text-sm text-center">
-                                                        <span v-if="dia.activo" class="bg-green-100 text-green-800 px-2.5 py-1 rounded text-xs font-mono font-bold">{{ dia.entrada }}</span>
+                                                        <span v-if="dia.activo" class="bg-green-100 text-green-800 px-2.5 py-1 rounded text-xs font-mono font-bold border border-green-200">{{ dia.entrada }}</span>
                                                         <span v-else class="text-xs font-medium uppercase">- Descanso -</span>
                                                     </td>
                                                     <td class="px-4 py-2.5 text-sm text-center">
-                                                        <span v-if="dia.activo" class="bg-blue-100 text-blue-800 px-2.5 py-1 rounded text-xs font-mono font-bold">{{ dia.salida }}</span>
+                                                        <span v-if="dia.activo" class="bg-blue-100 text-blue-800 px-2.5 py-1 rounded text-xs font-mono font-bold border border-blue-200">{{ dia.salida }}</span>
                                                         <span v-else>-</span>
                                                     </td>
                                                 </tr>

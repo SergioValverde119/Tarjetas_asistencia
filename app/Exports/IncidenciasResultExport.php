@@ -42,6 +42,18 @@ class IncidenciasResultExport implements FromArray, WithHeadings, ShouldAutoSize
         ];
     }
 
+    public function columnFormats(): array
+    {
+        return [
+            'A' => NumberFormat::FORMAT_TEXT,
+            'B' => NumberFormat::FORMAT_TEXT,
+            'C' => NumberFormat::FORMAT_TEXT,
+            'D' => NumberFormat::FORMAT_TEXT,
+            'E' => NumberFormat::FORMAT_TEXT,
+            'F' => NumberFormat::FORMAT_TEXT,
+        ];
+    }
+
     public function styles(Worksheet $sheet)
     {
         return [
