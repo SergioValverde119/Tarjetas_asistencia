@@ -6,6 +6,8 @@ import * as reglas from '@/routes/reglas';
 import * as empleado from '@/routes/empleado'; 
 import AlertaBaja from '@/components/AlertaBaja.vue';
 import { MagnifyingGlassIcon, UserIcon, ChevronDownIcon, DocumentTextIcon, ArrowDownTrayIcon, Cog6ToothIcon, BriefcaseIcon, UserMinusIcon } from '@heroicons/vue/24/outline';
+import AppLayout from '@/layouts/app/AppSidebarLayout.vue';
+import {home} from '@/routes';
 
 const props = defineProps({
     datosKardex: Array,
@@ -36,6 +38,11 @@ const anos = computed(() => { const anoActual = new Date().getFullYear(); return
 const quincenas = [ { value: 0, label: 'Mes Completo' }, { value: 1, label: '1ra Quincena (1-15)' }, { value: 2, label: '2da Quincena (16-Fin)' } ];
 const perPageOptions = [10, 20, 50, 200];
 const columnasResumen = [ "Ret. Graves", "Ret. Leves", "Justificadas", "Faltas", "Omisiones" ];
+
+const breadcrumbs = [
+    { title: 'Bienvenida', href: home().url },
+    { title: 'kardex', href: '#'}
+]
 
 function buscarDatos() {
     form.post(kardex.buscar().url, { preserveScroll: true });
@@ -74,6 +81,7 @@ function getColorForIncidencia(calificacion) {
 </script>
 
 <template>
+    <AppLayout :breadcrumbs="breadcrumbs">
     <div>
         <Head title="Kárdex de Incidencias" />
         <div class="w-full p-4 sm:p-6 lg:p-8">
@@ -190,4 +198,5 @@ function getColorForIncidencia(calificacion) {
             </div>
         </div>
     </div>
+    </AppLayout>
 </template>

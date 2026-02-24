@@ -205,7 +205,7 @@ const formatDate = (day) => {
 #pdf-content {
   width: 215.9mm;
   height: 279.4mm;
-  padding: 10mm;
+  padding: 5mm;
   box-sizing: border-box;
   font-family: Arial, sans-serif;
   color: #000;

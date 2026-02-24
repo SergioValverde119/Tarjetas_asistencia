@@ -20,9 +20,8 @@ import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
 import * as incidencias from '@/routes/incidencias';
-
-import { Link } from '@inertiajs/vue3';
-import { BookOpen, Folder, LayoutGrid, IdCard, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck } from 'lucide-vue-next';
+import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck } from 'lucide-vue-next';
+import kardex from '@/routes/kardex';
 
 const { toggleSidebar } = useSidebar();
 const page = usePage();
@@ -30,12 +29,37 @@ const user = page.props.auth.user;
 
 // --- GESTIÓN DE ROLES ---
 const role = user ? user.role : 'empleado';
-const isAdmin = role === 'admin';
-const isSupervisor = role === 'supervisor';
-const isCapturista = role === 'capturista';
+// const isAdmin = role === 'admin';
+// const isSupervisor = role === 'supervisor';
+// const isCapturista = role === 'capturista';
 
 const mainNavItems = computed(() => {
     
+
+    if(role=='empleado'){
+        return [
+            { 
+                title: 'Mi Tarjeta', 
+                href: mi_tarjeta ? mi_tarjeta().url : '#', 
+                icon: IdCard 
+            },
+            { 
+                title: 'Mis checadas', 
+                href: mi_tarjeta ? mi_tarjeta().url : '#', 
+                icon: ClockCheck
+            },
+            { 
+                title: 'Solicitud de Premio', 
+                href: mi_tarjeta ? mi_tarjeta().url : '#', 
+                icon: Trophy
+            },
+            { 
+                title: 'Solicitud de Incidencia', 
+                href: mi_tarjeta ? mi_tarjeta().url : '#', 
+                icon: TriangleAlert
+            },
+        ];
+    }
     // CASO 1: MONITOR DE DISPONIBILIDAD (VISTA EXCLUSIVA)
     // Si el usuario tiene el rol 'disponibilidad', SOLO ve esto y nada más.
     if (role === 'disponibilidad') {
@@ -49,9 +73,7 @@ const mainNavItems = computed(() => {
     }
 
     // CASO 2: BASE COMÚN (Para Empleado, Supervisor y Admin)
-    const items = [
-        
-    ];
+    const items = [];
 
     if (role === 'capturista') {
         items.push({ 
@@ -62,7 +84,7 @@ const mainNavItems = computed(() => {
     }
 
     // Módulo INCIDENCIAS (Supervisor + Admin)
-    if (isAdmin || isSupervisor) {
+    if (role === 'admin' || role === 'supervisor') {
         items.push({ 
             title: 'Incidencias', 
             href: incidencias.index ? incidencias.index().url : '#', 
@@ -71,8 +93,18 @@ const mainNavItems = computed(() => {
     }
 
     // Módulos EXCLUSIVOS DE ADMIN
-    if (isAdmin) {
+    if (role === 'admin') {
         items.push(
+            { 
+                title: 'Kardex', 
+                href: kardex.index ? kardex.index().url : '#', 
+                icon: ChartNoAxesCombined 
+            },
+            {
+                title: 'Incidencias',
+                href: incidencias.index ? incidencias.index().url : '#',
+                icon: TriangleAlert
+            },
             { 
                 title: 'Generador de Tarjetas', 
                 href: general ? general().url : '#', 
@@ -100,7 +132,7 @@ const mainNavItems = computed(() => {
 });
 
 const footerNavItems = [
-    { title: 'Datos', href: '#', icon: Folder },
+    
     { title: 'Soporte', href: '#', icon: Info },
 ];
 </script>

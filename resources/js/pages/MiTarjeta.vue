@@ -1,6 +1,7 @@
 <script setup>
-import { ref, nextTick, computed } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
+import AppLayout from '@/layouts/app/AppSidebarLayout.vue';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -10,6 +11,7 @@ import { LogOut, AlertCircle, FileDown, CheckCircle, Loader2, Lock } from 'lucid
 import { getSchedule } from '@/routes'; 
 import { download_pdf } from '@/routes/tarjetas'; 
 import TarjetaPdf from './TarjetaPdf.vue'; 
+
 
 const props = defineProps({
     empleado: { type: Object, required: true },
@@ -163,159 +165,107 @@ const descargarTarjeta = async (monthObj) => {
 
 <template>
     <Head title="Mis Tarjetas de Asistencia" />
+    
+    <AppLayout :breadcrumbs="breadcrumbs">
+        <div class="schedule-card-wrapper">
+            <!-- <div class="nav-bar">
+                <Link 
+                    href="/logout" 
+                    method="post" 
+                    as="button" 
+                    class="logout-link"
+                >
+                    <LogOut class="w-4 h-4 mr-2" />
+                    Cerrar Sesión
+                </Link>
+            </div> -->
 
-    <div class="schedule-card-wrapper">
-        <div class="nav-bar">
-            <Link 
-                href="/logout" 
-                method="post" 
-                as="button" 
-                class="logout-link"
-            >
-                <LogOut class="w-4 h-4 mr-2" />
-                Cerrar Sesión
-            </Link>
-        </div>
-
-        <div class="schedule-card">
-            <div class="header">
-                <img src="/images/logo_cdmx.jpeg" alt="Logo CDMX" class="logo" @error="handleImageError">
-                <div class="header-text">
-                    <h2 class="font-bold text-2xl text-gray-800">{{ empleado.first_name }} {{ empleado.last_name }}</h2>
-                    <p class="text-sm text-gray-500">
-                        Expediente: {{ empleado.emp_code }} | 
-                        Departamento: {{ empleado.department_name }}
-                    </p>
-                </div>
-                <!-- <img src="/images/logo_mujer_indigena.jpeg" alt="Logo" class="logo" @error="handleImageError"> -->
-                <img src="/images/logo_Margarita_Maza.png" alt="Logo" class="logo" @error="handleImageError">
-            </div>
-
-            <div class="content-body">
-                <div class="table-header">
-                    <h3 class="text-lg font-semibold text-gray-700">Historial de Tarjetas (Últimos 12 meses)</h3>
+            <div class="schedule-card">
+                <div class="header">
+                    <img src="/images/logo_cdmx.jpeg" alt="Logo CDMX" class="logo" @error="handleImageError">
+                    <div class="header-text">
+                        <h2 class="font-bold text-2xl text-gray-800">{{ empleado.first_name }} {{ empleado.last_name }}</h2>
+                        <p class="text-sm text-gray-500">
+                            Expediente: {{ empleado.emp_code }} | 
+                            Departamento: {{ empleado.department_name }}
+                        </p>
+                    </div>
+                    <!-- <img src="/images/logo_mujer_indigena.jpeg" alt="Logo" class="logo" @error="handleImageError"> -->
+                    <img src="/images/logo_Margarita_Maza.png" alt="Logo" class="logo" @error="handleImageError">
                 </div>
 
-                <div class="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Mes</th>
-                                <th class="text-center">Año</th>
-                                <th class="text-center">Estatus</th>
-                                <th class="text-right">Acción</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="m in rollingMonths" :key="`${m.id}-${m.year}`" :class="getRowClass(m.id, m.year)" class="transition-colors duration-150">
-                                <td class="font-medium text-gray-700">{{ m.name }}</td>
-                                <td class="text-center text-gray-500 font-bold">{{ m.year }}</td>
-                                <td class="text-center">
-                                    
-                                    <template v-if="hasFaults(m.id, m.year)">
-                                        <div class="flex flex-col items-center">
-                                            <span class="status-badge blocked">
-                                                <AlertCircle class="w-3 h-3 inline mr-1" />
-                                                No disponible
-                                            </span>
-                                            <div class="text-[11px] text-red-600 font-bold mt-1 uppercase tracking-tighter">
-                                                Falta día(s): {{ resumenFaltas[m.year][m.id].join(', ') }}
-                                            </div>
-                                        </div>
-                                    </template>
-                                    
-                                    <template v-else>
-                                        <span v-if="isDownloaded(m.id, m.year)" class="status-badge generated">
-                                            <CheckCircle class="w-3 h-3 inline mr-1" />
-                                            Descargada
-                                        </span>
-                                        <span v-else class="status-badge available">Disponible</span>
-                                    </template>
+                <div class="content-body">
+                    <div class="table-header">
+                        <h3 class="text-lg font-semibold text-gray-700">Historial de Tarjetas (Últimos 12 meses)</h3>
+                    </div>
 
-                                </td>
-                                <td class="text-right align-middle">
-                                    <button 
-                                        @click="handleAction(m)" 
-                                        :disabled="loadingId !== null"
-                                        class="download-button-small"
-                                        :class="{'btn-blocked': hasFaults(m.id, m.year)}"
-                                    >
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Mes</th>
+                                    <th class="text-center">Año</th>
+                                    <th class="text-center">Estatus</th>
+                                    <th class="text-right">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="m in rollingMonths" :key="`${m.id}-${m.year}`" :class="getRowClass(m.id, m.year)" class="transition-colors duration-150">
+                                    <td class="font-medium text-gray-700">{{ m.name }}</td>
+                                    <td class="text-center text-gray-500 font-bold">{{ m.year }}</td>
+                                    <td class="text-center">
                                         <template v-if="hasFaults(m.id, m.year)">
-                                            <Lock class="-ml-1 mr-2 h-4 w-4" />
-                                            Ver Detalle
-                                        </template>
-                                        <template v-else-if="loadingId === `${m.id}-${m.year}`">
-                                            <Loader2 class="animate-spin -ml-1 mr-2 h-3 w-3 inline" />
-                                            Cargando...
+                                            <div class="flex flex-col items-center">
+                                                <span class="status-badge blocked">
+                                                    <AlertCircle class="w-3 h-3 inline mr-1" />
+                                                    No disponible
+                                                </span>
+                                                <div class="text-[11px] text-red-600 font-bold mt-1 uppercase tracking-tighter">
+                                                    Falta día(s): {{ resumenFaltas[m.year][m.id].join(', ') }}
+                                                </div>
+                                            </div>
                                         </template>
                                         <template v-else>
-                                            <FileDown class="-ml-1 mr-2 h-4 w-4 inline" />
-                                            Descargar
+                                            <span v-if="isDownloaded(m.id, m.year)" class="status-badge generated">
+                                                <CheckCircle class="w-3 h-3 inline mr-1" />
+                                                Descargada
+                                            </span>
+                                            <span v-else class="status-badge available">Disponible</span>
                                         </template>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="rollingMonths.length === 0">
-                                <td colspan="4" class="text-center py-10 text-gray-400 italic">No hay tarjetas disponibles en este periodo.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+
+                                    </td>
+                                    <td class="text-right align-middle">
+                                        <button 
+                                            @click="handleAction(m)" 
+                                            :disabled="loadingId !== null"
+                                            class="download-button-small"
+                                            :class="{'btn-blocked': hasFaults(m.id, m.year)}"
+                                        >
+                                            <template v-if="hasFaults(m.id, m.year)">
+                                                <Lock class="-ml-1 mr-2 h-4 w-4" />
+                                                Ver Detalle
+                                            </template>
+                                            <template v-else-if="loadingId === `${m.id}-${m.year}`">
+                                                <Loader2 class="animate-spin -ml-1 mr-2 h-3 w-3 inline" />
+                                                Cargando...
+                                            </template>
+                                            <template v-else>
+                                                <FileDown class="-ml-1 mr-2 h-4 w-4 inline" />
+                                                Descargar
+                                            </template>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr v-if="rollingMonths.length === 0">
+                                    <td colspan="4" class="text-center py-10 text-gray-400 italic">No hay tarjetas disponibles en este periodo.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- MODAL DE BLOQUEO (ERROR) -->
-    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-all">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up border-t-4 border-red-600">
-            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
-                <AlertCircle class="h-6 w-6 text-red-600" />
-            </div>
-            <h3 class="text-lg font-bold text-center text-gray-900 mb-2">Acceso Restringido</h3>
-            <p class="text-sm text-gray-600 text-center mb-6 leading-relaxed">
-                Se encuentran faltas o retardos graves no justificados en ese mes. Si considera esto un error, por favor acérquese a planta baja al área de Administración.
-            </p>
-            <div class="flex justify-center">
-                <button @click="showModal = false" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-6 rounded-md transition-colors shadow-sm focus:outline-none">
-                    Entendido
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL DE CONFIRMACIÓN (AVISO) -->
-    <div v-if="showConfirmModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-all">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-fade-in-up border-t-4 border-blue-600">
-            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
-                <AlertCircle class="h-6 w-6 text-blue-600" />
-            </div>
-            <h3 class="text-lg font-bold text-center text-gray-900 mb-2">Aviso Importante</h3>
-            <p class="text-sm text-gray-600 text-center mb-6 leading-relaxed">
-                Solo se puede descargar una vez la tarjeta en formato PDF para su impresión. Asegúrese de que su impresora esté lista antes de continuar.
-            </p>
-            <div class="flex justify-center gap-4">
-                <button @click="showConfirmModal = false" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-md transition-colors">
-                    Cancelar
-                </button>
-                <button @click="confirmDownload" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors shadow-sm">
-                    Descargar
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- COMPONENTE OCULTO PARA PDF -->
-    <TarjetaPdf 
-        v-if="generatingPdf"
-        :employee="employeeForPdf"
-        :schedule="pdfData.schedule"
-        :months="['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']" 
-        :first-fortnight="pdfData.firstFortnight"
-        :second-fortnight="pdfData.secondFortnight"
-        :days-in-month="pdfData.daysInMonth"
-        :selected-month="pdfData.selectedMonth"
-        :selected-year="pdfData.selectedYear"
-    />
+    </AppLayout>
 </template>
 
 <style scoped>

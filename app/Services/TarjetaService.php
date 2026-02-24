@@ -2,12 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\Configuracion;
 use App\Repositories\TarjetaRepository;
 use Carbon\Carbon;
 use Exception;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use App\Models\Configuracion;
+use Illuminate\Support\Facades\Log;
 
 class TarjetaService
 {
@@ -29,7 +29,7 @@ class TarjetaService
         try {
             return $this->repository->getAllEmployees();
         } catch (Exception $e) {
-            Log::error('Error en TarjetaService@obtenerTodosLosEmpleados: ' . $e->getMessage());
+            Log::error('Error en TarjetaService@obtenerTodosLosEmpleados: '.$e->getMessage());
 
             return [];
         }
@@ -52,15 +52,12 @@ class TarjetaService
                 }
             }
         } catch (Exception $e) {
-            Log::error('Error en TarjetaService@buscarEmpleado: ' . $e->getMessage());
+            Log::error('Error en TarjetaService@buscarEmpleado: '.$e->getMessage());
         }
 
         return null;
     }
 
-
-
-    
     /**
      * NUEVA FUNCIÓN PARA SEMÁFORO DINÁMICO:
      * Verifica si existe algún bloqueo (F o RG) en un mes y año específicos.
@@ -71,21 +68,20 @@ class TarjetaService
         try {
             // Reutilizamos la lógica de obtención de datos que ya funciona
             $datos = $this->obtenerDatosPorMes($empleadoId, $month, $year);
-            
+
             foreach ($datos['registros'] as $dia) {
                 // Si encontramos una sola falta o retardo grave, el mes se bloquea
                 if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
-                    return true; 
+                    return true;
                 }
             }
         } catch (Exception $e) {
-            Log::error("Error verificando faltas en $month-$year: " . $e->getMessage());
+            Log::error("Error verificando faltas en $month-$year: ".$e->getMessage());
         }
+
         return false;
     }
 
-
-    
     /**
      * NUEVA FUNCIÓN PARA LISTADO INDIVIDUAL:
      * Devuelve solo los números de día que tienen falta en un mes/año.
@@ -95,17 +91,19 @@ class TarjetaService
         try {
             $datos = $this->obtenerDatosPorMes($empleadoId, $month, $year);
             $diasConFalta = [];
-            
+
             foreach ($datos['registros'] as $dia) {
                 if ($dia['calificacion'] === 'F' || $dia['calificacion'] === 'RG') {
                     $diasConFalta[] = Carbon::parse($dia['dia'])->day;
                 }
             }
+
             return $diasConFalta;
         } catch (Exception $e) {
             return [];
         }
     }
+
     /**
      * Calcula el resumen de faltas Y RETARDOS GRAVES anual.
      * Esto alimenta los semáforos rojos/verdes.
@@ -138,12 +136,11 @@ class TarjetaService
                 }
             }
         } catch (Exception $e) {
-            Log::error('Error calculando resumen anual: ' . $e->getMessage());
+            Log::error('Error calculando resumen anual: '.$e->getMessage());
         }
 
         return $resumenFaltas;
     }
-
 
     private function procesarHuellas($reg)
     {
@@ -152,8 +149,6 @@ class TarjetaService
         $reg->clock_out = null;
 
         $fechaStr = Carbon::parse($reg->att_date)->format('Y-m-d');
-
-
 
         // if (empty($reg->all_punches) || empty($reg->in_time)) {
         //     error_log("DÍA SALTADO: No hay huellas o no tiene horario asignado.");
@@ -169,13 +164,11 @@ class TarjetaService
 
         // --- B. DEFINIR HORARIOS OBJETIVO ---
         $duracionMinutos = $reg->duration ?? 480;
-        $targetIn = Carbon::parse($fechaStr . ' ' . $reg->in_time);
+        $targetIn = Carbon::parse($fechaStr.' '.$reg->in_time);
         $targetOut = (clone $targetIn)->addMinutes($duracionMinutos);
 
-
-
         // --- C. PROCESAR Y AJUSTAR TODAS LAS HUELLAS ---
-        $punchesRaw = array_filter(explode(',', $reg->all_punches), fn($p) => !empty(trim($p)));
+        $punchesRaw = array_filter(explode(',', $reg->all_punches), fn ($p) => ! empty(trim($p)));
         $punchesAjustados = [];
         $lastAdded = null;
 
@@ -187,7 +180,7 @@ class TarjetaService
                     $p->addHours($horasAjuste);
                 }
 
-                if (!$lastAdded || abs($p->diffInSeconds($lastAdded)) > 30) {
+                if (! $lastAdded || abs($p->diffInSeconds($lastAdded)) > 30) {
                     $punchesAjustados[] = $p;
                     $lastAdded = $p;
                 }
@@ -196,8 +189,6 @@ class TarjetaService
             }
         }
 
-
-
         // --- D. BUSCAR CHECADAS ÓPTIMAS (ENTRADA Y SALIDA EN UN SOLO LOOP) ---
         $bestIn = null;
         $bestOut = null;
@@ -205,27 +196,22 @@ class TarjetaService
         $minDistOut = 999999;
         $umbral = 30;
 
-
         foreach ($punchesAjustados as $punchStr) {
-             $punch = Carbon::parse($punchStr);
+            $punch = Carbon::parse($punchStr);
             $distIn = abs($targetIn->diffInMinutes($punch, false));
             $outDiff = $targetOut->diffInMinutes($punch, false);
             $distOut = abs($outDiff);
-
 
             if ($distIn < $distOut && $distIn <= $umbral) {
                 $isNewOnTime = $punch->lessThanOrEqualTo($targetIn);
                 $isCurrentOnTime = $bestIn ? $bestIn->lessThanOrEqualTo($targetIn) : false;
 
                 // Prioridad: A tiempo > Retardo (dentro de los 30 min)
-                if (!$bestIn || ($isNewOnTime && !$isCurrentOnTime) || ($isNewOnTime === $isCurrentOnTime && $distIn < $minDistIn)) {
+                if (! $bestIn || ($isNewOnTime && ! $isCurrentOnTime) || ($isNewOnTime === $isCurrentOnTime && $distIn < $minDistIn)) {
                     $minDistIn = $distIn;
                     $bestIn = $punch;
                 }
-            } 
-            
-            
-            else {
+            } else {
                 // Más cercano a hora de salida
                 // if ($distOut < $minDistOut) {
                 //     $minDistOut = $distOut;
@@ -234,7 +220,7 @@ class TarjetaService
                 // --- AGREGADO: Lógica de validación para salida ---
 
                 // 2. CANDIDATO A SALIDA (Lógica basada en minutos de diferencia)
-                
+
                 // ALTERNATIVA: En lugar de greaterThanOrEqualTo, usamos la diferencia en minutos.
                 // Si la diferencia es 0 o positiva, significa que checó a tiempo o después.
                 $isPunchValid = $outDiff >= 0;
@@ -249,19 +235,18 @@ class TarjetaService
                 // REGLA DE ORO: Reemplazamos la salida guardada si...
                 if (
                     // A. No teníamos ninguna salida guardada todavía
-                    !$bestOut || 
+                    ! $bestOut ||
                     // B. El nuevo registro es VÁLIDO y el que teníamos era TEMPRANO (Prioridad de cumplimiento)
-                    ($isPunchValid && !$isCurrentBestValid) ||
+                    ($isPunchValid && ! $isCurrentBestValid) ||
                     // C. Ambos son del mismo tipo (los dos válidos o los dos tempranos) pero el nuevo está más cerca
                     ($isPunchValid === $isCurrentBestValid && $distOut < $minDistOut)
                 ) {
                     $minDistOut = $distOut;
                     $bestOut = $punch;
                 }
-                
+
             }
         }
-
 
         // --- E. REGLA DE limite de tiempo en minutos ---
         $umbral = 30;
@@ -275,18 +260,15 @@ class TarjetaService
         }
 
         if ($bestOut && $minDistOut <= $umbral) {
-            
-            
+
             if ($bestOut->lessThan($targetOut)) {
-                $reg->clock_out = null; 
+                $reg->clock_out = null;
             } else {
                 $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
             }
         }
-        
 
     }
-
 
     /**
      * Obtiene el detalle completo mensual.
@@ -321,7 +303,7 @@ class TarjetaService
 
             // AGREGADO: Usamos off_time que viene del Repositorio (Garantiza horario aunque sea descanso el día 1)
             if (isset($registrosRaw[0]) && $registrosRaw[0]->in_time && $registrosRaw[0]->off_time) {
-                $horarioTexto = $registrosRaw[0]->in_time . ' A ' . $registrosRaw[0]->off_time;
+                $horarioTexto = $registrosRaw[0]->in_time.' A '.$registrosRaw[0]->off_time;
             }
 
             return [
@@ -330,7 +312,7 @@ class TarjetaService
                 'registros' => $registrosProcesados,
             ];
         } catch (Exception $e) {
-            Log::error('Error en TarjetaService@obtenerDatosPorMes: ' . $e->getMessage());
+            Log::error('Error en TarjetaService@obtenerDatosPorMes: '.$e->getMessage());
             throw $e;
         }
     }
@@ -341,8 +323,8 @@ class TarjetaService
      */
     private function transformarRegistros($registros, $holidays, $startDate, $endDate, $reglas)
     {
-        $retardosLevesAcumulados = 0; 
-        $limiteConversion = $reglas['conteo_rl_para_rg']; 
+        $retardosLevesAcumulados = 0;
+        $limiteConversion = $reglas['conteo_rl_para_rg'];
         $resultados = [];
 
         foreach ($registros as $reg) {
@@ -352,7 +334,6 @@ class TarjetaService
             $this->procesarHuellas($reg);
             // AGREGADO: PRIORIDAD 1: Si el SQL ya encontró una incidencia para este día, la usamos.
             // Esto resuelve el problema de Sergio (ID 14154) donde se encimaban motivos.
-
 
             $holidayDia = null;
             foreach ($holidays as $hol) {
@@ -364,12 +345,11 @@ class TarjetaService
 
             // --- REGLAS ---
 
-
             if ($date->isWeekend()) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'DESC', '');
+
                 continue;
             }
-
 
             // AGREGADO: Lógica de descanso si no hay huellas y es festivo
             // AGREGADO: Si el SQL trae motivo, es Justificado ('J')
@@ -378,33 +358,36 @@ class TarjetaService
             //     continue;
             // }
 
-            if (!$reg->clock_in && !$reg->clock_out && $holidayDia && ($reg->enable_holiday ?? false)) {
+            if (! $reg->clock_in && ! $reg->clock_out && $holidayDia && ($reg->enable_holiday ?? false)) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'J', $holidayDia->alias);
+
                 continue;
             }
 
-            if (!$reg->clock_in && !$reg->clock_out && !$reg->timetable_name) {
+            if (! $reg->clock_in && ! $reg->clock_out && ! $reg->timetable_name) {
                 $resultados[] = $this->crearFila($fechaActualStr, null, 'F', 'Sin horario asignado');
+
                 continue;
             }
-            
+
             $incidenciaAMostrar = ! empty(trim($reg->nombre_permiso ?? '')) ? $reg->motivo_permiso : null;
             if ($incidenciaAMostrar) {
                 if ($reg->clock_in) {
-                    $entradaOficialRef = Carbon::parse($reg->att_date . ' ' . $reg->in_time);
+                    $entradaOficialRef = Carbon::parse($reg->att_date.' '.$reg->in_time);
                     $entradaRealRef = Carbon::parse($reg->clock_in);
-                    if ($entradaOficialRef->diffInMinutes($entradaRealRef, false) > $reglas['limite_retardo_leve']) 
-                        {
+                    if ($entradaOficialRef->diffInMinutes($entradaRealRef, false) > $reglas['limite_retardo_leve']) {
                         $reg->clock_in = null;
                     }
                 }
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
+
                 continue;
             }
 
             // AGREGADO: Si no hay entrada del reloj (y no hubo motivo arriba), es Falta
             if (! $reg->clock_in || ! $reg->clock_out) {
                 $resultados[] = $this->crearFila($fechaActualStr, $reg, 'F', '');
+
                 continue;
             }
 
@@ -413,14 +396,14 @@ class TarjetaService
 
             if ($calificacion === 'RL') {
                 $retardosLevesAcumulados++;
-                
+
                 // Si llegamos al cuarto retardo leve
                 if ($retardosLevesAcumulados >= $limiteConversion) {
                     $calificacion = 'RG'; // Se transforma en Grave
                     $retardosLevesAcumulados = 0; // Reiniciamos el ciclo
-                    
-                } 
-            } 
+
+                }
+            }
 
             $resultados[] = $this->crearFila($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
         }
@@ -443,54 +426,53 @@ class TarjetaService
     {
         // RESTAURADO: Lógica basada en check_in como el original
         $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
-        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
+        $horaEntradaEstandar = Carbon::parse($fechaCheckIn.' '.$registro->in_time);
         $horaRealEntrada = Carbon::parse($registro->clock_in);
         $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
 
-
         $tolerancia = $reglas['tolerancia_entrada'];
         $limiteLeve = $reglas['limite_retardo_leve'];
-        
-        
-
-        
 
         if ($diferenciaMinutos <= $tolerancia) {
             return 'OK';
         }
 
         // --- AGREGADO: CLASIFICACIÓN DIRECTA SIN LÍMITE DE FALTA POR TIEMPO ---
-        if ($diferenciaMinutos > $tolerancia && $diferenciaMinutos <= $limiteLeve ) {
+        if ($diferenciaMinutos > $tolerancia && $diferenciaMinutos <= $limiteLeve) {
             return 'RL';
         }
+
         return 'RG';
     }
 
     public function procesarImportacionRegistros($rows)
     {
         $resultados = [];
-        
-        // 1. OBTENER UN RELOJ FÍSICO REAL PARA CLONAR SU IDENTIDAD
-        // Buscamos cualquier reloj físico que esté registrado en la BD de BioTime.
+
+        // 1. OBTENER UN RELOJ FÍSICO REAL PARA CLONAR SU IDENTIDAD COMPLETA
+        // Ahora también traemos el 'id' (terminal_id) que es vital para BioTime
         $relojReal = DB::connection('pgsql_biotime')
             ->table('iclock_terminal')
-            ->select('sn', 'alias')
+            ->select('id', 'sn', 'alias')
             ->first();
 
-        // Si por alguna razón no tienes relojes dados de alta, usamos una máscara genérica de ZKTeco.
-        $terminal_sn    = $relojReal ? $relojReal->sn : 'DS7X211234567';
-        $terminal_alias = $relojReal ? $relojReal->alias : 'Salida 1';
+        // Si por alguna razón no tienes relojes dados de alta, usamos valores genéricos.
+        $terminal_id = $relojReal ? $relojReal->id : 1;
+        $terminal_sn = $relojReal ? $relojReal->sn : 'DS7X211234567';
+        $terminal_alias = $relojReal ? $relojReal->alias : 'Salida 1 (Importado)';
 
         foreach ($rows as $row) {
             // Ignorar filas vacías o sin nómina
-            if (!isset($row[0]) || trim($row[0]) === '') continue;
+            if (! isset($row[0]) || trim($row[0]) === '') {
+                continue;
+            }
 
-            $nomina     = trim((string)$row[0]);
-            $nombre     = isset($row[1]) ? trim((string)$row[1]) : '';
-            $entradaStr = isset($row[2]) ? trim((string)$row[2]) : '';
-            $salidaStr  = isset($row[3]) ? trim((string)$row[3]) : '';
-            
-            $status  = 'ERROR';
+            $nomina = trim((string) $row[0]);
+            $nombre = isset($row[1]) ? trim((string) $row[1]) : '';
+            $entradaStr = isset($row[2]) ? trim((string) $row[2]) : '';
+            $salidaStr = isset($row[3]) ? trim((string) $row[3]) : '';
+
+            $status = 'ERROR';
             $mensaje = '';
 
             try {
@@ -500,18 +482,27 @@ class TarjetaService
                     ->where('emp_code', $nomina)
                     ->first();
 
-                if (!$emp) {
-                    throw new Exception("El número de empleado no existe en BioTime.");
+                if (! $emp) {
+                    throw new Exception('El número de empleado no existe en BioTime.');
                 }
 
                 $insertedCount = 0;
 
                 // 2. Procesar ENTRADA (Si la celda no está vacía)
-                if (!empty($entradaStr)) {
+                if (! empty($entradaStr)) {
                     try {
                         $entrada = Carbon::parse($entradaStr);
+
+                        // --- REGLA INVERSA DE VERANO ---
+                        // Si la fecha cae en horario de verano, le RESTAMOS 1 hora antes de guardarla.
+                        $inicioPrimavera = Carbon::parse("first sunday of april {$entrada->year}");
+                        $finOtono = Carbon::parse("last sunday of october {$entrada->year}");
+                        if ($entrada->greaterThanOrEqualTo($inicioPrimavera) && $entrada->lessThan($finOtono)) {
+                            $entrada->subHour();
+                        }
+
                         $horaEntradaFormat = $entrada->format('Y-m-d H:i:s');
-                        
+
                         // Protección Anti-Duplicados
                         $existsIn = DB::connection('pgsql_biotime')
                             ->table('iclock_transaction')
@@ -519,30 +510,45 @@ class TarjetaService
                             ->where('punch_time', $horaEntradaFormat)
                             ->exists();
 
-                        if (!$existsIn) {
+                        if (! $existsIn) {
                             DB::connection('pgsql_biotime')->table('iclock_transaction')->insert([
-                                'emp_id'         => $emp->id,
-                                'emp_code'       => $emp->emp_code,
-                                'punch_time'     => $horaEntradaFormat,
-                                'punch_state'    => '0', // 0 = Entrada
-                                'verify_type'    => 1,   // 1 = Huella Digital
-                                'terminal_sn'    => $terminal_sn,    // CLONACIÓN: Usar número de serie del reloj real
-                                'terminal_alias' => $terminal_alias, // CLONACIÓN: Usar nombre del reloj real
-                                'upload_time'    => now()
+                                'emp_id' => $emp->id,
+                                'emp_code' => $emp->emp_code,
+                                'punch_time' => $horaEntradaFormat,
+                                'punch_state' => '0', // 0 = Entrada
+                                'verify_type' => 1,   // 1 = Huella Digital
+                                'terminal_sn' => $terminal_sn,
+                                'terminal_alias' => $terminal_alias,
+                                'upload_time' => now(),
+                                'terminal_id' => $terminal_id,
+                                'is_attendance' => 1,
+                                'source' => 1,
+                                'purpose' => 9,
+                                'work_code' => '0',
+                                'is_mask' => 255,
+                                'temperature' => 0.0,
                             ]);
                             $insertedCount++;
                         }
                     } catch (Exception $e) {
-                        throw new Exception("Formato de Entrada inválido (Use AAAA-MM-DD HH:MM).");
+                        throw new Exception('Formato de Entrada inválido (Use AAAA-MM-DD HH:MM).');
                     }
                 }
 
                 // 3. Procesar SALIDA (Si la celda no está vacía)
-                if (!empty($salidaStr)) {
+                if (! empty($salidaStr)) {
                     try {
                         $salida = Carbon::parse($salidaStr);
+
+                        // --- REGLA INVERSA DE VERANO ---
+                        $inicioPrimavera = Carbon::parse("first sunday of april {$salida->year}");
+                        $finOtono = Carbon::parse("last sunday of october {$salida->year}");
+                        if ($salida->greaterThanOrEqualTo($inicioPrimavera) && $salida->lessThan($finOtono)) {
+                            $salida->subHour();
+                        }
+
                         $horaSalidaFormat = $salida->format('Y-m-d H:i:s');
-                        
+
                         // Protección Anti-Duplicados
                         $existsOut = DB::connection('pgsql_biotime')
                             ->table('iclock_transaction')
@@ -550,32 +556,39 @@ class TarjetaService
                             ->where('punch_time', $horaSalidaFormat)
                             ->exists();
 
-                        if (!$existsOut) {
+                        if (! $existsOut) {
                             DB::connection('pgsql_biotime')->table('iclock_transaction')->insert([
-                                'emp_id'         => $emp->id,
-                                'emp_code'       => $emp->emp_code,
-                                'punch_time'     => $horaSalidaFormat,
-                                'punch_state'    => '1', // 1 = Salida
-                                'verify_type'    => 1,   // 1 = Huella Digital
-                                'terminal_sn'    => $terminal_sn,    // CLONACIÓN
-                                'terminal_alias' => $terminal_alias, // CLONACIÓN
-                                'upload_time'    => now()
+                                'emp_id' => $emp->id,
+                                'emp_code' => $emp->emp_code,
+                                'punch_time' => $horaSalidaFormat,
+                                'punch_state' => '1', // 1 = Salida
+                                'verify_type' => 1,   // 1 = Huella Digital
+                                'terminal_sn' => $terminal_sn,
+                                'terminal_alias' => $terminal_alias,
+                                'upload_time' => now(),
+                                'terminal_id' => $terminal_id,
+                                'is_attendance' => 1,
+                                'source' => 1,
+                                'purpose' => 9,
+                                'work_code' => '0',
+                                'is_mask' => 255,
+                                'temperature' => 0.0,
                             ]);
                             $insertedCount++;
                         }
                     } catch (Exception $e) {
-                        throw new Exception("Formato de Salida inválido (Use AAAA-MM-DD HH:MM).");
+                        throw new Exception('Formato de Salida inválido (Use AAAA-MM-DD HH:MM).');
                     }
                 }
 
                 if (empty($entradaStr) && empty($salidaStr)) {
-                    throw new Exception("Debe proporcionar al menos una Entrada o una Salida.");
+                    throw new Exception('Debe proporcionar al menos una Entrada o una Salida.');
                 }
 
                 $status = 'INGRESADO';
-                $mensaje = $insertedCount > 0 
-                    ? "Se guardaron correctamente los $insertedCount registros en el reloj: $terminal_alias." 
-                    : "Los registros ya existían (Omitido).";
+                $mensaje = $insertedCount > 0
+                    ? "Se guardaron correctamente los $insertedCount registros en el reloj: $terminal_alias."
+                    : 'Los registros ya existían (Omitido).';
 
             } catch (Exception $e) {
                 $status = 'NO INGRESADO';
@@ -589,12 +602,10 @@ class TarjetaService
                 $entradaStr,
                 $salidaStr,
                 $status,
-                $mensaje
+                $mensaje,
             ];
         }
 
         return $resultados;
     }
 }
-
-

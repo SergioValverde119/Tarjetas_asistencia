@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import * as kardex from '@/routes/kardex'; 
+import AppLayout from '@/layouts/app/AppSidebarLayout.vue';
 import { 
     UserCircleIcon, 
     BriefcaseIcon,
@@ -18,6 +19,7 @@ import {
     CalendarIcon,
     ChatBubbleLeftRightIcon 
 } from '@heroicons/vue/24/outline';
+import { home } from '@/routes';
 
 const props = defineProps({
     empleado: Object,
@@ -221,9 +223,16 @@ const getBlockColor = (incidenciaObj) => {
     }
 };
 
+const breadcrumbs = [
+    { title: 'Bienvenida', href: home().url },
+    { title: 'kardex', href: '#'}
+];
+
 </script>
 
 <template>
+  
+        <AppLayout :breadcrumbs="breadcrumbs">
     <div>
         <Head :title="`${empleado.first_name} ${empleado.last_name}`" />
 
@@ -601,6 +610,7 @@ const getBlockColor = (incidenciaObj) => {
                                     <p class="font-medium text-sm">Este empleado no tiene un turno asignado vigente.</p>
                                 </div>
                             </div>
+                            
 
                         </div>
                     </div>
@@ -609,4 +619,5 @@ const getBlockColor = (incidenciaObj) => {
             </div>
         </div>
     </div>
+</AppLayout>
 </template>

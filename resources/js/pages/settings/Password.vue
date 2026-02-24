@@ -31,8 +31,8 @@ const currentPasswordInput = ref<HTMLInputElement | null>(null);
         <SettingsLayout>
             <div class="space-y-6">
                 <HeadingSmall
-                    title="Update password"
-                    description="Ensure your account is using a long, random password to stay secure"
+                    title="Actualizar contraseña"
+                    description="Asegúrate de que tu cuenta esté usando una contraseña larga y aleatoria para mantenerla segura"
                 />
 
                 <Form
@@ -50,7 +50,7 @@ const currentPasswordInput = ref<HTMLInputElement | null>(null);
                     v-slot="{ errors, processing, recentlySuccessful }"
                 >
                     <div class="grid gap-2">
-                        <Label for="current_password">Current password</Label>
+                        <Label for="current_password">Contraseña actual</Label>
                         <Input
                             id="current_password"
                             ref="currentPasswordInput"
@@ -64,7 +64,7 @@ const currentPasswordInput = ref<HTMLInputElement | null>(null);
                     </div>
 
                     <div class="grid gap-2">
-                        <Label for="password">New password</Label>
+                        <Label for="password">Nueva contraseña</Label>
                         <Input
                             id="password"
                             ref="passwordInput"
@@ -79,7 +79,7 @@ const currentPasswordInput = ref<HTMLInputElement | null>(null);
 
                     <div class="grid gap-2">
                         <Label for="password_confirmation"
-                            >Confirm password</Label
+                            >Confirmar contraseña</Label
                         >
                         <Input
                             id="password_confirmation"
@@ -96,7 +96,7 @@ const currentPasswordInput = ref<HTMLInputElement | null>(null);
                         <Button
                             :disabled="processing"
                             data-test="update-password-button"
-                            >Save password</Button
+                            >Guardar contraseña</Button
                         >
 
                         <Transition
@@ -109,7 +109,7 @@ const currentPasswordInput = ref<HTMLInputElement | null>(null);
                                 v-show="recentlySuccessful"
                                 class="text-sm text-neutral-600"
                             >
-                                Saved.
+                                Contraseña guardada.
                             </p>
                         </Transition>
                     </div>
