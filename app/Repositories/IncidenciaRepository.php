@@ -87,16 +87,22 @@ class IncidenciaRepository
 
     public function findOverlap($employeeId, $start, $end, $ignoreId = null)
     {
-        $query = DB::connection('pgsql_biotime')
+        $startDay = \Carbon\Carbon::parse($start)->startOfDay()->format('Y-m-d H:i:s');
+        $endDay = \Carbon\Carbon::parse($end)->endOfDay()->format('Y-m-d H:i:s');
+
+        $query = \Illuminate\Support\Facades\DB::connection('pgsql_biotime')
             ->table('att_leave')
             ->where('employee_id', $employeeId)
-            ->where(function($q) use ($start, $end) {
-                // Lógica de traslape: (InicioA < FinB) AND (FinA > InicioB)
-                $q->where('start_time', '<', $end)
-                  ->where('end_time', '>', $start);
+            ->where(function ($q) use ($startDay, $endDay) {
+                // 2. FÓRMULA MATEMÁTICA DE TRASLAPE UNIVERSAL
+                // Una fecha se empalma si: 
+                // El inicio que ya existe en la BD es MENOR O IGUAL al fin de la nueva
+                // Y el fin que ya existe en la BD es MAYOR O IGUAL al inicio de la nueva
+                $q->where('start_time', '<=', $endDay)
+                  ->where('end_time', '>=', $startDay);
             });
 
-        // En caso de estar editando, ignoramos el registro actual
+        // Ignorar el ID actual cuando estamos en modo "Editar"
         if ($ignoreId) {
             $query->where('abstractexception_ptr_id', '!=', $ignoreId);
         }
