@@ -30,8 +30,10 @@ class IncidenciaController extends Controller
             $search = $request->input('search');
             $dateApply = $request->input('date_apply');       
             $dateIncidence = $request->input('date_incidence'); 
-
-            $incidencias = $this->repository->getIncidencias($search, $dateApply, $dateIncidence);
+            $dateIncidence = $request->input('date_incidence'); // Búsqueda por día exacto
+            $dateStart = $request->input('date_start');         // Búsqueda por rango (Desde)
+            $dateEnd = $request->input('date_end'); 
+            $incidencias = $this->repository->getIncidencias($search, $dateApply, $dateIncidence, $dateStart, $dateEnd);
             $categorias = $this->repository->getLeaveCategories();
 
             return Inertia::render('Incidencias/Index', [
@@ -40,7 +42,9 @@ class IncidenciaController extends Controller
                 'filters' => [
                     'search' => $search,
                     'date_apply' => $dateApply,
-                    'date_incidence' => $dateIncidence
+                    'date_incidence' => $dateIncidence,
+                    'date_start' => $dateStart,
+                    'date_end' => $dateEnd
                 ]
             ]);
         } catch (Exception $e) {
