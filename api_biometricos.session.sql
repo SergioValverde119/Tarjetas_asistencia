@@ -130,3 +130,27 @@ WHERE emp_id = (SELECT id FROM public.personnel_employee WHERE emp_code = '20617
 -- Si el número de filas borradas es el esperado (aprox. 91), ejecuta COMMIT.
 -- ----------------------------------------------------------------------------
 COMMIT;
+
+
+
+-- Consulta para obtener TODAS las columnas de una checada en BioTime
+
+SELECT 
+    e.emp_code AS "Numero_Empleado",
+    e.first_name AS "Nombre",
+    e.last_name AS "Apellido",
+    
+    -- El asterisco trae ABSOLUTAMENTE TODAS las columnas originales de la tabla iclock_transaction
+    t.* FROM public.iclock_transaction t
+LEFT JOIN public.personnel_employee e ON t.emp_id = e.id
+
+WHERE 
+    -- 1. Cambia '12345' por el número de nómina/empleado que buscas
+    e.emp_code::text = '206173' 
+    
+    -- 2. Cambia las fechas por el día que quieres consultar (Formato AAAA-MM-DD)
+    AND t.punch_time >= '2025-11-11 00:00:00' 
+    AND t.punch_time <= '2025-11-11 23:59:59'
+
+-- Ordenamos para que la primera checada del día salga arriba
+ORDER BY t.punch_time ASC;
