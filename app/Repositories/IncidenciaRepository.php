@@ -85,20 +85,24 @@ class IncidenciaRepository
         return $query->orderBy('first_name', 'asc')->get();
     }
 
-    public function findOverlap($employeeId, $start, $end, $ignoreId = null)
+    public function findOverlap($employee_id, $start_time, $end_time, $ignore_id = null)
     {
-        $query = DB::connection('pgsql_biotime')
+        // 1. Forzamos las fechas para que cubran todo el día (desde 00:00:00 hasta 23:59:59)
+        $startDay = \Carbon\Carbon::parse($start_time)->startOfDay()->format('Y-m-d H:i:s');
+        $endDay   = \Carbon\Carbon::parse($end_time)->endOfDay()->format('Y-m-d H:i:s');
+
+        $query = \Illuminate\Support\Facades\DB::connection('pgsql_biotime')
             ->table('att_leave')
-            ->where('employee_id', $employeeId)
-            ->where(function($q) use ($start, $end) {
-                // Lógica de traslape: (InicioA < FinB) AND (FinA > InicioB)
-                $q->where('start_time', '<', $end)
-                  ->where('end_time', '>', $start);
+            ->where('employee_id', $employee_id)
+            ->where(function ($q) use ($startDay, $endDay) {
+                // 2. FÓRMULA DE TRASLAPE UNIVERSAL POR DÍA
+                $q->where('start_time', '<=', $endDay)
+                  ->where('end_time', '>=', $startDay);
             });
 
-        // En caso de estar editando, ignoramos el registro actual
-        if ($ignoreId) {
-            $query->where('abstractexception_ptr_id', '!=', $ignoreId);
+        // Ignorar el ID actual cuando estamos en modo "Editar"
+        if ($ignore_id) {
+            $query->where('abstractexception_ptr_id', '!=', $ignore_id);
         }
 
         return $query->first();

@@ -470,16 +470,17 @@ class TarjetaService
     {
         $resultados = [];
         
-        // 1. OBTENER UN RELOJ FÍSICO REAL PARA CLONAR SU IDENTIDAD
-        // Buscamos cualquier reloj físico que esté registrado en la BD de BioTime.
+        // 1. OBTENER UN RELOJ FÍSICO REAL PARA CLONAR SU IDENTIDAD COMPLETA
+        // Ahora también traemos el 'id' (terminal_id) que es vital para BioTime
         $relojReal = DB::connection('pgsql_biotime')
             ->table('iclock_terminal')
-            ->select('sn', 'alias')
+            ->select('id', 'sn', 'alias')
             ->first();
 
-        // Si por alguna razón no tienes relojes dados de alta, usamos una máscara genérica de ZKTeco.
+        // Si por alguna razón no tienes relojes dados de alta, usamos valores genéricos.
+        $terminal_id    = $relojReal ? $relojReal->id : 1; 
         $terminal_sn    = $relojReal ? $relojReal->sn : 'DS7X211234567';
-        $terminal_alias = $relojReal ? $relojReal->alias : 'Salida 1';
+        $terminal_alias = $relojReal ? $relojReal->alias : 'Salida 1 (Importado)';
 
         foreach ($rows as $row) {
             // Ignorar filas vacías o sin nómina
@@ -510,13 +511,25 @@ class TarjetaService
                 if (!empty($entradaStr)) {
                     try {
                         $entrada = Carbon::parse($entradaStr);
+                        
+                        // --- REGLA INVERSA DE VERANO ---
+                        // Si la fecha cae en horario de verano, le RESTAMOS 1 hora antes de guardarla.
+                        $inicioPrimavera = Carbon::parse("first sunday of april {$entrada->year}");
+                        $finOtono = Carbon::parse("last sunday of october {$entrada->year}");
+                        if ($entrada->greaterThanOrEqualTo($inicioPrimavera) && $entrada->lessThan($finOtono)) {
+                            $entrada->subHour();
+                        }
+                        
                         $horaEntradaFormat = $entrada->format('Y-m-d H:i:s');
                         
-                        // Protección Anti-Duplicados
+                        // --- PROTECCIÓN ANTI-DUPLICADOS (Burbuja de 5 minutos) ---
+                        $rangoInicio = $entrada->copy()->subMinutes(5)->format('Y-m-d H:i:s');
+                        $rangoFin = $entrada->copy()->addMinutes(5)->format('Y-m-d H:i:s');
+                        
                         $existsIn = DB::connection('pgsql_biotime')
                             ->table('iclock_transaction')
                             ->where('emp_id', $emp->id)
-                            ->where('punch_time', $horaEntradaFormat)
+                            ->whereBetween('punch_time', [$rangoInicio, $rangoFin])
                             ->exists();
 
                         if (!$existsIn) {
@@ -526,9 +539,16 @@ class TarjetaService
                                 'punch_time'     => $horaEntradaFormat,
                                 'punch_state'    => '0', // 0 = Entrada
                                 'verify_type'    => 1,   // 1 = Huella Digital
-                                'terminal_sn'    => $terminal_sn,    // CLONACIÓN: Usar número de serie del reloj real
-                                'terminal_alias' => $terminal_alias, // CLONACIÓN: Usar nombre del reloj real
-                                'upload_time'    => now()
+                                'terminal_sn'    => $terminal_sn,
+                                'terminal_alias' => $terminal_alias,
+                                'upload_time'    => now(),
+                                'terminal_id'    => $terminal_id,
+                                'is_attendance'  => 1,
+                                'source'         => 1,
+                                'purpose'        => 9,
+                                'work_code'      => '0',
+                                'is_mask'        => 255,
+                                'temperature'    => 0.0
                             ]);
                             $insertedCount++;
                         }
@@ -541,13 +561,24 @@ class TarjetaService
                 if (!empty($salidaStr)) {
                     try {
                         $salida = Carbon::parse($salidaStr);
+                        
+                        // --- REGLA INVERSA DE VERANO ---
+                        $inicioPrimavera = Carbon::parse("first sunday of april {$salida->year}");
+                        $finOtono = Carbon::parse("last sunday of october {$salida->year}");
+                        if ($salida->greaterThanOrEqualTo($inicioPrimavera) && $salida->lessThan($finOtono)) {
+                            $salida->subHour();
+                        }
+                        
                         $horaSalidaFormat = $salida->format('Y-m-d H:i:s');
                         
-                        // Protección Anti-Duplicados
+                        // --- PROTECCIÓN ANTI-DUPLICADOS (Burbuja de 5 minutos) ---
+                        $rangoInicioOut = $salida->copy()->subMinutes(5)->format('Y-m-d H:i:s');
+                        $rangoFinOut = $salida->copy()->addMinutes(5)->format('Y-m-d H:i:s');
+                        
                         $existsOut = DB::connection('pgsql_biotime')
                             ->table('iclock_transaction')
                             ->where('emp_id', $emp->id)
-                            ->where('punch_time', $horaSalidaFormat)
+                            ->whereBetween('punch_time', [$rangoInicioOut, $rangoFinOut])
                             ->exists();
 
                         if (!$existsOut) {
@@ -557,9 +588,16 @@ class TarjetaService
                                 'punch_time'     => $horaSalidaFormat,
                                 'punch_state'    => '1', // 1 = Salida
                                 'verify_type'    => 1,   // 1 = Huella Digital
-                                'terminal_sn'    => $terminal_sn,    // CLONACIÓN
-                                'terminal_alias' => $terminal_alias, // CLONACIÓN
-                                'upload_time'    => now()
+                                'terminal_sn'    => $terminal_sn,
+                                'terminal_alias' => $terminal_alias,
+                                'upload_time'    => now(),
+                                'terminal_id'    => $terminal_id,
+                                'is_attendance'  => 1,
+                                'source'         => 1,
+                                'purpose'        => 9,
+                                'work_code'      => '0',
+                                'is_mask'        => 255,
+                                'temperature'    => 0.0
                             ]);
                             $insertedCount++;
                         }

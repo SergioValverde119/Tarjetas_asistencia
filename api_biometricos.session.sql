@@ -1,54 +1,132 @@
 -- ============================================================================
--- SCRIPT DE CARGA INICIAL PARA REGLAS DE ASISTENCIA
+-- SCRIPT DE BORRADO QUIRÚRGICO (POR LISTA EXACTA)
 -- ============================================================================
--- Propósito: Insertar o actualizar los parámetros de tolerancia y retardos
--- en la tabla 'settings' (Estructura Llave-Valor).
+-- Propósito: Eliminar ÚNICAMENTE los registros específicos importados para 
+-- la empleada María Sonia Hernández Gutiérez (Nómina: 206173).
 -- ============================================================================
 
 BEGIN;
 
--- 1. Tolerancia de Entrada (Minutos de gracia)
-INSERT INTO public.settings (key, value, created_at, updated_at)
-VALUES ('tolerancia_entrada', '10', NOW(), NOW())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-
--- 2. Límite para Retardo Leve (RL)
--- Los minutos que pasan de la tolerancia hasta este valor se consideran leves.
-INSERT INTO public.settings (key, value, created_at, updated_at)
-VALUES ('limite_retardo_leve', '15', NOW(), NOW())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-
--- 3. Límite para Retardo Grave (RG)
--- A partir de qué minuto se empieza a considerar una incidencia mayor.
-INSERT INTO public.settings (key, value, created_at, updated_at)
-VALUES ('limite_retardo_grave', '40', NOW(), NOW())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-
--- 4. REGLA DE ORO: 4 Retardos Leves = 1 Retardo Grave
--- Esta es la variable que el AsistenciaService leerá para la conversión.
-INSERT INTO public.settings (key, value, created_at, updated_at)
-VALUES ('conteo_rl_para_rg', '4', NOW(), NOW())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
-
--- 5. Minutos para Falta Automática
--- Tiempo máximo permitido de retardo antes de marcar falta total.
-INSERT INTO public.settings (key, value, created_at, updated_at)
-VALUES ('minutos_falta_automatica', '41', NOW(), NOW())
-ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+-- ----------------------------------------------------------------------------
+-- PASO 1: VERIFICACIÓN (Recomendado)
+-- Ejecuta este bloque primero para ver la lista exacta de lo que se va a borrar.
+-- Nota: Usamos TO_CHAR para ignorar los segundos y asegurar que coincida con tu Excel.
+-- ----------------------------------------------------------------------------
+SELECT t.id, e.emp_code, e.first_name, t.punch_time, t.terminal_alias 
+FROM public.iclock_transaction t
+JOIN public.personnel_employee e ON t.emp_id = e.id
+WHERE e.emp_code = '206173'
+  AND TO_CHAR(t.punch_time, 'YYYY-MM-DD HH24:MI') IN (
+    '2025-07-07 09:30',
+    '2025-07-10 09:40',
+    '2025-07-15 09:20',
+    '2025-07-17 09:33',
+    '2025-07-18 09:35',
+    '2025-07-21 09:25',
+    '2025-07-31 09:37', '2025-07-31 16:35',
+    '2025-08-04 09:37',
+    '2025-08-07 09:30',
+    '2025-08-11 09:27',
+    '2025-08-12 09:25',
+    '2025-08-13 09:35',
+    '2025-08-15 09:39',
+    '2025-08-20 09:33', 
+    '2025-08-25 09:25', '2025-08-25 16:39',
+    '2025-08-28 09:30',
+    '2025-08-29 09:40',
+    '2025-09-01 09:31', '2025-09-01 16:40',
+    '2025-09-08 09:20', '2025-09-08 16:30',
+    '2025-09-10 09:33',
+    '2025-09-11 09:27',
+    '2025-09-12 09:25',
+    '2025-09-15 16:40',
+    '2025-09-19 09:23', '2025-09-19 16:31', 
+    '2025-09-22 09:38',
+    '2025-09-25 09:36',
+    '2025-09-26 09:32', '2025-09-26 16:30',
+    '2025-09-30 09:33',
+    '2025-10-01 09:27',
+    '2025-10-03 09:39', '2025-10-03 16:33',
+    '2025-10-07 09:32',
+    '2025-10-09 09:21',
+    '2025-10-10 09:31', '2025-10-10 16:35',
+    '2025-10-14 09:20',
+    '2025-10-15 09:37',
+    '2025-10-17 09:34', '2025-10-17 16:34',
+    '2025-10-20 16:40',
+    '2025-10-21 09:37',
+    '2025-10-22 09:27',
+    '2025-10-23 09:39',
+    '2025-10-24 09:33', '2025-10-24 16:33',
+    '2025-10-27 09:26',
+    '2025-10-28 09:31',
+    '2025-10-30 09:27', '2025-10-30 16:40',
+    '2025-11-04 09:33',
+    '2025-11-05 09:40',
+    '2025-11-07 09:27', '2025-11-07 16:41',
+    '2025-11-11 09:20', '2025-11-11 16:35',
+    '2025-11-12 09:37',
+    '2025-11-14 09:39', '2025-11-14 16:45',
+    '2025-11-19 09:22',
+    '2025-11-20 09:22',
+    '2025-11-21 09:25', '2025-11-21 16:40',
+    '2025-11-24 09:35',
+    '2025-11-25 09:25',
+    '2025-11-26 09:30',
+    '2025-11-27 09:28',
+    '2025-11-28 09:32', '2025-11-28 16:33',
+    '2025-12-01 09:20', '2025-12-01 16:45',
+    '2025-12-02 09:30',
+    '2025-12-03 09:31', '2025-12-03 16:40',
+    '2025-12-04 09:37',
+    '2025-12-05 09:27',
+    '2025-12-09 09:32', '2025-12-09 16:47',
+    '2025-12-11 09:22',
+    '2025-12-15 09:30', '2025-12-15 16:34', 
+    '2025-12-16 09:39', '2025-12-15 16:43', 
+    '2025-12-17 09:35', '2025-12-17 16:30',
+    '2025-12-18 09:20',
+    '2025-12-19 09:35', '2025-12-19 16:40'
+  )
+ORDER BY t.punch_time ASC;
 
 
 -- ----------------------------------------------------------------------------
--- VERIFICACIÓN FINAL: Consultar cómo quedaron los valores
+-- PASO 2: EL BORRADO DEFINITIVO
+-- Ejecuta este bloque para borrar la información.
 -- ----------------------------------------------------------------------------
-SELECT id, key, value, updated_at 
-FROM public.settings 
-WHERE key IN (
-    'tolerancia_entrada', 
-    'limite_retardo_leve', 
-    'limite_retardo_grave', 
-    'conteo_rl_para_rg', 
-    'minutos_falta_automatica'
-)
-ORDER BY key ASC;
+DELETE FROM public.iclock_transaction 
+WHERE emp_id = (SELECT id FROM public.personnel_employee WHERE emp_code = '206173')
+  AND TO_CHAR(punch_time, 'YYYY-MM-DD HH24:MI') IN (
+    '2025-07-07 09:30', '2025-07-10 09:40', '2025-07-15 09:20', '2025-07-17 09:33',
+    '2025-07-18 09:35', '2025-07-21 09:25', '2025-07-31 09:37', '2025-07-31 16:35',
+    '2025-08-04 09:37', '2025-08-07 09:30', '2025-08-11 09:27', '2025-08-12 09:25',
+    '2025-08-13 09:35', '2025-08-15 09:39', '2025-08-20 09:33', '2025-08-25 09:25', 
+    '2025-08-25 16:39', '2025-08-28 09:30', '2025-08-29 09:40', '2025-09-01 09:31', 
+    '2025-09-01 16:40', '2025-09-08 09:20', '2025-09-08 16:30', '2025-09-10 09:33',
+    '2025-09-11 09:27', '2025-09-12 09:25', '2025-09-15 16:40', '2025-09-19 09:23', 
+    '2025-09-19 16:31', '2025-09-22 09:38', '2025-09-25 09:36', '2025-09-26 09:32', 
+    '2025-09-26 16:30', '2025-09-30 09:33', '2025-10-01 09:27', '2025-10-03 09:39', 
+    '2025-10-03 16:33', '2025-10-07 09:32', '2025-10-09 09:21', '2025-10-10 09:31', 
+    '2025-10-10 16:35', '2025-10-14 09:20', '2025-10-15 09:37', '2025-10-17 09:34', 
+    '2025-10-17 16:34', '2025-10-20 16:40', '2025-10-21 09:37', '2025-10-22 09:27',
+    '2025-10-23 09:39', '2025-10-24 09:33', '2025-10-24 16:33', '2025-10-27 09:26',
+    '2025-10-28 09:31', '2025-10-30 09:27', '2025-10-30 16:40', '2025-11-04 09:33',
+    '2025-11-05 09:40', '2025-11-07 09:27', '2025-11-07 16:41', '2025-11-11 09:20', 
+    '2025-11-11 16:35', '2025-11-12 09:37', '2025-11-14 09:39', '2025-11-14 16:45',
+    '2025-11-19 09:22', '2025-11-20 09:22', '2025-11-21 09:25', '2025-11-21 16:40',
+    '2025-11-24 09:35', '2025-11-25 09:25', '2025-11-26 09:30', '2025-11-27 09:28',
+    '2025-11-28 09:32', '2025-11-28 16:33', '2025-12-01 09:20', '2025-12-01 16:45',
+    '2025-12-02 09:30', '2025-12-03 09:31', '2025-12-03 16:40', '2025-12-04 09:37',
+    '2025-12-05 09:27', '2025-12-09 09:32', '2025-12-09 16:47', '2025-12-11 09:22',
+    '2025-12-15 09:30', '2025-12-15 16:34', '2025-12-16 09:39', '2025-12-15 16:43', 
+    '2025-12-17 09:35', '2025-12-17 16:30', '2025-12-18 09:20', '2025-12-19 09:35', 
+    '2025-12-19 16:40'
+  );
 
+
+-- ----------------------------------------------------------------------------
+-- PASO 3: CONFIRMACIÓN
+-- Si el número de filas borradas es el esperado (aprox. 91), ejecuta COMMIT.
+-- ----------------------------------------------------------------------------
 COMMIT;
