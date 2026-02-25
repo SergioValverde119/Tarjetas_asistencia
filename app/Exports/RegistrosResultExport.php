@@ -42,11 +42,6 @@ class RegistrosResultExport implements FromArray, WithHeadings, ShouldAutoSize, 
         ];
     }
 
-    /**
-     * OBLIGAR A EXCEL A TRATAR TODO COMO TEXTO
-     * Previene que se modifiquen las fechas o se borren los ceros a la izquierda
-     * al abrir el archivo de resultados.
-     */
     public function columnFormats(): array
     {
         return [
@@ -66,7 +61,7 @@ class RegistrosResultExport implements FromArray, WithHeadings, ShouldAutoSize, 
                 'font' => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
                 'fill' => [
                     'fillType' => Fill::FILL_SOLID,
-                    'startColor' => ['argb' => 'FF1E3A8A'] // Azul institucional
+                    'startColor' => ['argb' => 'FF1E3A8A'] 
                 ],
                 'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
             ],
@@ -96,12 +91,30 @@ class RegistrosResultExport implements FromArray, WithHeadings, ShouldAutoSize, 
                     $status = $statusCell->getValue();
 
                     if ($status === 'INGRESADO') {
+                        // VERDE: Éxito Total
                         $sheet->getStyle('E' . $row)->applyFromArray([
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFDCFCE7']],
                             'font' => ['bold' => true, 'color' => ['argb' => 'FF166534']],
                             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                         ]);
+                    } elseif ($status === 'PARCIAL') {
+                        // NARANJA: Guardó uno y saltó el otro (Ya existía)
+                        $sheet->getStyle('E' . $row)->applyFromArray([
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFFFEDD5']],
+                            'font' => ['bold' => true, 'color' => ['argb' => 'FF9A3412']],
+                            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                        ]);
+                        $sheet->getStyle('F' . $row)->getFont()->setColor(new Color('FF9A3412'));
+                    } elseif ($status === 'OMITIDO') {
+                        // GRIS: Los dos ya existían
+                        $sheet->getStyle('E' . $row)->applyFromArray([
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFF3F4F6']],
+                            'font' => ['bold' => true, 'color' => ['argb' => 'FF4B5563']],
+                            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                        ]);
+                        $sheet->getStyle('F' . $row)->getFont()->setColor(new Color('FF4B5563'));
                     } else {
+                        // ROJO: Error
                         $sheet->getStyle('E' . $row)->applyFromArray([
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFFEE2E2']],
                             'font' => ['bold' => true, 'color' => ['argb' => 'FF991B1B']],
