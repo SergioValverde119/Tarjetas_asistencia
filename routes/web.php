@@ -10,7 +10,7 @@ use App\Http\Controllers\EmpleadoController;
 use App\Http\Controllers\TarjetaController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\IncidenciaController; 
-
+use App\Http\Controllers\ChecadasBiometricosController;
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
@@ -23,19 +23,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     
     // Dashboard (Página de inicio por defecto)
     Route::get('/dashboard', function () {
-        return Inertia::render('Formatos/notabuena');
+        return Inertia::render('Welcome');
     })->name('dashboard');
 
     // Módulo: Mi Tarjeta (Personal)
-    Route::get('/registro-nota-buena', function()
-    {
-        return Inertia::render('Formatos/notabuena');
-    })->name('notabuena');
-
-    Route::get('/pdf-maqueta', function()
-    {
-        return Inertia::render('Formatos/pdfmaquetado');
-    })->name('maqueta');
+    
 
     Route::get('/MiTarjeta', [TarjetaController::class, 'indexIndividual'])->name('tarjetas.mi_tarjeta');
     Route::post('/MiTarjeta/descargar', [TarjetaController::class, 'downloadPdf'])->name('tarjetas.download_pdf');
@@ -101,6 +93,10 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     // 3. BITÁCORA DE DESCARGAS (Logs)
     Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
 
+    // Asistencias crudas
+    Route::get('/asistencia-cruda', [ChecadasBiometricosController::class, 'index'])->name('asistencia_cruda.index');
+    Route::get('/asistencia-cruda/buscar', [ChecadasBiometricosController::class, 'buscar'])->name('asistencia_cruda.buscar');
+    Route::get('/asistencia-cruda/exportar', [ChecadasBiometricosController::class, 'exportar'])->name('asistencia_cruda.exportar');
     // 4. KÁRDEX
     Route::prefix('kardex')->name('kardex.')->group(function () {
         Route::get('/', [KardexController::class, 'index'])->name('index');

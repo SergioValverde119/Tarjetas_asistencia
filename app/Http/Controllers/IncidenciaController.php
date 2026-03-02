@@ -141,7 +141,7 @@ class IncidenciaController extends Controller
                 'incidencia' => $incidencia,
                 'employees'  => $this->repository->getActiveEmployees($request->input('search')),
                 'categories' => $this->repository->getLeaveCategories(),
-                'filters'    => $request->only(['search', 'date_apply', 'date_incidence', 'page'])
+                'filters'    => $request->only(['search', 'date_apply', 'date_incidence', 'date_start', 'date_end', 'page'])
             ]);
         } catch (Exception $e) {
             // Cambio solicitado: Log::error reemplazado por error_log

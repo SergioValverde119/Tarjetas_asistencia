@@ -42,7 +42,7 @@ const columnasResumen = [ "Ret. Graves", "Ret. Leves", "Justificadas", "Faltas",
 const breadcrumbs = [
     { title: 'Bienvenida', href: home().url },
     { title: 'kardex', href: '#'}
-]
+];
 
 function buscarDatos() {
     form.post(kardex.buscar().url, { preserveScroll: true });

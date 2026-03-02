@@ -20,8 +20,9 @@ import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
 import * as incidencias from '@/routes/incidencias';
-import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck } from 'lucide-vue-next';
+import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert } from 'lucide-vue-next';
 import kardex from '@/routes/kardex';
+import buscar from '@/routes/asistencia_cruda';
 
 const { toggleSidebar } = useSidebar();
 const page = usePage();
@@ -83,14 +84,8 @@ const mainNavItems = computed(() => {
         });
     }
 
-    // Módulo INCIDENCIAS (Supervisor + Admin)
-    if (role === 'admin' || role === 'supervisor') {
-        items.push({ 
-            title: 'Incidencias', 
-            href: incidencias.index ? incidencias.index().url : '#', 
-            icon: TriangleAlert 
-        });
-    }
+    
+    
 
     // Módulos EXCLUSIVOS DE ADMIN
     if (role === 'admin') {
@@ -100,10 +95,20 @@ const mainNavItems = computed(() => {
                 href: kardex.index ? kardex.index().url : '#', 
                 icon: ChartNoAxesCombined 
             },
+            { 
+                title: 'Checadas Biometricos', 
+                href: buscar.index? buscar.index().url : '#', 
+                icon: FingerprintPattern
+            },
             {
                 title: 'Incidencias',
                 href: incidencias.index ? incidencias.index().url : '#',
                 icon: TriangleAlert
+            },
+            {
+                title: 'Reporte Faltas',
+                href: incidencias.index ? incidencias.index().url : '#',
+                icon: BookAlert
             },
             { 
                 title: 'Generador de Tarjetas', 
@@ -124,7 +129,8 @@ const mainNavItems = computed(() => {
                 title: 'Usuarios', 
                 href: usersIndex ? usersIndex().url : '#', 
                 icon: Users 
-            }
+            },
+            
         );
     }
 

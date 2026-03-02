@@ -44,6 +44,8 @@ const form = useForm({
     search: props.filters?.search || '',
     date_apply: props.filters?.date_apply || '',
     date_incidence: props.filters?.date_incidence || '',
+    date_start: props.filters?.date_start || '',
+    date_end: props.filters?.date_end || '',
     page: props.filters?.page || 1,
 });
 
