@@ -29,19 +29,21 @@ ORDER BY s.alias;
 -- ============================================================================
 -- 2. IDENTIFICAR AL EMPLEADO Y SU HORARIO ACTUAL
 -- ============================================================================
--- Cambia '242407' por la nómina del empleado para ver qué tiene asignado.
+-- Cambia '936049' por la nómina del empleado para ver qué tiene asignado.
 
 SELECT 
     e.id AS employee_id, 
     e.emp_code AS nomina, 
     e.first_name || ' ' || e.last_name AS nombre,
+    sch.id AS id_asignacion,
     s.alias AS turno_actual,
     sch.start_date,
     sch.end_date
 FROM public.personnel_employee e
 LEFT JOIN public.att_attschedule sch ON e.id = sch.employee_id
 LEFT JOIN public.att_attshift s ON sch.shift_id = s.id
-WHERE e.emp_code = '242407'; -- <--- PON AQUÍ LA NÓMINA
+WHERE e.emp_code = '242407' -- <--- PON AQUÍ LA NÓMINA
+ORDER BY sch.start_date DESC;
 
 
 -- ============================================================================
@@ -62,7 +64,7 @@ INSERT INTO public.att_attschedule (
     start_date, 
     end_date
 ) VALUES (
-    (SELECT id FROM public.personnel_employee WHERE emp_code = '242407'), -- [NÓMINA]
+    (SELECT id FROM public.personnel_employee WHERE emp_code = '936049'), -- [NÓMINA]
     115,          -- [CAMBIAR] ID del turno que elegiste en el paso 1
     '2024-01-01', -- Fecha desde cuándo aplica
     '2030-12-31'  -- Fecha fin límite (2030 recomendado)
@@ -82,7 +84,7 @@ UPDATE public.att_attschedule
 SET 
     shift_id = 120,               -- [CAMBIAR] Nuevo ID del turno
     end_date = '2030-12-31'       -- [CAMBIAR] Nueva fecha de vigencia
-WHERE employee_id = (SELECT id FROM public.personnel_employee WHERE emp_code = '242407'); -- [NÓMINA]
+WHERE employee_id = (SELECT id FROM public.personnel_employee WHERE emp_code = '936049'); -- [NÓMINA]
 
 COMMIT;
 */
@@ -97,8 +99,8 @@ BEGIN;
 
 -- 1. Cerramos el horario viejo acortando su fecha de fin
 UPDATE public.att_attschedule 
-SET end_date = '2025-12-31' -- [CAMBIAR] Un día ANTES de que empiece el nuevo
-WHERE employee_id = (SELECT id FROM public.personnel_employee WHERE emp_code = '242407')
+SET end_date = '2025-12-31 -- [CAMBIAR] Un día ANTES de que empiece el nuevo
+WHERE employee_id = (SELECT id FROM public.personnel_employee WHERE emp_code = '936049')
   AND end_date > '2025-12-31'; -- Asegura que solo cortamos si superaba esta fecha
 
 -- 2. Insertamos el nuevo horario en su propia línea
@@ -108,11 +110,33 @@ INSERT INTO public.att_attschedule (
     start_date, 
     end_date
 ) VALUES (
-    (SELECT id FROM public.personnel_employee WHERE emp_code = '242407'), -- [NÓMINA]
-    115,          -- [CAMBIAR] ID del NUEVO turno
+    (SELECT id FROM public.personnel_employee WHERE emp_code = '936049'), -- [NÓMINA]
+    114,          -- [CAMBIAR] ID del NUEVO turno
     '2026-01-01', -- [CAMBIAR] Fecha desde cuándo aplica el nuevo
     '2026-12-31'  -- Fecha fin límite
 );
+
+COMMIT;
+*/
+
+
+-- ----------------------------------------------------------------------------
+-- OPCIÓN D: 🚨 REVERTIR ERROR (BORRAR EL NUEVO Y REABRIR EL VIEJO) 🚨
+-- Usa esto si aplicaste la OPCIÓN C en el empleado equivocado.
+-- ----------------------------------------------------------------------------
+/*
+BEGIN;
+
+-- 1. Borramos el horario erróneo que acabas de insertar.
+-- Necesitas buscar el id_asignacion de este horario en el PASO 2.
+DELETE FROM public.att_attschedule
+WHERE id = 1622; -- [CAMBIAR] ID de la asignación errónea (Ver columna 'id_asignacion' en el Paso 2)
+
+-- 2. Re-abrimos el horario anterior que habíamos cortado.
+-- También necesitas buscar el id_asignacion del horario original en el PASO 2.
+UPDATE public.att_attschedule 
+SET end_date = '2026-12-31' -- [CAMBIAR] Lo volvemos a poner hasta el 2030
+WHERE id = 1444; -- [CAMBIAR] ID de la asignación original que cortaste
 
 COMMIT;
 */
@@ -132,5 +156,5 @@ SELECT
 FROM public.personnel_employee e
 JOIN public.att_attschedule sch ON e.id = sch.employee_id
 JOIN public.att_attshift s ON sch.shift_id = s.id
-WHERE e.emp_code = '242407'
+WHERE e.emp_code = '936049'
 ORDER BY sch.start_date DESC;
