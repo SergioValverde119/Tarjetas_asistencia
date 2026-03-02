@@ -445,6 +445,137 @@ class TarjetaService
         return 'RG';
     }
 
+
+        /* =========================================================================
+     * NUEVAS FUNCIONES EXCLUSIVAS PARA EL MONITOR DE FALTAS
+     * (Aíslan la lógica de Faltas sin afectar a las Tarjetas PDF de los empleados)
+     * ========================================================================= */
+
+    /**
+     * Permite obtener asistencias por cualquier rango de fechas 
+     * e inyecta la lógica especial para mostrar los turnos.
+     */
+    public function obtenerDatosPorRango($empleadoId, $startDate, $endDate)
+    {
+        $reglas = Configuracion::getAllRules();
+        
+        $start = Carbon::parse($startDate)->startOfDay()->format('Y-m-d H:i:s');
+        $end = Carbon::parse($endDate)->endOfDay()->format('Y-m-d H:i:s');
+
+        $registrosRaw = $this->repository->getAttendanceRecords($empleadoId, $start, $end);
+        $holidaysRaw = $this->repository->getHolidays($start, $end);
+
+        if (empty($registrosRaw)) {
+            return [];
+        }
+
+        return $this->transformarRegistrosParaFaltas($registrosRaw, $holidaysRaw, $start, $end, $reglas);
+    }
+
+    /**
+     * Lógica de transformación paralela, exclusiva para Faltas.
+     */
+    private function transformarRegistrosParaFaltas($registros, $holidays, $startDate, $endDate, $reglas)
+    {
+        $retardosLevesAcumulados = 0;
+        $limiteConversion = $reglas['conteo_rl_para_rg'];
+        $resultados = [];
+
+        foreach ($registros as $reg) {
+            $date = Carbon::parse($reg->att_date);
+            $fechaActualStr = $date->format('Y-m-d');
+
+            // Reutiliza el procesamiento crudo de huellas
+            $this->procesarHuellas($reg);
+
+            $holidayDia = null;
+            foreach ($holidays as $hol) {
+                if (str_starts_with($hol->start_date, $fechaActualStr)) {
+                    $holidayDia = $hol;
+                    break;
+                }
+            }
+
+            if ($date->isWeekend()) {
+                $resultados[] = $this->crearFilaParaFaltas($fechaActualStr, null, 'DESC', '');
+                continue;
+            }
+
+            if (! $reg->clock_in && ! $reg->clock_out && $holidayDia && ($reg->enable_holiday ?? false)) {
+                $resultados[] = $this->crearFilaParaFaltas($fechaActualStr, null, 'J', $holidayDia->alias);
+                continue;
+            }
+
+            if (! $reg->clock_in && ! $reg->clock_out && ! $reg->timetable_name) {
+                $resultados[] = $this->crearFilaParaFaltas($fechaActualStr, null, 'F', 'Sin horario asignado');
+                continue;
+            }
+
+            $incidenciaAMostrar = ! empty(trim($reg->nombre_permiso ?? '')) ? $reg->motivo_permiso : null;
+            if ($incidenciaAMostrar) {
+                if ($reg->clock_in) {
+                    $entradaOficialRef = Carbon::parse($reg->att_date.' '.$reg->in_time);
+                    $entradaRealRef = Carbon::parse($reg->clock_in);
+                    if ($entradaOficialRef->diffInMinutes($entradaRealRef, false) > $reglas['limite_retardo_leve']) {
+                        $reg->clock_in = null;
+                    }
+                }
+                $resultados[] = $this->crearFilaParaFaltas($fechaActualStr, $reg, 'J', $incidenciaAMostrar);
+                continue;
+            }
+
+            if (! $reg->clock_in || ! $reg->clock_out) {
+                $resultados[] = $this->crearFilaParaFaltas($fechaActualStr, $reg, 'F', '');
+                continue;
+            }
+
+            // Reutiliza la calculadora de retardos intacta
+            $calificacion = $this->evaluarRetardo($reg, $reglas);
+
+            if ($calificacion === 'RL') {
+                $retardosLevesAcumulados++;
+                if ($retardosLevesAcumulados >= $limiteConversion) {
+                    $calificacion = 'RG';
+                    $retardosLevesAcumulados = 0;
+                }
+            }
+
+            $resultados[] = $this->crearFilaParaFaltas($fechaActualStr, $reg, $calificacion, $reg->nombre_permiso ?? '');
+        }
+
+        return $resultados;
+    }
+
+    /**
+     * Construcción de fila exclusiva para Faltas (Extrae el horario base sin afectar la vista PDF).
+     */
+    private function crearFilaParaFaltas($fecha, $registro, $calificacion, $obs)
+    {
+        $horarioTexto = 'Sin horario asignado';
+        
+        // Aquí construimos el texto del turno y las horas (Ej. T20-10 (08:30 a 15:30))
+        if ($registro && isset($registro->in_time) && isset($registro->off_time)) {
+            $in = substr($registro->in_time, 0, 5);
+            $off = substr($registro->off_time, 0, 5);
+            
+            if (isset($registro->timetable_name) && !empty(trim($registro->timetable_name))) {
+                $horarioTexto = "{$registro->timetable_name} ({$in} a {$off})";
+            } else {
+                $horarioTexto = "{$in} a {$off}";
+            }
+        }
+
+        return [
+            'dia' => $fecha,
+            'checkin' => ($registro && $registro->clock_in) ? Carbon::parse($registro->clock_in)->format('H:i') : '',
+            'checkout' => ($registro && $registro->clock_out) ? Carbon::parse($registro->clock_out)->format('H:i') : '',
+            'calificacion' => $calificacion,
+            'observaciones' => $obs,
+            'horario_nombre' => $horarioTexto, // <-- Este es el campo mágico que leerá tu vista de Faltas
+        ];
+    }
+
+    // -------------------------------------------------------impoprtacion--------------------------------------------------------
     public function procesarImportacionRegistros($rows)
     {
         $resultados = [];

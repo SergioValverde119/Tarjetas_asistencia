@@ -11,6 +11,8 @@ use App\Http\Controllers\TarjetaController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\IncidenciaController; 
 use App\Http\Controllers\ChecadasBiometricosController;
+use App\Http\Controllers\FaltaController;
+
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
@@ -121,6 +123,10 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
     // 7. DETALLE DE EMPLEADO (Perfil BioTime)
     Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
+    
+    // 8. REPORTE DE FALTAS ACUMULADAS
+    Route::get('/admin/faltas', [FaltaController::class, 'index'])->name('faltas.index');
+    Route::get('/admin/faltas/exportar', [FaltaController::class, 'exportar'])->name('faltas.exportar');
 });
 
 

@@ -23,6 +23,7 @@ import * as incidencias from '@/routes/incidencias';
 import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert } from 'lucide-vue-next';
 import kardex from '@/routes/kardex';
 import buscar from '@/routes/asistencia_cruda';
+import faltas from '@/routes/faltas';
 
 const { toggleSidebar } = useSidebar();
 const page = usePage();
@@ -107,7 +108,7 @@ const mainNavItems = computed(() => {
             },
             {
                 title: 'Reporte Faltas',
-                href: incidencias.index ? incidencias.index().url : '#',
+                href: faltas.index ? faltas.index().url : '#',
                 icon: BookAlert
             },
             { 
