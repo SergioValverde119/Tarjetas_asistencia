@@ -233,6 +233,7 @@ const closeResultModal = () => { showResultModal.value = false; };
                                         <option value="admin">Administrador</option>
                                         <option value="disponibilidad">Monitor de tarjetas</option>
                                         <option value="capturista">Capturista de Incidencias</option>
+                                        <option value="asistencia">Checador de Asistencia</option>
                                     </select>
                                 </div>
                             </div>

@@ -3,15 +3,31 @@
 namespace App\Repositories;
 
 use Illuminate\Support\Facades\DB;
+use App\Services\BiotimeApiService;
 use Exception;
+use Carbon\Carbon;
 
+/**
+ * Repositorio de Incidencias
+ * Primeramente Jehová Dios y Jesús Rey.
+ */
 class IncidenciaRepository
 {
+    protected $apiService;
+
+    // CONEXIÓN MAESTRA: Usamos la BD Original para evitar problemas de latencia de replicación
+    protected $connection = 'pgsql_original';
+
+    public function __construct(BiotimeApiService $apiService)
+    {
+        $this->apiService = $apiService;
+    }
+
     // --- CONSULTAS GENERALES ---
 
     public function getLeaveCategories($search = null)
     {
-        $query = DB::connection('pgsql_biotime')
+        $query = DB::connection($this->connection)
             ->table('att_leavecategory')
             ->select('id', 'category_name as name', 'report_symbol as code', 'unit');
 
@@ -26,9 +42,9 @@ class IncidenciaRepository
         return $query->orderBy('id', 'asc')->get();
     }
 
-    public function getIncidencias($search = null, $fechaRegistro = null, $fechaIncidencia = null)
+    public function getIncidencias($search = null, $fechaRegistro = null, $fechaIncidencia = null, $dateStart = null, $dateEnd = null)
     {
-        $query = DB::connection('pgsql_biotime')
+        $query = DB::connection($this->connection)
             ->table('att_leave as l')
             ->join('personnel_employee as e', 'l.employee_id', '=', 'e.id')
             ->join('att_leavecategory as c', 'l.category_id', '=', 'c.id')
@@ -53,7 +69,10 @@ class IncidenciaRepository
             });
         }
 
-        if ($fechaRegistro) $query->whereDate('l.apply_time', $fechaRegistro);
+        if ($fechaRegistro) {
+            $query->whereDate('l.apply_time', $fechaRegistro);
+        }
+
         if ($fechaIncidencia) {
             $query->where(function($q) use ($fechaIncidencia) {
                 $q->whereDate('l.start_time', '<=', $fechaIncidencia)
@@ -61,12 +80,17 @@ class IncidenciaRepository
             });
         }
 
+        if ($dateStart && $dateEnd) {
+            $query->where('l.start_time', '<=', $dateEnd . ' 23:59:59')
+                  ->where('l.end_time', '>=', $dateStart . ' 00:00:00');
+        }
+
         return $query->orderBy('l.apply_time', 'desc')->paginate(15);
     }
 
     public function getActiveEmployees($search = null)
     {
-        $query = DB::connection('pgsql_biotime')
+        $query = DB::connection($this->connection)
             ->table('personnel_employee')
             ->select('id', 'first_name', 'last_name', 'emp_code', 'department_id')
             ->where('status', 0); 
@@ -87,22 +111,17 @@ class IncidenciaRepository
 
     public function findOverlap($employeeId, $start, $end, $ignoreId = null)
     {
-        $startDay = \Carbon\Carbon::parse($start)->startOfDay()->format('Y-m-d H:i:s');
-        $endDay = \Carbon\Carbon::parse($end)->endOfDay()->format('Y-m-d H:i:s');
+        $startDay = Carbon::parse($start)->startOfDay()->format('Y-m-d H:i:s');
+        $endDay = Carbon::parse($end)->endOfDay()->format('Y-m-d H:i:s');
 
-        $query = \Illuminate\Support\Facades\DB::connection('pgsql_biotime')
+        $query = DB::connection($this->connection)
             ->table('att_leave')
             ->where('employee_id', $employeeId)
             ->where(function ($q) use ($startDay, $endDay) {
-                // 2. FÓRMULA MATEMÁTICA DE TRASLAPE UNIVERSAL
-                // Una fecha se empalma si: 
-                // El inicio que ya existe en la BD es MENOR O IGUAL al fin de la nueva
-                // Y el fin que ya existe en la BD es MAYOR O IGUAL al inicio de la nueva
                 $q->where('start_time', '<=', $endDay)
                   ->where('end_time', '>=', $startDay);
             });
 
-        // Ignorar el ID actual cuando estamos en modo "Editar"
         if ($ignoreId) {
             $query->where('abstractexception_ptr_id', '!=', $ignoreId);
         }
@@ -110,7 +129,7 @@ class IncidenciaRepository
         return $query->first();
     }
 
-    // --- FUNCIONES DE CREACIÓN (Transacciones) ---
+    // --- FUNCIONES DE CREACIÓN Y BORRADO (VÍA API) ---
 
     public function createLeaveCategory($data)
     {
@@ -118,7 +137,7 @@ class IncidenciaRepository
         $code = $data['code'];
         $unit = $data['unit'] ?? 3; 
 
-        $exists = DB::connection('pgsql_biotime')->table('att_leavecategory')
+        $exists = DB::connection($this->connection)->table('att_leavecategory')
             ->where('category_name', $name)
             ->orWhere('report_symbol', $code)
             ->exists();
@@ -127,7 +146,7 @@ class IncidenciaRepository
             throw new Exception("El tipo de permiso '{$name}' o símbolo '{$code}' ya existe.");
         }
 
-        return DB::connection('pgsql_biotime')->table('att_leavecategory')->insertGetId([
+        return DB::connection($this->connection)->table('att_leavecategory')->insertGetId([
             'category_name'       => $name,
             'report_symbol'       => $code, 
             'minimum_unit'        => 1,     
@@ -137,41 +156,66 @@ class IncidenciaRepository
         ]);
     }
 
+    /**
+     * CREACIÓN HÍBRIDA: Usa la API para ejecutar triggers de BioTime
+     * y luego actualiza el status en BD para aprobación inmediata.
+     */
     public function createIncidencia($data)
     {
-        return DB::connection('pgsql_biotime')->transaction(function () use ($data) {
-            
-            // 1. INSERTAR EN PADRE (Workflow) - Solo status
-            $workflowId = DB::connection('pgsql_biotime')->table('workflow_abstractexception')->insertGetId([
-                'audit_status' => 1, 
-            ]);
+        // 1. Enviamos la orden a la API de BioTime
+        $apiResponse = $this->apiService->crearPermiso([
+            'employee_id'   => $data['employee_id'],
+            'leave_type_id' => $data['category_id'],
+            'fecha_inicio'  => $data['start_time'],
+            'fecha_fin'     => $data['end_time'],
+            'reason'        => $data['reason'] ?? 'Sin motivo'
+        ]);
 
-            // 2. INSERTAR EN HIJA (Detalle) - Todos los datos
-            DB::connection('pgsql_biotime')->table('att_leave')->insert([
-                'abstractexception_ptr_id' => $workflowId, 
-                'employee_id'   => $data['employee_id'],
-                'category_id'   => $data['category_id'],
-                'start_time'    => $data['start_time'],
-                'end_time'      => $data['end_time'],
-                'apply_reason'  => $data['reason'] ?? 'Sin motivo',
-                'apply_time'    => now(),
-                'type'          => 1,
-                'vacation_number' => 0,
-                'audit_time'     => now(),
-                'audit_user_id'  => 1,
-                'approval_level' => 1 
-            ]);
+        if (!$apiResponse['success']) {
+            throw new Exception("Error en API BioTime al crear incidencia: " . json_encode($apiResponse['error']));
+        }
 
-            return $workflowId;
-        });
+        // 2. Obtenemos el ID que generó la API
+        $newId = $apiResponse['data']['id'] ?? null;
+
+        if ($newId) {
+            // 3. Modificamos la BD original para forzar la APROBACIÓN inmediata
+            DB::connection($this->connection)
+                ->table('workflow_abstractexception')
+                ->where('id', $newId)
+                ->update([
+                    'audit_status' => 1, 
+                    'audit_time'   => now(),
+                    'audit_user_id'=> 1,
+                    'audit_reason' => 'Aprobado automáticamente por Sistema'
+                ]);
+        } else {
+            throw new Exception("La API de BioTime no devolvió un ID de incidencia válido.");
+        }
+
+        return $newId;
     }
 
-    // --- FUNCIONES DE BÚSQUEDA PARA IMPORTACIÓN (Faltaban estas) ---
+    /**
+     * ELIMINACIÓN: Usa la API para delegarle la responsabilidad de borrado a BioTime.
+     */
+    public function deleteIncidencia($id)
+    {
+        // Enviamos la orden de eliminación a la API de BioTime
+        $apiResponse = $this->apiService->borrarPermiso($id);
 
+        if (!$apiResponse['success']) {
+            throw new Exception("Error en API BioTime al eliminar incidencia: " . json_encode($apiResponse['error']));
+        }
+
+        return true;
+    }
+
+    // --- FUNCIONES DE BÚSQUEDA Y EDICIÓN ---
 
     public function findIncidenciaById($id)
     {
-        return DB::connection('pgsql_biotime')
+        return DB::connection($this->connection)
             ->table('att_leave as l')
             ->join('personnel_employee as e', 'l.employee_id', '=', 'e.id')
             ->select(
@@ -185,17 +229,15 @@ class IncidenciaRepository
             ->first();
     }
 
-
     public function updateIncidencia($id, $data)
     {
-        return DB::connection('pgsql_biotime')->transaction(function () use ($id, $data) {
-            // Limpiamos el vínculo para forzar el recálculo en BioTime
-            DB::connection('pgsql_biotime')
+        return DB::connection($this->connection)->transaction(function () use ($id, $data) {
+            DB::connection($this->connection)
                 ->table('att_payloadexception')
                 ->where('item_id', (string)$id)
                 ->delete();
 
-            return DB::connection('pgsql_biotime')
+            return DB::connection($this->connection)
                 ->table('att_leave')
                 ->where('abstractexception_ptr_id', $id)
                 ->update([
@@ -208,41 +250,9 @@ class IncidenciaRepository
         });
     }
 
-    /**
-     * Borrar incidencia por CÓDIGO DE NÓMINA
-     */
-
-    public function deleteIncidencia($id)
-    {
-        return DB::connection('pgsql_biotime')->transaction(function () use ($id) {
-            
-            // 1. Limpiamos la tabla de excepciones de cálculo (att_payloadexception)
-            // BioTime usa esta tabla para ligar la incidencia con el resultado del día.
-            // Si no borramos esto primero, arroja el error de Foreign Key Violation.
-            DB::connection('pgsql_biotime')
-                ->table('att_payloadexception')
-                ->where('item_id', (string)$id) // El ID de la incidencia se guarda en item_id
-                ->delete();
-
-            // 2. Borramos el registro de la tabla hija (att_leave)
-            DB::connection('pgsql_biotime')
-                ->table('att_leave')
-                ->where('abstractexception_ptr_id', $id)
-                ->delete();
-
-            // 3. Borramos el registro de la tabla padre (workflow_abstractexception)
-            DB::connection('pgsql_biotime')
-                ->table('workflow_abstractexception')
-                ->where('id', $id)
-                ->delete();
-        });
-    }
-    /**
-     * Buscar ID por CÓDIGO DE NÓMINA
-     */
     public function getEmployeeIdByCode($empCode)
     {
-        $emp = DB::connection('pgsql_biotime')
+        $emp = DB::connection($this->connection)
             ->table('personnel_employee')
             ->where('emp_code', (string)$empCode)
             ->select('id')
@@ -250,13 +260,9 @@ class IncidenciaRepository
         return $emp ? $emp->id : null;
     }
 
-    /**
-     * Buscar ID por NOMBRE COMPLETO
-     */
     public function getEmployeeIdByName($fullName)
     {
-        // Concatenamos nombre y apellido y buscamos similitud (case insensitive)
-        $emp = DB::connection('pgsql_biotime')
+        $emp = DB::connection($this->connection)
             ->table('personnel_employee')
             ->whereRaw("TRIM(first_name || ' ' || last_name) ILIKE ?", [trim($fullName)])
             ->select('id')
@@ -264,12 +270,9 @@ class IncidenciaRepository
         return $emp ? $emp->id : null;
     }
 
-    /**
-     * Buscar Categoría por Código
-     */
     public function getCategoryIdByCode($code)
     {
-        $cat = DB::connection('pgsql_biotime')
+        $cat = DB::connection($this->connection)
             ->table('att_leavecategory')
             ->where('report_symbol', strtoupper($code))
             ->select('id')

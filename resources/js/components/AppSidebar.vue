@@ -86,7 +86,20 @@ const mainNavItems = computed(() => {
     }
 
     
-    
+    if (role === 'asistencia') {
+        items.push(
+            { 
+                title: 'Kardex', 
+                href: kardex.index ? kardex.index().url : '#', 
+                icon: ChartNoAxesCombined 
+            },
+            { 
+                title: 'Checadas Biometricos', 
+                href: buscar.index? buscar.index().url : '#', 
+                icon: FingerprintPattern
+            }
+        );
+    }
 
     // Módulos EXCLUSIVOS DE ADMIN
     if (role === 'admin') {

@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\BiotimeApiService;
 
 class TarjetaService
 {
@@ -15,10 +16,12 @@ class TarjetaService
      * @var TarjetaRepository
      */
     protected $repository;
+    protected $apiService;
 
-    public function __construct(TarjetaRepository $repository)
+    public function __construct(TarjetaRepository $repository, BiotimeApiService $apiService)
     {
         $this->repository = $repository;
+        $this->apiService = $apiService;
     }
 
     /**
@@ -579,161 +582,188 @@ class TarjetaService
     public function procesarImportacionRegistros($rows)
     {
         $resultados = [];
+        
+        // 1. DEFINIR TERMINALES ESPECÍFICOS PARA ENTRADA Y SALIDA
+        // Basado en los datos reales de tus biométricos ZKTeco
+        $relojEntrada = [
+            'id' => 20,
+            'sn' => 'CQUG232460132',
+            'alias' => 'Entrada 1 (Rescate API)'
+        ];
 
-        // 1. OBTENER UN RELOJ FÍSICO REAL PARA CLONAR SU IDENTIDAD COMPLETA
-        // Ahora también traemos el 'id' (terminal_id) que es vital para BioTime
-        $relojReal = DB::connection('pgsql_biotime')
-            ->table('iclock_terminal')
-            ->select('id', 'sn', 'alias')
-            ->first();
-
-        // Si por alguna razón no tienes relojes dados de alta, usamos valores genéricos.
-        $terminal_id = $relojReal ? $relojReal->id : 1;
-        $terminal_sn = $relojReal ? $relojReal->sn : 'DS7X211234567';
-        $terminal_alias = $relojReal ? $relojReal->alias : 'Salida 1 (Importado)';
+        $relojSalida = [
+            'id' => 19,
+            'sn' => 'CQUG232460120',
+            'alias' => 'Salida 1 (Rescate API)'
+        ];
 
         foreach ($rows as $row) {
-            // Ignorar filas vacías o sin nómina
-            if (! isset($row[0]) || trim($row[0]) === '') {
-                continue;
-            }
+            if (!isset($row[0]) || trim($row[0]) === '') continue;
 
-            $nomina = trim((string) $row[0]);
-            $nombre = isset($row[1]) ? trim((string) $row[1]) : '';
-            $entradaStr = isset($row[2]) ? trim((string) $row[2]) : '';
-            $salidaStr = isset($row[3]) ? trim((string) $row[3]) : '';
-
-            $status = 'ERROR';
+            $nomina     = trim((string)$row[0]);
+            $nombre     = isset($row[1]) ? trim((string)$row[1]) : '';
+            $entradaStr = isset($row[2]) ? trim((string)$row[2]) : '';
+            $salidaStr  = isset($row[3]) ? trim((string)$row[3]) : '';
+            
+            $status  = 'ERROR';
             $mensaje = '';
 
             try {
-                // 1. Validar que el empleado exista en BioTime
-                $emp = DB::connection('pgsql_biotime')
+                $emp = \Illuminate\Support\Facades\DB::connection('pgsql_biotime')
                     ->table('personnel_employee')
                     ->where('emp_code', $nomina)
                     ->first();
 
-                if (! $emp) {
-                    throw new Exception('El número de empleado no existe en BioTime.');
+                if (!$emp) {
+                    throw new \Exception("El número de empleado no existe en BioTime.");
                 }
 
-                $insertedCount = 0;
+                $insertedIn = false;
+                $skippedIn = false;
+                $insertedOut = false;
+                $skippedOut = false;
 
-                // 2. Procesar ENTRADA (Si la celda no está vacía)
-                if (! empty($entradaStr)) {
+                // --- PROCESAR ENTRADA ---
+                if (!empty($entradaStr)) {
                     try {
-                        $entrada = Carbon::parse($entradaStr);
-
-                        // --- REGLA INVERSA DE VERANO ---
-                        // Si la fecha cae en horario de verano, le RESTAMOS 1 hora antes de guardarla.
-                        $inicioPrimavera = Carbon::parse("first sunday of april {$entrada->year}");
-                        $finOtono = Carbon::parse("last sunday of october {$entrada->year}");
+                        $entrada = \Carbon\Carbon::parse($entradaStr);
+                        
+                        $inicioPrimavera = \Carbon\Carbon::parse("first sunday of april {$entrada->year}");
+                        $finOtono = \Carbon\Carbon::parse("last sunday of october {$entrada->year}");
                         if ($entrada->greaterThanOrEqualTo($inicioPrimavera) && $entrada->lessThan($finOtono)) {
                             $entrada->subHour();
                         }
-
+                        
                         $horaEntradaFormat = $entrada->format('Y-m-d H:i:s');
-
-                        // Protección Anti-Duplicados
-                        $existsIn = DB::connection('pgsql_biotime')
+                        
+                        // --- PROTECCIÓN ANTI-DUPLICADOS (Burbuja de 10 segundos) ---
+                        $rangoInicio = $entrada->copy()->subSeconds(10)->format('Y-m-d H:i:s');
+                        $rangoFin = $entrada->copy()->addSeconds(10)->format('Y-m-d H:i:s');
+                        
+                        $existsIn = \Illuminate\Support\Facades\DB::connection('pgsql_biotime')
                             ->table('iclock_transaction')
                             ->where('emp_id', $emp->id)
-                            ->where('punch_time', $horaEntradaFormat)
+                            ->whereBetween('punch_time', [$rangoInicio, $rangoFin])
                             ->exists();
 
-                        if (! $existsIn) {
-                            DB::connection('pgsql_biotime')->table('iclock_transaction')->insert([
-                                'emp_id' => $emp->id,
-                                'emp_code' => $emp->emp_code,
-                                'punch_time' => $horaEntradaFormat,
-                                'punch_state' => '0', // 0 = Entrada
-                                'verify_type' => 1,   // 1 = Huella Digital
-                                'terminal_sn' => $terminal_sn,
-                                'terminal_alias' => $terminal_alias,
-                                'upload_time' => now(),
-                                'terminal_id' => $terminal_id,
-                                'is_attendance' => 1,
-                                'source' => 1,
-                                'purpose' => 9,
-                                'work_code' => '0',
-                                'is_mask' => 255,
-                                'temperature' => 0.0,
+                        if (!$existsIn) {
+                            // MAGIA APLICADA: Uso de la API con el reloj de Entrada
+                            $apiResponse = $this->apiService->crearChecada([
+                                'emp_code'       => $emp->emp_code,
+                                'emp_id'         => $emp->id,
+                                'punch_time'     => $horaEntradaFormat,
+                                'punch_state'    => '0', // 0 = Entrada
+                                'terminal_sn'    => $relojEntrada['sn'],
+                                'terminal_id'    => $relojEntrada['id'],
+                                'terminal_alias' => $relojEntrada['alias']
                             ]);
-                            $insertedCount++;
+
+                            if (!$apiResponse['success']) {
+                                $errorMsg = is_array($apiResponse['error']) ? json_encode($apiResponse['error']) : $apiResponse['error'];
+                                throw new \Exception('La API rechazó la Entrada: ' . $errorMsg);
+                            }
+
+                            $insertedIn = true;
+                        } else {
+                            $skippedIn = true;
                         }
-                    } catch (Exception $e) {
-                        throw new Exception('Formato de Entrada inválido (Use AAAA-MM-DD HH:MM).');
+                    } catch (\Exception $e) {
+                        throw new \Exception("Error en Entrada: " . $e->getMessage());
                     }
                 }
 
-                // 3. Procesar SALIDA (Si la celda no está vacía)
-                if (! empty($salidaStr)) {
+                // --- PROCESAR SALIDA ---
+                if (!empty($salidaStr)) {
                     try {
-                        $salida = Carbon::parse($salidaStr);
-
-                        // --- REGLA INVERSA DE VERANO ---
-                        $inicioPrimavera = Carbon::parse("first sunday of april {$salida->year}");
-                        $finOtono = Carbon::parse("last sunday of october {$salida->year}");
+                        $salida = \Carbon\Carbon::parse($salidaStr);
+                        
+                        $inicioPrimavera = \Carbon\Carbon::parse("first sunday of april {$salida->year}");
+                        $finOtono = \Carbon\Carbon::parse("last sunday of october {$salida->year}");
                         if ($salida->greaterThanOrEqualTo($inicioPrimavera) && $salida->lessThan($finOtono)) {
                             $salida->subHour();
                         }
-
+                        
                         $horaSalidaFormat = $salida->format('Y-m-d H:i:s');
-
-                        // Protección Anti-Duplicados
-                        $existsOut = DB::connection('pgsql_biotime')
+                        
+                        // --- PROTECCIÓN ANTI-DUPLICADOS (Burbuja de 10 segundos) ---
+                        $rangoInicioOut = $salida->copy()->subSeconds(10)->format('Y-m-d H:i:s');
+                        $rangoFinOut = $salida->copy()->addSeconds(10)->format('Y-m-d H:i:s');
+                        
+                        $existsOut = \Illuminate\Support\Facades\DB::connection('pgsql_biotime')
                             ->table('iclock_transaction')
                             ->where('emp_id', $emp->id)
-                            ->where('punch_time', $horaSalidaFormat)
+                            ->whereBetween('punch_time', [$rangoInicioOut, $rangoFinOut])
                             ->exists();
 
-                        if (! $existsOut) {
-                            DB::connection('pgsql_biotime')->table('iclock_transaction')->insert([
-                                'emp_id' => $emp->id,
-                                'emp_code' => $emp->emp_code,
-                                'punch_time' => $horaSalidaFormat,
-                                'punch_state' => '1', // 1 = Salida
-                                'verify_type' => 1,   // 1 = Huella Digital
-                                'terminal_sn' => $terminal_sn,
-                                'terminal_alias' => $terminal_alias,
-                                'upload_time' => now(),
-                                'terminal_id' => $terminal_id,
-                                'is_attendance' => 1,
-                                'source' => 1,
-                                'purpose' => 9,
-                                'work_code' => '0',
-                                'is_mask' => 255,
-                                'temperature' => 0.0,
+                        if (!$existsOut) {
+                            // MAGIA APLICADA: Uso de la API con el reloj de Salida
+                            $apiResponse = $this->apiService->crearChecada([
+                                'emp_code'       => $emp->emp_code,
+                                'emp_id'         => $emp->id,
+                                'punch_time'     => $horaSalidaFormat,
+                                'punch_state'    => '1', // 1 = Salida
+                                'terminal_sn'    => $relojSalida['sn'],
+                                'terminal_id'    => $relojSalida['id'],
+                                'terminal_alias' => $relojSalida['alias']
                             ]);
-                            $insertedCount++;
+
+                            if (!$apiResponse['success']) {
+                                $errorMsg = is_array($apiResponse['error']) ? json_encode($apiResponse['error']) : $apiResponse['error'];
+                                throw new \Exception('La API rechazó la Salida: ' . $errorMsg);
+                            }
+
+                            $insertedOut = true;
+                        } else {
+                            $skippedOut = true;
                         }
-                    } catch (Exception $e) {
-                        throw new Exception('Formato de Salida inválido (Use AAAA-MM-DD HH:MM).');
+                    } catch (\Exception $e) {
+                        throw new \Exception("Error en Salida: " . $e->getMessage());
                     }
                 }
 
                 if (empty($entradaStr) && empty($salidaStr)) {
-                    throw new Exception('Debe proporcionar al menos una Entrada o una Salida.');
+                    throw new \Exception("Proporcione Entrada o Salida.");
                 }
 
-                $status = 'INGRESADO';
-                $mensaje = $insertedCount > 0
-                    ? "Se guardaron correctamente los $insertedCount registros en el reloj: $terminal_alias."
-                    : 'Los registros ya existían (Omitido).';
+                // --- EVALUACIÓN DETALLADA DE ESTATUS ---
+                if ($insertedIn && $insertedOut) {
+                    $status = 'INGRESADO';
+                    $mensaje = "Entrada y Salida guardadas correctamente.";
+                } elseif ($insertedIn && $skippedOut) {
+                    $status = 'PARCIAL';
+                    $mensaje = "Entrada guardada. La Salida ya existía (Omitida).";
+                } elseif ($skippedIn && $insertedOut) {
+                    $status = 'PARCIAL';
+                    $mensaje = "Salida guardada. La Entrada ya existía (Omitida).";
+                } elseif ($skippedIn && $skippedOut) {
+                    $status = 'OMITIDO';
+                    $mensaje = "Ambos registros ya existían (Omitidos).";
+                } elseif ($insertedIn && empty($salidaStr)) {
+                    $status = 'INGRESADO';
+                    $mensaje = "Entrada guardada correctamente.";
+                } elseif ($skippedIn && empty($salidaStr)) {
+                    $status = 'OMITIDO';
+                    $mensaje = "La Entrada ya existía (Omitida).";
+                } elseif (empty($entradaStr) && $insertedOut) {
+                    $status = 'INGRESADO';
+                    $mensaje = "Salida guardada correctamente.";
+                } elseif (empty($entradaStr) && $skippedOut) {
+                    $status = 'OMITIDO';
+                    $mensaje = "La Salida ya existía (Omitida).";
+                }
 
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 $status = 'NO INGRESADO';
                 $mensaje = $e->getMessage();
             }
 
-            // Guardamos el resultado para el Excel de descarga
             $resultados[] = [
                 $nomina,
                 $nombre,
                 $entradaStr,
                 $salidaStr,
                 $status,
-                $mensaje,
+                $mensaje
             ];
         }
 

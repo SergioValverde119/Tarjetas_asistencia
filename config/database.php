@@ -112,6 +112,19 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        'pgsql_original' => [
+        'driver' => 'pgsql',
+        'host' => env('DB_ORIGINAL_HOST', '127.0.0.1'),
+        'port' => env('DB_ORIGINAL_PORT', '5432'),
+        'database' => env('DB_ORIGINAL_DATABASE', 'biotime'),
+        'username' => env('DB_ORIGINAL_USERNAME', 'postgres'),
+        'password' => env('DB_ORIGINAL_PASSWORD', ''),
+        'charset' => 'utf8',
+        'prefix' => '',
+        'schema' => 'public',
+        'sslmode' => 'prefer',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

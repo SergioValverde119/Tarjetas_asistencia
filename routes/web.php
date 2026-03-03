@@ -44,8 +44,6 @@ Route::middleware(['auth', 'verified', 'role:admin,disponibilidad'])->group(func
     
     // Vista del Semáforo
     Route::get('/reporte-disponibilidad', [TarjetaController::class, 'indexDisponibilidad'])->name('tarjetas.disponibilidad');
-    
-    // API necesaria para llenar el selector de empleados en el semáforo
     Route::get('/api/internal/users', [TarjetaController::class, 'getUsers']);
 });
 
@@ -64,6 +62,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
     });
 
+    Route::middleware(['role:admin,supervisor,asistencia'])->group(function () {
+
+        Route::get('/asistencia-cruda', [ChecadasBiometricosController::class, 'index'])->name('asistencia_cruda.index');
+        Route::get('/asistencia-cruda/buscar', [ChecadasBiometricosController::class, 'buscar'])->name('asistencia_cruda.buscar');
+        Route::get('/asistencia-cruda/exportar', [ChecadasBiometricosController::class, 'exportar'])->name('asistencia_cruda.exportar');
+        // 4. KÁRDEX
+        Route::prefix('kardex')->name('kardex.')->group(function () {
+            Route::get('/', [KardexController::class, 'index'])->name('index');
+            Route::post('/buscar', [KardexController::class, 'buscar'])->name('buscar');
+            Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
+        });
+
+    });
     // --- BLOQUE 2: EDICIÓN Y ELIMINACIÓN (RESTRINGIDO) ---
     // Solo Admin y Supervisor. El 'capturista' recibirá un error 403 si intenta entrar aquí.
     Route::middleware(['role:admin,supervisor'])->group(function () {
@@ -94,17 +105,6 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
 
     // 3. BITÁCORA DE DESCARGAS (Logs)
     Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
-
-    // Asistencias crudas
-    Route::get('/asistencia-cruda', [ChecadasBiometricosController::class, 'index'])->name('asistencia_cruda.index');
-    Route::get('/asistencia-cruda/buscar', [ChecadasBiometricosController::class, 'buscar'])->name('asistencia_cruda.buscar');
-    Route::get('/asistencia-cruda/exportar', [ChecadasBiometricosController::class, 'exportar'])->name('asistencia_cruda.exportar');
-    // 4. KÁRDEX
-    Route::prefix('kardex')->name('kardex.')->group(function () {
-        Route::get('/', [KardexController::class, 'index'])->name('index');
-        Route::post('/buscar', [KardexController::class, 'buscar'])->name('buscar');
-        Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
-    });
 
     // 5. REGLAS DE NEGOCIO
     Route::prefix('reglas')->name('reglas.')->group(function () {

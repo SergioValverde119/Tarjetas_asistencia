@@ -15,6 +15,10 @@ use App\Exports\IncidenciasResultExport;
 use App\Exports\IncidenciasTemplateExport;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Controlador de Incidencias
+ * Primeramente Jehová Dios y Jesús Rey.
+ */
 class IncidenciaController extends Controller
 {
     protected $repository;
@@ -30,9 +34,9 @@ class IncidenciaController extends Controller
             $search = $request->input('search');
             $dateApply = $request->input('date_apply');       
             $dateIncidence = $request->input('date_incidence'); 
-            $dateIncidence = $request->input('date_incidence'); // Búsqueda por día exacto
-            $dateStart = $request->input('date_start');         // Búsqueda por rango (Desde)
+            $dateStart = $request->input('date_start');         
             $dateEnd = $request->input('date_end'); 
+
             $incidencias = $this->repository->getIncidencias($search, $dateApply, $dateIncidence, $dateStart, $dateEnd);
             $categorias = $this->repository->getLeaveCategories();
 
@@ -85,9 +89,6 @@ class IncidenciaController extends Controller
         ]);
 
         try {
-
-            
-            // 1. VALIDACIÓN DE TRASLAPE
             $overlap = $this->repository->findOverlap(
                 $validated['employee_id'], 
                 $validated['start_time'], 
@@ -99,17 +100,17 @@ class IncidenciaController extends Controller
                     'start_time' => "El empleado ya tiene un permiso registrado del {$overlap->start_time} al {$overlap->end_time}."
                 ]);
             }
-            // Se usa transacción para asegurar que si falla el log, no se guarde en BioTime
+
             return DB::transaction(function () use ($request, $validated) {
-                // 1. Crear registro en la base de datos de BioTime
+                // 1. Crear registro en la base de datos de BioTime (Vía API + DB)
                 $id = $this->repository->createIncidencia($validated);
 
-                // 2. NUEVA CREACIÓN: Registro en la bitácora local de Laravel (CREACION)
+                // 2. Registro en la bitácora local de Laravel
                 LogModificacionIncidencia::create([
                     'user_id' => Auth::id(),
                     'tipo_accion' => 'CREACION',
                     'incidencia_id' => $id,
-                    'valores_anteriores' => null, // No existen valores previos en creación
+                    'valores_anteriores' => null,
                     'valores_nuevos' => $validated,
                     'ip_address' => $request->ip()
                 ]);
@@ -126,16 +127,11 @@ class IncidenciaController extends Controller
     public function edit($id, Request $request)
     {
         try {
-            
-            
             $incidencia = $this->repository->findIncidenciaById($id);
             
             if (!$incidencia) {
-                
                 return redirect()->route('incidencias.index')->with('error', 'La incidencia no existe.');
             }
-
-            
 
             return Inertia::render('Incidencias/Edit', [
                 'incidencia' => $incidencia,
@@ -144,8 +140,6 @@ class IncidenciaController extends Controller
                 'filters'    => $request->only(['search', 'date_apply', 'date_incidence', 'date_start', 'date_end', 'page'])
             ]);
         } catch (Exception $e) {
-            // Cambio solicitado: Log::error reemplazado por error_log
-           
             return redirect()->route('incidencias.index')->with('error', 'Error de sistema al cargar datos.');
         }
     }
@@ -161,9 +155,6 @@ class IncidenciaController extends Controller
         ]);
 
         try {
-
-           
-            // 1. VALIDACIÓN DE TRASLAPE (Ignorando el registro actual)
             $overlap = $this->repository->findOverlap(
                 $validated['employee_id'], 
                 $validated['start_time'], 
@@ -177,9 +168,9 @@ class IncidenciaController extends Controller
                 ]);
             }
 
-             $filters = $request->only(['search', 'date_apply', 'date_incidence', 'page']);
+            $filters = $request->only(['search', 'date_apply', 'date_incidence', 'page']);
+            
             return DB::transaction(function () use ($request, $id, $validated, $filters) {
-                // 1. MODIFICACIÓN: Obtener datos originales ANTES del cambio para la auditoría
                 $original = $this->repository->findIncidenciaById($id);
                 if (!$original) throw new Exception("Registro no encontrado para auditar.");
 
@@ -191,10 +182,8 @@ class IncidenciaController extends Controller
                     'reason'      => $original->apply_reason,
                 ];
 
-                // 2. Actualizar en la base de datos de BioTime
                 $this->repository->updateIncidencia($id, $validated);
 
-                // 3. NUEVA CREACIÓN: Registro en bitácora (EDICION) vinculando valores viejos y nuevos
                 LogModificacionIncidencia::create([
                     'user_id' => Auth::id(),
                     'tipo_accion' => 'EDICION',
@@ -204,7 +193,7 @@ class IncidenciaController extends Controller
                     'ip_address' => $request->ip()
                 ]);
 
-                return redirect()->route('incidencias.index',   $filters)->with('success', 'Se ha realizado la modificación de la incidencia');
+                return redirect()->route('incidencias.index', $filters)->with('success', 'Se ha realizado la modificación de la incidencia');
             });
         } catch (ValidationException $e) {
             throw $e;
@@ -217,8 +206,8 @@ class IncidenciaController extends Controller
     {
         try {
             $filters = $request->only(['search', 'date_apply', 'date_incidence', 'page']);
+            
             return DB::transaction(function () use ($request, $id, $filters) {
-                // 1. Capturar los datos de lo que se va a borrar para que quede evidencia
                 $original = $this->repository->findIncidenciaById($id);
                 if (!$original) throw new Exception("El registro ya no existe.");
 
@@ -230,16 +219,14 @@ class IncidenciaController extends Controller
                     'reason'      => $original->apply_reason,
                 ];
 
-                // 2. Borrar físicamente de BioTime (limpiando tablas padre e hija vía repositorio)
                 $this->repository->deleteIncidencia($id);
 
-                // 3. Registro en bitácora (ELIMINACION)
                 LogModificacionIncidencia::create([
                     'user_id' => Auth::id(),
                     'tipo_accion' => 'ELIMINACION',
                     'incidencia_id' => $id,
                     'valores_anteriores' => $datosBorrados,
-                    'valores_nuevos' => null, // No queda nada nuevo después de borrar
+                    'valores_nuevos' => null, 
                     'ip_address' => $request->ip()
                 ]);
 
@@ -266,40 +253,30 @@ class IncidenciaController extends Controller
         }
     }
 
-    /**
-     * --- DESCARGAR PLANTILLA LIMPIA ---
-     */
     public function downloadTemplate()
     {
-        // Plantilla con ejemplos realistas
         $plantilla = [
-            // Fila 1: Búsqueda por Nómina
             [
-                '1045',                // Nómina
-                '',                    // Nombre (Vacío porque usamos nómina)
-                'VAC',                 // Código
-                '2025-02-01 09:00',    // Inicio
-                '2025-02-02 18:00',    // Fin
-                'Solicitud de vacaciones periodo 2024' // Motivo REAL
+                '1045',                
+                '',                    
+                'VAC',                 
+                '2025-02-01 09:00',    
+                '2025-02-02 18:00',    
+                'Solicitud de vacaciones periodo 2024' 
             ], 
-            // Fila 2: Búsqueda por Nombre
             [
-                '',                    // Nómina (Vacía porque usamos nombre)
-                'Maria Gomez',         // Nombre
-                'ENF',                 // Código
-                '2025-03-01 09:00',    // Inicio
-                '2025-03-01 18:00',    // Fin
-                'Cita médica en el IMSS' // Motivo REAL
+                '',                    
+                'Maria Gomez',         
+                'ENF',                 
+                '2025-03-01 09:00',    
+                '2025-03-01 18:00',    
+                'Cita médica en el IMSS' 
             ] 
         ];
 
-        // Usamos el exportador dedicado a la plantilla
         return Excel::download(new IncidenciasTemplateExport($plantilla), 'plantilla_incidencias.xlsx');
     }
 
-    /**
-     * --- IMPORTACIÓN MASIVA INTELIGENTE ---
-     */
     public function import(Request $request)
     {
         $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv']);
@@ -308,18 +285,11 @@ class IncidenciaController extends Controller
             $data = Excel::toArray(new \stdClass, $request->file('file'));
             $rows = $data[0]; 
 
-            // Remover encabezado si existe (detectando texto en la fila 1)
-            // if (isset($rows[0][2]) && !is_numeric($rows[0][3]) && stripos($rows[0][2], 'cod') !== false) {
-            //     array_shift($rows);
-            // }
-
             array_shift($rows); 
             
             $resultados = [];
 
             foreach ($rows as $row) {
-                // Mapeo de columnas según la plantilla nueva:
-                // 0:Nómina, 1:Nombre, 2:CódigoPermiso, 3:Inicio, 4:Fin, 5:Motivo
                 if (!isset($row[2])) continue;
 
                 $empCode  = isset($row[0]) ? trim((string)$row[0]) : '';
@@ -334,7 +304,6 @@ class IncidenciaController extends Controller
                 $mensaje = '';
 
                 try {
-                    // A. Validar Empleado (Prioridad: Nómina -> Nombre)
                     $empId = null;
 
                     if (!empty($empCode)) {
@@ -347,14 +316,12 @@ class IncidenciaController extends Controller
                     } elseif (!$empId && !empty($empCode)) {
                         throw new Exception("No se encontró empleado con nómina: '$empCode'");
                     } elseif (!$empId) {
-                        throw new Exception("Fila sin datos de empleado (se requiere Nómina o Nombre).");
+                        throw new Exception("Fila sin datos de empleado.");
                     }
 
-                    // B. Validar Categoría
                     $catId = $this->repository->getCategoryIdByCode($catCode);
                     if (!$catId) throw new Exception("Tipo de permiso '$catCode' no existe.");
 
-                    // C. Validar Fechas
                     try {
                         $start = Carbon::parse($startStr);
                         $end = Carbon::parse($endStr);
@@ -367,7 +334,7 @@ class IncidenciaController extends Controller
                     $overlap = $this->repository->findOverlap($empId, $start->format('Y-m-d H:i:s'), $end->format('Y-m-d H:i:s'));
                     if ($overlap) throw new Exception("Se traslapa con el permiso #{$overlap->abstractexception_ptr_id} ({$overlap->start_time} al {$overlap->end_time})");
 
-                    // D. Insertar
+                    // Insertar (Vía API a través del Repo) y registrar en bitácora
                     DB::transaction(function() use ($empId, $catId, $start, $end, $reason, $request) {
                         $newId = $this->repository->createIncidencia([
                             'employee_id' => $empId,
@@ -401,7 +368,6 @@ class IncidenciaController extends Controller
                     $mensaje = $e->getMessage();
                 }
 
-                // Generamos fila para el reporte de resultados
                 $resultados[] = [
                     $empCode,
                     $empName,
@@ -409,13 +375,12 @@ class IncidenciaController extends Controller
                     $startStr,
                     $endStr,
                     $reason,
-                    $status,  // Columna G
-                    $mensaje  // Columna H
+                    $status,  
+                    $mensaje  
                 ];
             }
 
             $fileName = 'reporte_carga_' . date('Ymd_His') . '.xlsx';
-            // Para el reporte de resultados, seguimos usando el exportador completo con colores
             return Excel::download(new IncidenciasResultExport($resultados), $fileName);
 
         } catch (Exception $e) {
