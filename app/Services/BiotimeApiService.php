@@ -19,17 +19,12 @@ class BiotimeApiService
 
     public function __construct()
     {
-        // NOTA: Si después de limpiar caché sigue saliendo 'localhost:8080', 
-        // significa que el archivo .env no tiene la variable BIOTIME_API_URL
         $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://10.37.1.6:8024'), '/');
         $this->token    = env('BIOTIME_API_TOKEN', null); 
         $this->username = env('BIOTIME_API_USER', 'admin');
         $this->password = env('BIOTIME_API_PASSWORD', 'admin');
     }
 
-    /**
-     * Autenticación para obtener el Token (Fallback)
-     */
     public function login()
     {
         if ($this->token) {
@@ -56,24 +51,25 @@ class BiotimeApiService
 
     /**
      * Crear un Permiso/Incidencia (Leave) vía API
-     * CORRECCIÓN: Ruta con prefijo /att/
+     * AJUSTE DEFINITIVO: Nombres de campos según el error de validación JSON.
      */
     public function crearPermiso($data)
     {
         if (!$this->token) { $this->login(); }
 
         try {
+            // BioTime espera: category (ID), start_time, end_time, employee (ID)
             $payload = [
-                'employee'        => $data['employee_id'], 
-                'type'            => $data['leave_type_id'], 
-                'start_date'      => $data['fecha_inicio'], 
-                'end_date'        => $data['fecha_fin'],
+                'employee'        => (int) $data['employee_id'], 
+                'category'        => (int) $data['leave_type_id'], // Corregido: antes era 'type'
+                'start_time'      => $data['fecha_inicio'],        // Corregido: antes era 'start_date'
+                'end_time'        => $data['fecha_fin'],           // Corregido: antes era 'end_date'
                 'reason'          => $data['motivo'] ?? 'Generado desde Sistema Externo',
                 'status'          => 1, // Aprobado
+                'type'            => 1, // Tipo de excepción (1 = Leave/Permiso)
                 'vacation_number' => $data['vacation_number'] ?? 0, 
             ];
 
-            // Petición a BioTime (Módulo Asistencia)
             $response = Http::withToken($this->token, 'JWT')
                 ->post("{$this->baseUrl}/att/api/leaves/", $payload);
 
@@ -81,12 +77,11 @@ class BiotimeApiService
                 return ['success' => true, 'data' => $response->json()];
             }
 
-            return ['success' => false, 'error' => $response->body()];
+            return ['success' => false, 'error' => $response->json() ?? $response->body()];
 
         } catch (Exception $e) {
             Log::error("Error creando permiso vía API: " . $e->getMessage());
-            // Si el error es de conexión, lo reportamos específicamente
-            return ['success' => false, 'error' => "No se pudo conectar al servidor BioTime en {$this->baseUrl}. Detalle: " . $e->getMessage()];
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
@@ -115,7 +110,6 @@ class BiotimeApiService
 
     /**
      * Crear una Checada/Transacción vía API
-     * RUTA: /iclock/api/transactions/
      */
     public function crearChecada($data)
     {
