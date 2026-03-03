@@ -110,6 +110,7 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => 'prefer',
+            'timezone' => 'Etc/GMT+6',
         ],
 
         'pgsql_original' => [
@@ -123,6 +124,7 @@ return [
         'prefix' => '',
         'schema' => 'public',
         'sslmode' => 'prefer',
+        'timezone' => 'Etc/GMT+6',
         ],
 
         'sqlsrv' => [
