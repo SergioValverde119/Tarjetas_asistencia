@@ -19,7 +19,7 @@ class BiotimeApiService
 
     public function __construct()
     {
-        $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://localhost:8080'), '/');
+        $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://localhost:8024'), '/');
         $this->token    = env('BIOTIME_API_TOKEN', null); 
         $this->username = env('BIOTIME_API_USER', 'admin');
         $this->password = env('BIOTIME_API_PASSWORD', 'admin');
