@@ -23,7 +23,59 @@ class IncidenciaRepository
         $this->apiService = $apiService;
     }
 
-    // --- CONSULTAS GENERALES ---
+    /**
+     * CREACIÓN HÍBRIDA: Crea vía API y aprueba vía SQL Directo.
+     * Ajustado para omitir la columna 'status' en workflow_abstractexception.
+     */
+    public function createIncidencia($data)
+    {
+        // 0. Formateo de fechas para BioTime
+        $fechaInicio = Carbon::parse($data['start_time'])->format('Y-m-d H:i:s');
+        $fechaFin = Carbon::parse($data['end_time'])->format('Y-m-d H:i:s');
+
+        // 1. Enviamos la orden a la API de BioTime para crear el registro base (nace como pendiente)
+        $apiResponse = $this->apiService->crearPermiso([
+            'employee_id'   => $data['employee_id'],
+            'leave_type_id' => $data['category_id'],
+            'fecha_inicio'  => $fechaInicio,
+            'fecha_fin'     => $fechaFin,
+            'reason'        => $data['reason'] ?? 'Sin motivo'
+        ]);
+
+        if (!$apiResponse['success']) {
+            throw new Exception("Error en API BioTime al crear incidencia: " . json_encode($apiResponse['error']));
+        }
+
+        // 2. Obtenemos el ID que generó la API
+        $newId = $apiResponse['data']['id'] ?? null;
+
+        if ($newId) {
+            // 3. APROBACIÓN QUIRÚRGICA EN BD ORIGINAL
+            
+            // A. En la tabla PADRE solo actualizamos 'audit_status'
+            // (Se eliminó 'status' por no existir en tu versión de BioTime)
+            DB::connection($this->connection)
+                ->table('workflow_abstractexception')
+                ->where('id', $newId)
+                ->update([
+                    'audit_status' => 1, 
+                ]);
+
+            // B. En la tabla HIJA (att_leave) registramos los tiempos de aprobación
+            DB::connection($this->connection)
+                ->table('att_leave')
+                ->where('abstractexception_ptr_id', $newId)
+                ->update([
+                    'audit_time'    => now(),
+                    'audit_user_id' => 1, 
+                    'audit_reason'  => 'Aprobado automáticamente por Sistema Externo'
+                ]);
+        } else {
+            throw new Exception("La API de BioTime creó el registro pero no devolvió el ID necesario para la aprobación.");
+        }
+
+        return $newId;
+    }
 
     public function getLeaveCategories($search = null)
     {
@@ -38,7 +90,6 @@ class IncidenciaRepository
                   ->orWhereRaw('LOWER(report_symbol) LIKE ?', [$term]);
             });
         }
-
         return $query->orderBy('id', 'asc')->get();
     }
 
@@ -73,13 +124,6 @@ class IncidenciaRepository
             $query->whereDate('l.apply_time', $fechaRegistro);
         }
 
-        if ($fechaIncidencia) {
-            $query->where(function($q) use ($fechaIncidencia) {
-                $q->whereDate('l.start_time', '<=', $fechaIncidencia)
-                  ->whereDate('l.end_time', '>=', $fechaIncidencia);
-            });
-        }
-
         if ($dateStart && $dateEnd) {
             $query->where('l.start_time', '<=', $dateEnd . ' 23:59:59')
                   ->where('l.end_time', '>=', $dateStart . ' 00:00:00');
@@ -92,7 +136,7 @@ class IncidenciaRepository
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee')
-            ->select('id', 'first_name', 'last_name', 'emp_code', 'department_id')
+            ->select('id', 'first_name', 'last_name', 'emp_code')
             ->where('status', 0); 
 
         if ($search) {
@@ -129,90 +173,6 @@ class IncidenciaRepository
         return $query->first();
     }
 
-    // --- FUNCIONES DE CREACIÓN Y BORRADO (VÍA API) ---
-
-    public function createLeaveCategory($data)
-    {
-        $name = $data['name'];
-        $code = $data['code'];
-        $unit = $data['unit'] ?? 3; 
-
-        $exists = DB::connection($this->connection)->table('att_leavecategory')
-            ->where('category_name', $name)
-            ->orWhere('report_symbol', $code)
-            ->exists();
-
-        if ($exists) {
-            throw new Exception("El tipo de permiso '{$name}' o símbolo '{$code}' ya existe.");
-        }
-
-        return DB::connection($this->connection)->table('att_leavecategory')->insertGetId([
-            'category_name'       => $name,
-            'report_symbol'       => $code, 
-            'minimum_unit'        => 1,     
-            'unit'                => $unit, 
-            'round_off'           => 1,     
-            'leave_category_type' => 0
-        ]);
-    }
-
-    /**
-     * CREACIÓN HÍBRIDA: Usa la API para ejecutar triggers de BioTime
-     * y luego actualiza el status en BD para aprobación inmediata.
-     */
-    public function createIncidencia($data)
-    {
-        // 1. Enviamos la orden a la API de BioTime
-        $apiResponse = $this->apiService->crearPermiso([
-            'employee_id'   => $data['employee_id'],
-            'leave_type_id' => $data['category_id'],
-            'fecha_inicio'  => $data['start_time'],
-            'fecha_fin'     => $data['end_time'],
-            'reason'        => $data['reason'] ?? 'Sin motivo'
-        ]);
-
-        if (!$apiResponse['success']) {
-            throw new Exception("Error en API BioTime al crear incidencia: " . json_encode($apiResponse['error']));
-        }
-
-        // 2. Obtenemos el ID que generó la API
-        $newId = $apiResponse['data']['id'] ?? null;
-
-        if ($newId) {
-            // 3. Modificamos la BD original para forzar la APROBACIÓN inmediata
-            DB::connection($this->connection)
-                ->table('workflow_abstractexception')
-                ->where('id', $newId)
-                ->update([
-                    'audit_status' => 1, 
-                    'audit_time'   => now(),
-                    'audit_user_id'=> 1,
-                    'audit_reason' => 'Aprobado automáticamente por Sistema'
-                ]);
-        } else {
-            throw new Exception("La API de BioTime no devolvió un ID de incidencia válido.");
-        }
-
-        return $newId;
-    }
-
-    /**
-     * ELIMINACIÓN: Usa la API para delegarle la responsabilidad de borrado a BioTime.
-     */
-    public function deleteIncidencia($id)
-    {
-        // Enviamos la orden de eliminación a la API de BioTime
-        $apiResponse = $this->apiService->borrarPermiso($id);
-
-        if (!$apiResponse['success']) {
-            throw new Exception("Error en API BioTime al eliminar incidencia: " . json_encode($apiResponse['error']));
-        }
-
-        return true;
-    }
-
-    // --- FUNCIONES DE BÚSQUEDA Y EDICIÓN ---
-
     public function findIncidenciaById($id)
     {
         return DB::connection($this->connection)
@@ -232,22 +192,36 @@ class IncidenciaRepository
     public function updateIncidencia($id, $data)
     {
         return DB::connection($this->connection)->transaction(function () use ($id, $data) {
+            // Limpiar caché de cálculos de BioTime para forzar el recálculo con los nuevos datos
             DB::connection($this->connection)
                 ->table('att_payloadexception')
                 ->where('item_id', (string)$id)
                 ->delete();
 
+            // Al editar, nos aseguramos de que el audit_status siga siendo 1 (Aprobado)
+            DB::connection($this->connection)
+                ->table('workflow_abstractexception')
+                ->where('id', $id)
+                ->update(['audit_status' => 1]);
+
             return DB::connection($this->connection)
                 ->table('att_leave')
                 ->where('abstractexception_ptr_id', $id)
                 ->update([
-                    'employee_id' => $data['employee_id'],
-                    'category_id' => $data['category_id'],
-                    'start_time'  => $data['start_time'],
-                    'end_time'    => $data['end_time'],
-                    'apply_reason'=> $data['reason'],
+                    'employee_id'   => $data['employee_id'],
+                    'category_id'   => $data['category_id'],
+                    'start_time'    => $data['start_time'],
+                    'end_time'      => $data['end_time'],
+                    'apply_reason'  => $data['reason'],
+                    'audit_time'    => now(),
+                    'audit_user_id' => 1
                 ]);
         });
+    }
+
+    public function deleteIncidencia($id)
+    {
+        return $this->apiService->borrarPermiso($id);
     }
 
     public function getEmployeeIdByCode($empCode)
@@ -278,5 +252,30 @@ class IncidenciaRepository
             ->select('id')
             ->first();
         return $cat ? $cat->id : null;
+    }
+
+    public function createLeaveCategory($data)
+    {
+        $name = $data['name'];
+        $code = $data['code'];
+        $unit = $data['unit'] ?? 3; 
+
+        $exists = DB::connection($this->connection)->table('att_leavecategory')
+            ->where('category_name', $name)
+            ->orWhere('report_symbol', $code)
+            ->exists();
+
+        if ($exists) {
+            throw new Exception("El tipo de permiso '{$name}' o símbolo '{$code}' ya existe.");
+        }
+
+        return DB::connection($this->connection)->table('att_leavecategory')->insertGetId([
+            'category_name'       => $name,
+            'report_symbol'       => $code, 
+            'minimum_unit'        => 1,     
+            'unit'                => $unit, 
+            'round_off'           => 1,     
+            'leave_category_type' => 0
+        ]);
     }
 }
