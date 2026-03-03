@@ -19,9 +19,9 @@ class BiotimeApiService
 
     public function __construct()
     {
-        // Se obtiene la URL del .env (Ej: http://10.37.1.6:8024)
-        // Si no existe, usa el puerto 8080 por defecto.
-        $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://localhost:8080'), '/');
+        // NOTA: Si después de limpiar caché sigue saliendo 'localhost:8080', 
+        // significa que el archivo .env no tiene la variable BIOTIME_API_URL
+        $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://10.37.1.6:8024'), '/');
         $this->token    = env('BIOTIME_API_TOKEN', null); 
         $this->username = env('BIOTIME_API_USER', 'admin');
         $this->password = env('BIOTIME_API_PASSWORD', 'admin');
@@ -56,7 +56,7 @@ class BiotimeApiService
 
     /**
      * Crear un Permiso/Incidencia (Leave) vía API
-     * Se usa el prefijo /att/ requerido por BioTime para el módulo de asistencia.
+     * CORRECCIÓN: Ruta con prefijo /att/
      */
     public function crearPermiso($data)
     {
@@ -73,7 +73,7 @@ class BiotimeApiService
                 'vacation_number' => $data['vacation_number'] ?? 0, 
             ];
 
-            // RUTA: /att/api/leaves/
+            // Petición a BioTime (Módulo Asistencia)
             $response = Http::withToken($this->token, 'JWT')
                 ->post("{$this->baseUrl}/att/api/leaves/", $payload);
 
@@ -85,7 +85,8 @@ class BiotimeApiService
 
         } catch (Exception $e) {
             Log::error("Error creando permiso vía API: " . $e->getMessage());
-            return ['success' => false, 'error' => $e->getMessage()];
+            // Si el error es de conexión, lo reportamos específicamente
+            return ['success' => false, 'error' => "No se pudo conectar al servidor BioTime en {$this->baseUrl}. Detalle: " . $e->getMessage()];
         }
     }
 
@@ -97,7 +98,6 @@ class BiotimeApiService
         if (!$this->token) { $this->login(); }
 
         try {
-            // RUTA: /att/api/leaves/{id}/
             $response = Http::withToken($this->token, 'JWT')
                 ->delete("{$this->baseUrl}/att/api/leaves/{$id}/");
 
@@ -115,7 +115,7 @@ class BiotimeApiService
 
     /**
      * Crear una Checada/Transacción vía API
-     * Se usa el prefijo /iclock/ para el módulo de transacciones crudas.
+     * RUTA: /iclock/api/transactions/
      */
     public function crearChecada($data)
     {
