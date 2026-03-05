@@ -8,7 +8,7 @@ use Carbon\Carbon;
 
 /**
  * Repositorio de Incidencias (Inyección Directa SQL)
- * Versión de Triple Blindaje: Fuerza la zona horaria Etc/GMT+6 en PHP y la sesión de PostgreSQL.
+ * Versión Blindada contra "Unique Violation" e ID Huérfanos.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class IncidenciaRepository
@@ -24,10 +24,11 @@ class IncidenciaRepository
     {
         return DB::connection($this->connection)->transaction(function () use ($data) {
             
-            // BLINDAJE 1: Forzamos a la base de datos a ignorar UTC en esta sesión
+            // BLINDAJE 1: Zona Horaria
             DB::connection($this->connection)->statement("SET TIME ZONE 'Etc/GMT+6'");
 
             // 1. Insertar en la TABLA PADRE (workflow_abstractexception)
+            // Laravel obtendrá el ID de la secuencia automáticamente
             $newId = DB::connection($this->connection)
                 ->table('workflow_abstractexception')
                 ->insertGetId([
@@ -38,7 +39,14 @@ class IncidenciaRepository
                 throw new Exception("No se pudo generar el folio en workflow_abstractexception.");
             }
 
-            // BLINDAJE 2: Generamos la hora exacta de México sin importar el .env
+            // BLINDAJE 2: ANTI-HUÉRFANOS
+            // Si por algún error previo existe el hijo pero no el padre, o viceversa,
+            // aseguramos que el espacio para $newId en att_leave esté limpio.
+            DB::connection($this->connection)
+                ->table('att_leave')
+                ->where('abstractexception_ptr_id', $newId)
+                ->delete();
+
             $ahoraMexico = Carbon::now('Etc/GMT+6')->format('Y-m-d H:i:s');
 
             // 2. Insertar en la TABLA HIJA (att_leave)
@@ -51,11 +59,8 @@ class IncidenciaRepository
                     'start_time'    => Carbon::parse($data['start_time'])->format('Y-m-d H:i:s'),
                     'end_time'      => Carbon::parse($data['end_time'])->format('Y-m-d H:i:s'),
                     'apply_reason'  => $data['reason'] ?? 'Captura Directa Sistema Asistencia',
-                    
-                    // Usamos la variable forzada a GMT+6
                     'apply_time'    => $ahoraMexico,
                     'audit_time'    => $ahoraMexico,
-                    
                     'audit_user_id' => 1,
                     'type'          => 1,
                     'vacation_number' => 0
@@ -77,24 +82,9 @@ class IncidenciaRepository
     public function deleteIncidencia($id)
     {
         return DB::connection($this->connection)->transaction(function () use ($id) {
-            
-            // 1. Borrar caché de cálculos
-            DB::connection($this->connection)
-                ->table('att_payloadexception')
-                ->where('item_id', (string)$id)
-                ->delete();
-
-            // 2. Borrar detalle (Hijo)
-            DB::connection($this->connection)
-                ->table('att_leave')
-                ->where('abstractexception_ptr_id', $id)
-                ->delete();
-
-            // 3. Borrar flujo (Padre)
-            return DB::connection($this->connection)
-                ->table('workflow_abstractexception')
-                ->where('id', $id)
-                ->delete();
+            DB::connection($this->connection)->table('att_payloadexception')->where('item_id', (string)$id)->delete();
+            DB::connection($this->connection)->table('att_leave')->where('abstractexception_ptr_id', $id)->delete();
+            return DB::connection($this->connection)->table('workflow_abstractexception')->where('id', $id)->delete();
         });
     }
 
@@ -213,22 +203,10 @@ class IncidenciaRepository
     public function updateIncidencia($id, $data)
     {
         return DB::connection($this->connection)->transaction(function () use ($id, $data) {
-            
-            // Aplicamos el mismo blindaje para ediciones
             DB::connection($this->connection)->statement("SET TIME ZONE 'Etc/GMT+6'");
             $ahoraMexico = Carbon::now('Etc/GMT+6')->format('Y-m-d H:i:s');
-
-            // Limpiar caché de cálculos de BioTime 
-            DB::connection($this->connection)
-                ->table('att_payloadexception')
-                ->where('item_id', (string)$id)
-                ->delete();
-
-            // Al editar, nos aseguramos de que el audit_status siga siendo 1 (Aprobado)
-            DB::connection($this->connection)
-                ->table('workflow_abstractexception')
-                ->where('id', $id)
-                ->update(['audit_status' => 1]);
+            DB::connection($this->connection)->table('att_payloadexception')->where('item_id', (string)$id)->delete();
+            DB::connection($this->connection)->table('workflow_abstractexception')->where('id', $id)->update(['audit_status' => 1]);
 
             return DB::connection($this->connection)
                 ->table('att_leave')
@@ -247,31 +225,19 @@ class IncidenciaRepository
 
     public function getEmployeeIdByCode($empCode)
     {
-        $emp = DB::connection($this->connection)
-            ->table('personnel_employee')
-            ->where('emp_code', (string)$empCode)
-            ->select('id')
-            ->first();
+        $emp = DB::connection($this->connection)->table('personnel_employee')->where('emp_code', (string)$empCode)->select('id')->first();
         return $emp ? $emp->id : null;
     }
 
     public function getEmployeeIdByName($fullName)
     {
-        $emp = DB::connection($this->connection)
-            ->table('personnel_employee')
-            ->whereRaw("TRIM(first_name || ' ' || last_name) ILIKE ?", [trim($fullName)])
-            ->select('id')
-            ->first();
+        $emp = DB::connection($this->connection)->table('personnel_employee')->whereRaw("TRIM(first_name || ' ' || last_name) ILIKE ?", [trim($fullName)])->select('id')->first();
         return $emp ? $emp->id : null;
     }
 
     public function getCategoryIdByCode($code)
     {
-        $cat = DB::connection($this->connection)
-            ->table('att_leavecategory')
-            ->where('report_symbol', strtoupper($code))
-            ->select('id')
-            ->first();
+        $cat = DB::connection($this->connection)->table('att_leavecategory')->where('report_symbol', strtoupper($code))->select('id')->first();
         return $cat ? $cat->id : null;
     }
 
@@ -280,16 +246,8 @@ class IncidenciaRepository
         $name = $data['name'];
         $code = $data['code'];
         $unit = $data['unit'] ?? 3; 
-
-        $exists = DB::connection($this->connection)->table('att_leavecategory')
-            ->where('category_name', $name)
-            ->orWhere('report_symbol', $code)
-            ->exists();
-
-        if ($exists) {
-            throw new Exception("El tipo de permiso '{$name}' o símbolo '{$code}' ya existe.");
-        }
-
+        $exists = DB::connection($this->connection)->table('att_leavecategory')->where('category_name', $name)->orWhere('report_symbol', $code)->exists();
+        if ($exists) { throw new Exception("El tipo de permiso '{$name}' o símbolo '{$code}' ya existe."); }
         return DB::connection($this->connection)->table('att_leavecategory')->insertGetId([
             'category_name'       => $name,
             'report_symbol'       => $code, 

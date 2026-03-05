@@ -17,6 +17,7 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Controlador de Incidencias
+ * Versión optimizada para Inyección Directa y Control de Traslapes.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class IncidenciaController extends Controller
@@ -78,6 +79,9 @@ class IncidenciaController extends Controller
         }
     }
 
+    /**
+     * Registro Manual Individual
+     */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -89,6 +93,7 @@ class IncidenciaController extends Controller
         ]);
 
         try {
+            // 1. VALIDACIÓN DE TRASLAPE
             $overlap = $this->repository->findOverlap(
                 $validated['employee_id'], 
                 $validated['start_time'], 
@@ -97,15 +102,16 @@ class IncidenciaController extends Controller
 
             if ($overlap) {
                 throw ValidationException::withMessages([
-                    'start_time' => "El empleado ya tiene un permiso registrado del {$overlap->start_time} al {$overlap->end_time}."
+                    'start_time' => "TRASLAPE: El empleado ya tiene un permiso (#{$overlap->abstractexception_ptr_id}) en esas fechas."
                 ]);
             }
 
+            // 2. INSERCIÓN DIRECTA EN BIO-TIME
             return DB::transaction(function () use ($request, $validated) {
-                // 1. Crear registro en la base de datos de BioTime (Vía API + DB)
+                // El repositorio ahora hace todo el trabajo pesado de IDs y limpieza
                 $id = $this->repository->createIncidencia($validated);
 
-                // 2. Registro en la bitácora local de Laravel
+                // 3. BITÁCORA LOCAL LARAVEL
                 LogModificacionIncidencia::create([
                     'user_id' => Auth::id(),
                     'tipo_accion' => 'CREACION',
@@ -115,7 +121,7 @@ class IncidenciaController extends Controller
                     'ip_address' => $request->ip()
                 ]);
 
-                return redirect()->route('incidencias.index')->with('success', 'Incidencia registrada. Folio: ' . $id);
+                return redirect()->route('incidencias.index')->with('success', 'Incidencia guardada con éxito. Folio: ' . $id);
             });
         } catch (ValidationException $e) {
             throw $e;
@@ -164,7 +170,7 @@ class IncidenciaController extends Controller
 
             if ($overlap) {
                 throw ValidationException::withMessages([
-                    'start_time' => "Error: Se traslapa con otro permiso existente (#{$overlap->abstractexception_ptr_id})."
+                    'start_time' => "Error: Se traslapa con el permiso #{$overlap->abstractexception_ptr_id}."
                 ]);
             }
 
@@ -172,7 +178,7 @@ class IncidenciaController extends Controller
             
             return DB::transaction(function () use ($request, $id, $validated, $filters) {
                 $original = $this->repository->findIncidenciaById($id);
-                if (!$original) throw new Exception("Registro no encontrado para auditar.");
+                if (!$original) throw new Exception("Registro no encontrado.");
 
                 $valoresAnteriores = [
                     'employee_id' => $original->employee_id,
@@ -193,7 +199,7 @@ class IncidenciaController extends Controller
                     'ip_address' => $request->ip()
                 ]);
 
-                return redirect()->route('incidencias.index', $filters)->with('success', 'Se ha realizado la modificación de la incidencia');
+                return redirect()->route('incidencias.index', $filters)->with('success', 'Modificación realizada con éxito.');
             });
         } catch (ValidationException $e) {
             throw $e;
@@ -219,6 +225,7 @@ class IncidenciaController extends Controller
                     'reason'      => $original->apply_reason,
                 ];
 
+                // Borrado directo en BioTime
                 $this->repository->deleteIncidencia($id);
 
                 LogModificacionIncidencia::create([
@@ -230,7 +237,7 @@ class IncidenciaController extends Controller
                     'ip_address' => $request->ip()
                 ]);
 
-                return redirect()->route('incidencias.index', $filters)->with('success', 'Justificación eliminada y movimiento registrado.');
+                return redirect()->route('incidencias.index', $filters)->with('success', 'Incidencia eliminada permanentemente.');
             });
         } catch (Exception $e) {
             return redirect()->back()->with('error', 'Error al eliminar: ' . $e->getMessage());
@@ -247,7 +254,7 @@ class IncidenciaController extends Controller
 
         try {
             $this->repository->createLeaveCategory($validated);
-            return redirect()->back()->with('success', 'Nueva categoría creada exitosamente.');
+            return redirect()->back()->with('success', 'Nueva categoría creada.');
         } catch (Exception $e) {
             return redirect()->back()->with('error', 'Error al crear categoría: ' . $e->getMessage());
         }
@@ -256,27 +263,15 @@ class IncidenciaController extends Controller
     public function downloadTemplate()
     {
         $plantilla = [
-            [
-                '1045',                
-                '',                    
-                'VAC',                 
-                '2025-02-01 09:00',    
-                '2025-02-02 18:00',    
-                'Solicitud de vacaciones periodo 2024' 
-            ], 
-            [
-                '',                    
-                'Maria Gomez',         
-                'ENF',                 
-                '2025-03-01 09:00',    
-                '2025-03-01 18:00',    
-                'Cita médica en el IMSS' 
-            ] 
+            ['1045', '', 'VAC', '2025-02-01 09:00', '2025-02-02 18:00', 'Vacaciones periodo 2024'], 
+            ['', 'Maria Gomez', 'ENF', '2025-03-01 09:00', '2025-03-01 18:00', 'Cita médica'] 
         ];
-
         return Excel::download(new IncidenciasTemplateExport($plantilla), 'plantilla_incidencias.xlsx');
     }
 
+    /**
+     * Importación Masiva Excel con Escudo de Traslapes
+     */
     public function import(Request $request)
     {
         $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv']);
@@ -284,8 +279,7 @@ class IncidenciaController extends Controller
         try {
             $data = Excel::toArray(new \stdClass, $request->file('file'));
             $rows = $data[0]; 
-
-            array_shift($rows); 
+            array_shift($rows); // Quitar encabezados
             
             $resultados = [];
 
@@ -294,7 +288,6 @@ class IncidenciaController extends Controller
 
                 $empCode  = isset($row[0]) ? trim((string)$row[0]) : '';
                 $empName  = isset($row[1]) ? trim((string)$row[1]) : '';
-                
                 $catCode  = trim((string)$row[2]);
                 $startStr = trim((string)$row[3]);
                 $endStr   = trim((string)$row[4]);
@@ -306,35 +299,29 @@ class IncidenciaController extends Controller
                 try {
                     $empId = null;
 
+                    // 1. Identificar empleado
                     if (!empty($empCode)) {
                         $empId = $this->repository->getEmployeeIdByCode($empCode);
                     }
-
                     if (!$empId && !empty($empName)) {
                         $empId = $this->repository->getEmployeeIdByName($empName);
-                        if (!$empId) throw new Exception("No se encontró empleado con nombre: '$empName'");
-                    } elseif (!$empId && !empty($empCode)) {
-                        throw new Exception("No se encontró empleado con nómina: '$empCode'");
-                    } elseif (!$empId) {
-                        throw new Exception("Fila sin datos de empleado.");
                     }
+                    if (!$empId) throw new Exception("Empleado no encontrado.");
 
+                    // 2. Identificar categoría
                     $catId = $this->repository->getCategoryIdByCode($catCode);
-                    if (!$catId) throw new Exception("Tipo de permiso '$catCode' no existe.");
+                    if (!$catId) throw new Exception("Tipo de permiso '$catCode' inexistente.");
 
-                    try {
-                        $start = Carbon::parse($startStr);
-                        $end = Carbon::parse($endStr);
-                        if ($end->lt($start)) throw new Exception("Fecha fin menor a inicio.");
-                    } catch (Exception $e) {
-                        if ($e->getMessage() === "Fecha fin menor a inicio.") throw $e;
-                        throw new Exception("Formato de fecha inválido. Use AAAA-MM-DD HH:MM");
-                    }
+                    // 3. Validar Fechas
+                    $start = Carbon::parse($startStr);
+                    $end = Carbon::parse($endStr);
+                    if ($end->lt($start)) throw new Exception("Fecha fin menor a inicio.");
 
+                    // 4. ESCUDO DE TRASLAPE
                     $overlap = $this->repository->findOverlap($empId, $start->format('Y-m-d H:i:s'), $end->format('Y-m-d H:i:s'));
-                    if ($overlap) throw new Exception("Se traslapa con el permiso #{$overlap->abstractexception_ptr_id} ({$overlap->start_time} al {$overlap->end_time})");
+                    if ($overlap) throw new Exception("Traslape con Folio #{$overlap->abstractexception_ptr_id}");
 
-                    // Insertar (Vía API a través del Repo) y registrar en bitácora
+                    // 5. INSERCIÓN TRANSACCIONAL
                     DB::transaction(function() use ($empId, $catId, $start, $end, $reason, $request) {
                         $newId = $this->repository->createIncidencia([
                             'employee_id' => $empId,
@@ -350,11 +337,9 @@ class IncidenciaController extends Controller
                             'incidencia_id' => $newId,
                             'valores_anteriores' => null,
                             'valores_nuevos' => [
-                                'employee_id' => $empId, 
-                                'category_id' => $catId, 
+                                'employee_id' => $empId, 'category_id' => $catId, 
                                 'start_time' => $start->format('Y-m-d H:i:s'),
-                                'end_time' => $end->format('Y-m-d H:i:s'),
-                                'reason' => $reason
+                                'end_time' => $end->format('Y-m-d H:i:s'), 'reason' => $reason
                             ],
                             'ip_address' => $request->ip()
                         ]);
@@ -368,23 +353,13 @@ class IncidenciaController extends Controller
                     $mensaje = $e->getMessage();
                 }
 
-                $resultados[] = [
-                    $empCode,
-                    $empName,
-                    $catCode,
-                    $startStr,
-                    $endStr,
-                    $reason,
-                    $status,  
-                    $mensaje  
-                ];
+                $resultados[] = [$empCode, $empName, $catCode, $startStr, $endStr, $reason, $status, $mensaje];
             }
 
-            $fileName = 'reporte_carga_' . date('Ymd_His') . '.xlsx';
-            return Excel::download(new IncidenciasResultExport($resultados), $fileName);
+            return Excel::download(new IncidenciasResultExport($resultados), 'reporte_importacion_' . now()->format('Ymd_His') . '.xlsx');
 
         } catch (Exception $e) {
-            return response()->json(['message' => 'Error crítico al leer el archivo: ' . $e->getMessage()], 500);
+            return response()->json(['message' => 'Error al leer el archivo: ' . $e->getMessage()], 500);
         }
     }
 }
