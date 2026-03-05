@@ -74,6 +74,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
         });
 
+        // 7. DETALLE DE EMPLEADO (Perfil BioTime)
+        Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
+
     });
     // --- BLOQUE 2: EDICIÓN Y ELIMINACIÓN (RESTRINGIDO) ---
     // Solo Admin y Supervisor. El 'capturista' recibirá un error 403 si intenta entrar aquí.
@@ -121,8 +124,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
         Route::post('/read-all', [NotificationController::class, 'markAllAsRead'])->name('readAll');
     });
 
-    // 7. DETALLE DE EMPLEADO (Perfil BioTime)
-    Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
+    
     
     // 8. REPORTE DE FALTAS ACUMULADAS
     Route::get('/admin/faltas', [FaltaController::class, 'index'])->name('faltas.index');

@@ -3,78 +3,99 @@
 namespace App\Repositories;
 
 use Illuminate\Support\Facades\DB;
-use App\Services\BiotimeApiService;
 use Exception;
 use Carbon\Carbon;
 
 /**
- * Repositorio de Incidencias
+ * Repositorio de Incidencias (Inyección Directa SQL)
+ * Versión de Triple Blindaje: Fuerza la zona horaria Etc/GMT+6 en PHP y la sesión de PostgreSQL.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class IncidenciaRepository
 {
-    protected $apiService;
-
-    // CONEXIÓN MAESTRA: Usamos la BD Original para evitar problemas de latencia de replicación
+    // CONEXIÓN MAESTRA: Base de datos BioTime Original
     protected $connection = 'pgsql_original';
 
-    public function __construct(BiotimeApiService $apiService)
-    {
-        $this->apiService = $apiService;
-    }
-
     /**
-     * CREACIÓN HÍBRIDA: Crea vía API y aprueba vía SQL Directo.
-     * Ajustado para omitir la columna 'status' en workflow_abstractexception.
+     * CREACIÓN DIRECTA EN BD (Sin API)
+     * Realiza una inserción atómica en las tablas de BioTime.
      */
     public function createIncidencia($data)
     {
-        // 0. Formateo de fechas para BioTime
-        $fechaInicio = Carbon::parse($data['start_time'])->format('Y-m-d H:i:s');
-        $fechaFin = Carbon::parse($data['end_time'])->format('Y-m-d H:i:s');
-
-        // 1. Enviamos la orden a la API de BioTime para crear el registro base (nace como pendiente)
-        $apiResponse = $this->apiService->crearPermiso([
-            'employee_id'   => $data['employee_id'],
-            'leave_type_id' => $data['category_id'],
-            'fecha_inicio'  => $fechaInicio,
-            'fecha_fin'     => $fechaFin,
-            'reason'        => $data['reason'] ?? 'Sin motivo'
-        ]);
-
-        if (!$apiResponse['success']) {
-            throw new Exception("Error en API BioTime al crear incidencia: " . json_encode($apiResponse['error']));
-        }
-
-        // 2. Obtenemos el ID que generó la API
-        $newId = $apiResponse['data']['id'] ?? null;
-
-        if ($newId) {
-            // 3. APROBACIÓN QUIRÚRGICA EN BD ORIGINAL
+        return DB::connection($this->connection)->transaction(function () use ($data) {
             
-            // A. En la tabla PADRE solo actualizamos 'audit_status'
-            // (Se eliminó 'status' por no existir en tu versión de BioTime)
-            DB::connection($this->connection)
+            // BLINDAJE 1: Forzamos a la base de datos a ignorar UTC en esta sesión
+            DB::connection($this->connection)->statement("SET TIME ZONE 'Etc/GMT+6'");
+
+            // 1. Insertar en la TABLA PADRE (workflow_abstractexception)
+            $newId = DB::connection($this->connection)
                 ->table('workflow_abstractexception')
-                ->where('id', $newId)
-                ->update([
-                    'audit_status' => 1, 
+                ->insertGetId([
+                    'audit_status' => 1, // 1 = Aprobado
                 ]);
 
-            // B. En la tabla HIJA (att_leave) registramos los tiempos de aprobación
+            if (!$newId) {
+                throw new Exception("No se pudo generar el folio en workflow_abstractexception.");
+            }
+
+            // BLINDAJE 2: Generamos la hora exacta de México sin importar el .env
+            $ahoraMexico = Carbon::now('Etc/GMT+6')->format('Y-m-d H:i:s');
+
+            // 2. Insertar en la TABLA HIJA (att_leave)
             DB::connection($this->connection)
                 ->table('att_leave')
-                ->where('abstractexception_ptr_id', $newId)
-                ->update([
-                    'audit_time'    => now(),
-                    'audit_user_id' => 1, 
-                    'audit_reason'  => 'Aprobado automáticamente por Sistema Externo'
+                ->insert([
+                    'abstractexception_ptr_id' => $newId,
+                    'employee_id'   => $data['employee_id'],
+                    'category_id'   => $data['category_id'],
+                    'start_time'    => Carbon::parse($data['start_time'])->format('Y-m-d H:i:s'),
+                    'end_time'      => Carbon::parse($data['end_time'])->format('Y-m-d H:i:s'),
+                    'apply_reason'  => $data['reason'] ?? 'Captura Directa Sistema Asistencia',
+                    
+                    // Usamos la variable forzada a GMT+6
+                    'apply_time'    => $ahoraMexico,
+                    'audit_time'    => $ahoraMexico,
+                    
+                    'audit_user_id' => 1,
+                    'type'          => 1,
+                    'vacation_number' => 0
                 ]);
-        } else {
-            throw new Exception("La API de BioTime creó el registro pero no devolvió el ID necesario para la aprobación.");
-        }
 
-        return $newId;
+            // 3. Limpiar caché de BioTime (att_payloadexception)
+            DB::connection($this->connection)
+                ->table('att_payloadexception')
+                ->where('item_id', (string)$newId)
+                ->delete();
+
+            return $newId;
+        });
+    }
+
+    /**
+     * BORRADO DIRECTO EN BD (Sin API)
+     */
+    public function deleteIncidencia($id)
+    {
+        return DB::connection($this->connection)->transaction(function () use ($id) {
+            
+            // 1. Borrar caché de cálculos
+            DB::connection($this->connection)
+                ->table('att_payloadexception')
+                ->where('item_id', (string)$id)
+                ->delete();
+
+            // 2. Borrar detalle (Hijo)
+            DB::connection($this->connection)
+                ->table('att_leave')
+                ->where('abstractexception_ptr_id', $id)
+                ->delete();
+
+            // 3. Borrar flujo (Padre)
+            return DB::connection($this->connection)
+                ->table('workflow_abstractexception')
+                ->where('id', $id)
+                ->delete();
+        });
     }
 
     public function getLeaveCategories($search = null)
@@ -192,7 +213,12 @@ class IncidenciaRepository
     public function updateIncidencia($id, $data)
     {
         return DB::connection($this->connection)->transaction(function () use ($id, $data) {
-            // Limpiar caché de cálculos de BioTime para forzar el recálculo con los nuevos datos
+            
+            // Aplicamos el mismo blindaje para ediciones
+            DB::connection($this->connection)->statement("SET TIME ZONE 'Etc/GMT+6'");
+            $ahoraMexico = Carbon::now('Etc/GMT+6')->format('Y-m-d H:i:s');
+
+            // Limpiar caché de cálculos de BioTime 
             DB::connection($this->connection)
                 ->table('att_payloadexception')
                 ->where('item_id', (string)$id)
@@ -210,18 +236,13 @@ class IncidenciaRepository
                 ->update([
                     'employee_id'   => $data['employee_id'],
                     'category_id'   => $data['category_id'],
-                    'start_time'    => $data['start_time'],
-                    'end_time'      => $data['end_time'],
+                    'start_time'    => Carbon::parse($data['start_time'])->format('Y-m-d H:i:s'),
+                    'end_time'      => Carbon::parse($data['end_time'])->format('Y-m-d H:i:s'),
                     'apply_reason'  => $data['reason'],
-                    'audit_time'    => now(),
+                    'audit_time'    => $ahoraMexico,
                     'audit_user_id' => 1
                 ]);
         });
-    }
-
-    public function deleteIncidencia($id)
-    {
-        return $this->apiService->borrarPermiso($id);
     }
 
     public function getEmployeeIdByCode($empCode)

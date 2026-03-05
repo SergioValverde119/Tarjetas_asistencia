@@ -145,13 +145,13 @@ class KardexService
 
                     // Si hay justificación en BioTime (Permisos)
                     if ($incidenciaAMostrar || $permiso) {
-                        if ($payloadDia->clock_in && $incidenciaAMostrar) {
-                            $entradaOficial = Carbon::parse($payloadDia->att_date . ' ' . $payloadDia->in_time);
-                            $entradaReal = Carbon::parse($payloadDia->clock_in);
-                            if ($entradaOficial->diffInMinutes($entradaReal, false) > ($reglas['limite_retardo_leve'] ?? 15)) {
-                                $payloadDia->clock_in = null;
-                            }
-                        }
+                        // if ($payloadDia->clock_in && $incidenciaAMostrar) {
+                        //     $entradaOficial = Carbon::parse($payloadDia->att_date . ' ' . $payloadDia->in_time);
+                        //     $entradaReal = Carbon::parse($payloadDia->clock_in);
+                        //     if ($entradaOficial->diffInMinutes($entradaReal, false) > ($reglas['limite_retardo_leve'] ?? 15)) {
+                        //         $payloadDia->clock_in = null;
+                        //     }
+                        // }
                         $incidencia['calificacion'] = 'J';
                         $incidencia['observaciones'] = $incidenciaAMostrar ?? 'Justificado';
                         $incidencia['nombre_permiso'] = $payloadDia->nombre_permiso ?? ($permiso->report_symbol ?? 'Permiso');
