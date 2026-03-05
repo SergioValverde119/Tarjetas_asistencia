@@ -12,12 +12,22 @@ use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\IncidenciaController; 
 use App\Http\Controllers\ChecadasBiometricosController;
 use App\Http\Controllers\FaltaController;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
     ]);
 })->name('home');
+
+Route::get('/descargar-formato', function () {
+    $pathToFile = public_path('formatos/subsidio-empleo.pdf');
+
+    if (!file_exists($pathToFile)) {
+        abort(404, 'El archivo solicitado no se encuentra en el servidor.');
+    }
+    return response()->download($pathToFile, 'Formato_Subsidio_para_el_desempleo_2026.pdf');
+});
 
 // --- NIVEL 0: EMPLEADOS Y GENERAL (Auth) ---
 // Rutas accesibles para cualquier usuario logueado
