@@ -8,6 +8,7 @@ use Exception;
 
 /**
  * Servicio para interactuar con la API de BioTime 8.5/9.0
+ * Versión optimizada: Solo checadas y sin etiquetas de sistema externo.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class BiotimeApiService
@@ -25,6 +26,9 @@ class BiotimeApiService
         $this->password = env('BIOTIME_API_PASSWORD', 'admin');
     }
 
+    /**
+     * Autenticación JWT.
+     */
     public function login()
     {
         if ($this->token) {
@@ -42,74 +46,16 @@ class BiotimeApiService
                 return $this->token;
             }
             
-            throw new Exception("Error de login en BioTime: " . $response->body());
+            throw new Exception("Falla de autenticación en BioTime.");
         } catch (Exception $e) {
-            Log::error($e->getMessage());
+            Log::error("Error login API: " . $e->getMessage());
             return null;
         }
     }
 
     /**
-     * Crear un Permiso/Incidencia (Leave) vía API
-     * AJUSTE DEFINITIVO: Nombres de campos según el error de validación JSON.
-     */
-    public function crearPermiso($data)
-    {
-        if (!$this->token) { $this->login(); }
-
-        try {
-            // BioTime espera: category (ID), start_time, end_time, employee (ID)
-            $payload = [
-                'employee'        => (int) $data['employee_id'], 
-                'category'        => (int) $data['leave_type_id'], // Corregido: antes era 'type'
-                'start_time'      => $data['fecha_inicio'],        // Corregido: antes era 'start_date'
-                'end_time'        => $data['fecha_fin'],           // Corregido: antes era 'end_date'
-                'reason'          => $data['motivo'] ?? 'Generado desde Sistema Externo',
-                'status'          => 1, // Aprobado
-                'type'            => 1, // Tipo de excepción (1 = Leave/Permiso)
-                'vacation_number' => $data['vacation_number'] ?? 0, 
-            ];
-
-            $response = Http::withToken($this->token, 'JWT')
-                ->post("{$this->baseUrl}/att/api/leaves/", $payload);
-
-            if ($response->successful()) {
-                return ['success' => true, 'data' => $response->json()];
-            }
-
-            return ['success' => false, 'error' => $response->json() ?? $response->body()];
-
-        } catch (Exception $e) {
-            Log::error("Error creando permiso vía API: " . $e->getMessage());
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Borrar un Permiso/Incidencia (Leave) vía API
-     */
-    public function borrarPermiso($id)
-    {
-        if (!$this->token) { $this->login(); }
-
-        try {
-            $response = Http::withToken($this->token, 'JWT')
-                ->delete("{$this->baseUrl}/att/api/leaves/{$id}/");
-
-            if ($response->successful()) {
-                return ['success' => true];
-            }
-
-            return ['success' => false, 'error' => $response->body()];
-
-        } catch (Exception $e) {
-            Log::error("Error borrando permiso vía API: " . $e->getMessage());
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Crear una Checada/Transacción vía API
+     * Crear una Checada/Transacción vía API.
+     * Se han eliminado las etiquetas fijas para que parezca un registro original del reloj.
      */
     public function crearChecada($data)
     {
@@ -122,12 +68,12 @@ class BiotimeApiService
                 'punch_time'     => $data['punch_time'],
                 'upload_time'    => now()->format('Y-m-d H:i:s'),
                 'punch_state'    => (string) $data['punch_state'],
-                'verify_type'    => 1, 
-                'work_code'      => '0',
-                'terminal_sn'    => $data['terminal_sn'] ?? 'API_IMPORT',
-                'terminal'       => (int) ($data['terminal_id'] ?? 1),
-                'terminal_alias' => $data['terminal_alias'] ?? 'Importación API',
-                'area_alias'     => 'SISTEMA_WEB',
+                'verify_type'    => (int) ($data['verify_type'] ?? 1), // 1 = Huella por defecto
+                'work_code'      => (string) ($data['work_code'] ?? '0'),
+                'terminal_sn'    => $data['terminal_sn'] ?? null,
+                'terminal'       => (int) ($data['terminal_id'] ?? null),
+                'terminal_alias' => $data['terminal_alias'] ?? null,
+                'area_alias'     => $data['area_alias'] ?? null, // Eliminado 'SISTEMA_WEB'
                 'temperature'    => "0.0",
                 'source'         => 1,
                 'purpose'        => 9
@@ -140,22 +86,11 @@ class BiotimeApiService
                 return ['success' => true, 'data' => $response->json()];
             }
 
-            return ['success' => false, 'error' => $response->body()];
+            return ['success' => false, 'error' => $response->json() ?? $response->body()];
 
         } catch (Exception $e) {
-            Log::error("Error creando checada vía API: " . $e->getMessage());
+            Log::error("Error inyectando checada: " . $e->getMessage());
             return ['success' => false, 'error' => $e->getMessage()];
         }
-    }
-
-    /**
-     * Obtener tipos de permisos
-     */
-    public function obtenerTiposDePermisos()
-    {
-        if (!$this->token) { $this->login(); }
-
-        $response = Http::withToken($this->token, 'JWT')->get("{$this->baseUrl}/att/api/leave-types/");
-        return $response->successful() ? $response->json() : [];
     }
 }
