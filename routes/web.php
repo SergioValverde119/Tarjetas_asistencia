@@ -20,7 +20,7 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
-Route::get('/descargar-formato', function () {
+Route::get('/subsidio-empleo', function () {
     $pathToFile = public_path('formatos/subsidio-empleo.pdf');
 
     if (!file_exists($pathToFile)) {
