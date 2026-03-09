@@ -9,8 +9,8 @@ import { debounce } from 'lodash';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import TarjetaPdf from './TarjetaPdf.vue';
-import PreviewModal from './Disponibilidad/PreviewModal.vue';
+import TarjetaPdf from '../Tarjeta/TarjetaPdf.vue';
+import PreviewModal from './PreviewModal.vue';
 import { getSchedule } from '@/routes';
 
 const props = defineProps({

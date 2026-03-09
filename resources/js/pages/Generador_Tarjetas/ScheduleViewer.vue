@@ -6,7 +6,7 @@ import { ref, onMounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import TarjetaPdf from './TarjetaPdf.vue'; // Componente de presentación para el formato del PDF.
+import TarjetaPdf from '@/pages/Tarjeta/TarjetaPdf.vue'; // Componente de presentación para el formato del PDF.
 
 // =================================================================================================
 // PROPS Y ESTADO REACTIVO

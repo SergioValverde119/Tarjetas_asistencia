@@ -10,7 +10,7 @@ import { LogOut, AlertCircle, FileDown, CheckCircle, Loader2, Lock } from 'lucid
 // --- IMPORTS ---
 import { getSchedule } from '@/routes'; 
 import { download_pdf } from '@/routes/tarjetas'; 
-import TarjetaPdf from './TarjetaPdf.vue'; 
+import TarjetaPdf from '../Tarjeta/TarjetaPdf.vue'; 
 
 
 const props = defineProps({

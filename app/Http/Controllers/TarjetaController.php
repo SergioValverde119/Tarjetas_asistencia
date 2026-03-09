@@ -90,7 +90,7 @@ class TarjetaController extends Controller
             ->map(fn($d) => "{$d->month}-{$d->year}")
             ->toArray();
 
-        return Inertia::render('MiTarjeta', [
+        return Inertia::render('Tarjeta_Individual/Index', [
             'empleado' => $empleadoData,
             'descargasPrevias' => $descargasPrevias, // Ejemplo: ["12-2025", "1-2026"]
             'resumenFaltas' => $resumenFaltas,       // Ejemplo: { 2026: { 1: [5, 8] } }
@@ -159,7 +159,7 @@ class TarjetaController extends Controller
         $emp->semaforo = $semaforo;
     }
 
-    return Inertia::render('DisponibilidadTarjetas', [
+    return Inertia::render('Disponibilidad_Tarjetas/Index', [
         'empleados' => new LengthAwarePaginator($currentItems, count($allEmployees), $perPage, $currentPage, ['path' => $request->url()]),
         // IMPORTANTE: Devolver todos los filtros para que la vista no se limpie
         'filters' => $request->only(['search', 'month', 'status']), 
@@ -202,7 +202,7 @@ class TarjetaController extends Controller
             ];
          
         }
-        return Inertia::render('BuscarTarjetas', [
+        return Inertia::render('Generador_Tarjetas/Index', [
             'empleados' => [
                 'data' => $listaFinal,
                 'current_page' => (int)$page,
@@ -252,7 +252,7 @@ class TarjetaController extends Controller
                   ->orWhere('biotime_id', 'like', "%{$search}%");
             });
         }
-        return Inertia::render('LogsDescargas', [
+        return Inertia::render('Tarjeta_Individual/LogsDescargas', [
             'logs' => $query->paginate(15)->withQueryString(),
             'filters' => $request->only(['search'])
         ]);

@@ -12,6 +12,7 @@ use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\IncidenciaController; 
 use App\Http\Controllers\ChecadasBiometricosController;
 use App\Http\Controllers\FaltaController;
+use App\Http\Controllers\HorarioController;
 use Illuminate\Support\Facades\Storage;
 
 Route::get('/', function () {
@@ -20,126 +21,16 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
-Route::get('/subsidio-empleo', function () {
-    $pathToFile = public_path('formatos/subsidio-empleo.pdf');
-
-    if (!file_exists($pathToFile)) {
-        abort(404, 'El archivo solicitado no se encuentra en el servidor.');
-    }
-    return response()->download($pathToFile, 'Formato_Subsidio_para_el_desempleo_2026.pdf');
-});
-
-// --- NIVEL 0: EMPLEADOS Y GENERAL (Auth) ---
-// Rutas accesibles para cualquier usuario logueado
-Route::middleware(['auth', 'verified'])->group(function () {
-    
-    // Dashboard (Página de inicio por defecto)
-    Route::get('/dashboard', function () {
-        return Inertia::render('Welcome');
-    })->name('dashboard');
-
-    // Módulo: Mi Tarjeta (Personal)
-    
-
-    Route::get('/MiTarjeta', [TarjetaController::class, 'indexIndividual'])->name('tarjetas.mi_tarjeta');
-    Route::post('/MiTarjeta/descargar', [TarjetaController::class, 'downloadPdf'])->name('tarjetas.download_pdf');
-    
-    // API interna para generar el PDF (Datos del mes)
-    Route::post('/api/internal/schedules', [TarjetaController::class, 'getSchedule'])->name('getSchedule');
-});
-
-// --- NIVEL 1: MONITOR DE DISPONIBILIDAD ---
-// Acceso: Administradores Y Usuarios con rol 'disponibilidad'
-Route::middleware(['auth', 'verified', 'role:admin,disponibilidad'])->group(function () {
-    
-    // Vista del Semáforo
-    Route::get('/reporte-disponibilidad', [TarjetaController::class, 'indexDisponibilidad'])->name('tarjetas.disponibilidad');
-    Route::get('/api/internal/users', [TarjetaController::class, 'getUsers']);
-});
-
-// --- NIVEL 2: SUPERVISOR DE INCIDENCIAS ---
-// Acceso: Administradores Y Usuarios con rol 'supervisor'
-Route::middleware(['auth', 'verified'])->group(function () {
-    
-    // --- BLOQUE 1: LECTURA, CREACIÓN E IMPORTACIÓN ---
-    // Accesible por Admin, Supervisor y el nuevo rol Capturista
-    Route::middleware(['role:admin,supervisor,capturista'])->group(function () {
-        Route::get('/incidencias', [IncidenciaController::class, 'index'])->name('incidencias.index');
-        Route::get('/incidencias/crear', [IncidenciaController::class, 'create'])->name('incidencias.create');
-        Route::post('/incidencias', [IncidenciaController::class, 'store'])->name('incidencias.store');
-        Route::post('/incidencias/categoria', [IncidenciaController::class, 'storeCategory'])->name('incidencias.category.store');
-        Route::get('/incidencias/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('incidencias.template');
-        Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
-    });
-
-    Route::middleware(['role:admin,supervisor,asistencia'])->group(function () {
-
-        Route::get('/asistencia-cruda', [ChecadasBiometricosController::class, 'index'])->name('asistencia_cruda.index');
-        Route::get('/asistencia-cruda/buscar', [ChecadasBiometricosController::class, 'buscar'])->name('asistencia_cruda.buscar');
-        Route::get('/asistencia-cruda/exportar', [ChecadasBiometricosController::class, 'exportar'])->name('asistencia_cruda.exportar');
-        // 4. KÁRDEX
-        Route::prefix('kardex')->name('kardex.')->group(function () {
-            Route::get('/', [KardexController::class, 'index'])->name('index');
-            Route::post('/buscar', [KardexController::class, 'buscar'])->name('buscar');
-            Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
-        });
-
-        // 7. DETALLE DE EMPLEADO (Perfil BioTime)
-        Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');
-
-    });
-    // --- BLOQUE 2: EDICIÓN Y ELIMINACIÓN (RESTRINGIDO) ---
-    // Solo Admin y Supervisor. El 'capturista' recibirá un error 403 si intenta entrar aquí.
-    Route::middleware(['role:admin,supervisor'])->group(function () {
-        Route::get('/incidencias/{id}/editar', [IncidenciaController::class, 'edit'])->name('incidencias.edit');
-        Route::put('/incidencias/{id}', [IncidenciaController::class, 'update'])->name('incidencias.update');
-        Route::delete('/incidencias/{id}', [IncidenciaController::class, 'destroy'])->name('incidencias.destroy');
-    });
-
-});
-
-// --- NIVEL 3: ADMINISTRADOR SUPREMO ---
-// Acceso: Únicamente rol 'admin'. Control total del sistema.
-Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
-
-    // 1. GESTIÓN DE USUARIOS DEL SISTEMA
-    Route::get('/usuarios', [AdminUserController::class, 'index'])->name('users.index');
-    Route::get('/usuarios/nuevo', [AdminUserController::class, 'create'])->name('users.create');
-    Route::post('/usuarios', [AdminUserController::class, 'store'])->name('users.store');
-    Route::get('/usuarios/{user}/editar', [AdminUserController::class, 'edit'])->name('users.edit');
-    Route::put('/usuarios/{user}', [AdminUserController::class, 'update'])->name('users.update');
-    Route::delete('/usuarios/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
-    Route::post('/usuarios/check-biotime', [AdminUserController::class, 'checkBiotime'])->name('users.check_biotime');
-
-    // 2. TARJETAS GENERALES (Buscador Global)
-    Route::get('/tarjetas-generales', [TarjetaController::class, 'indexUsers'])->name('tarjetas.general');
-    Route::get('/tarjetas/plantilla-registros', [\App\Http\Controllers\TarjetaController::class, 'descargarPlantillaRegistros'])->name('tarjetas.plantilla_registros');
-    Route::post('/tarjetas/importar-registros', [\App\Http\Controllers\TarjetaController::class, 'importarRegistros'])->name('tarjetas.importar_registros');
-
-    // 3. BITÁCORA DE DESCARGAS (Logs)
-    Route::get('/logs-descargas', [TarjetaController::class, 'indexLogs'])->name('logs.index');
-
-    // 5. REGLAS DE NEGOCIO
-    Route::prefix('reglas')->name('reglas.')->group(function () {
-        Route::get('/', [ReglasController::class, 'index'])->name('index');
-        Route::post('/', [ReglasController::class, 'store'])->name('store');
-        Route::post('/category', [ReglasController::class, 'storeCategory'])->name('category.store');
-        Route::post('/policy', [ReglasController::class, 'storePolicy'])->name('policy.store');
-        Route::delete('/policy/{id}', [ReglasController::class, 'deletePolicy'])->name('policy.delete');
-    });
-
-    // 6. NOTIFICACIONES
-    Route::prefix('notifications')->name('notifications.')->group(function () {
-        Route::post('/{id}/read', [NotificationController::class, 'markAsRead'])->name('read');
-        Route::post('/read-all', [NotificationController::class, 'markAllAsRead'])->name('readAll');
-    });
-
-    
-    
-    // 8. REPORTE DE FALTAS ACUMULADAS
-    Route::get('/admin/faltas', [FaltaController::class, 'index'])->name('faltas.index');
-    Route::get('/admin/faltas/exportar', [FaltaController::class, 'exportar'])->name('faltas.exportar');
-});
 
 
+
+
+
+
+require __DIR__.'/empleados.php';
+require __DIR__.'/monitor_disponibilidad.php';
+require __DIR__.'/consulta_asistencia.php';
+require __DIR__.'/capturista_incidencias.php';
+require __DIR__.'/documentos.php'; 
+require __DIR__.'/admin.php';
 require __DIR__.'/settings.php';

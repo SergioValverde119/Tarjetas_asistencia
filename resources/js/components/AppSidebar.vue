@@ -20,10 +20,11 @@ import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
 import * as incidencias from '@/routes/incidencias';
-import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert } from 'lucide-vue-next';
+import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert, CalendarClock } from 'lucide-vue-next';
 import kardex from '@/routes/kardex';
 import buscar from '@/routes/asistencia_cruda';
 import faltas from '@/routes/faltas';
+import horarios from '@/routes/horarios';
 
 const { toggleSidebar } = useSidebar();
 const page = usePage();
@@ -118,6 +119,11 @@ const mainNavItems = computed(() => {
                 title: 'Incidencias',
                 href: incidencias.index ? incidencias.index().url : '#',
                 icon: TriangleAlert
+            },
+            {
+                title: 'Horarios',
+                href: horarios.index ? horarios.index().url : '#',
+                icon: CalendarClock
             },
             {
                 title: 'Reporte Faltas',
