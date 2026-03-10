@@ -57,10 +57,12 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
         Route::put('/horarios/{id}', [HorarioController::class, 'update'])->name('horarios.update');
         Route::delete('/horarios/{id}', [HorarioController::class, 'destroy'])->name('horarios.destroy');
         
-        // 👇 ESTAS SON LAS RUTAS QUE NECESITAN ESTAR AQUÍ 👇
+        
         Route::get('/api/empleado/{nomina}/horario', [HorarioController::class, 'getHorarioEmpleado']);
         Route::get('/horarios-asignacion/{nomina}/historial', [HorarioController::class, 'historial'])->name('horarios.historial');
         Route::post('/horarios-asignacion/{nomina}/asignar', [HorarioController::class, 'asignarHorario'])->name('horarios.asignar_horario');
+        Route::delete('/horarios-asignacion/borrar/{id}', [HorarioController::class, 'destroyAsignacion'])->name('horarios.asignacion.destroy');
+
     // 8. REPORTE DE FALTAS ACUMULADAS
     Route::get('/admin/faltas', [FaltaController::class, 'index'])->name('faltas.index');
     Route::get('/admin/faltas/exportar', [FaltaController::class, 'exportar'])->name('faltas.exportar');

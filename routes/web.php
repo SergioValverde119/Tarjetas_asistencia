@@ -22,11 +22,6 @@ Route::get('/', function () {
 })->name('home');
 
 
-
-
-
-
-
 require __DIR__.'/empleados.php';
 require __DIR__.'/monitor_disponibilidad.php';
 require __DIR__.'/consulta_asistencia.php';
