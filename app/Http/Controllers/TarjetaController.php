@@ -147,7 +147,7 @@ class TarjetaController extends Controller
 
     // 3. Paginación
     $currentPage = LengthAwarePaginator::resolveCurrentPage();
-    $perPage = 10;
+    $perPage = 5;
     $currentItems = array_slice($allEmployees, ($currentPage - 1) * $perPage, $perPage);
     
     foreach ($currentItems as &$emp) {

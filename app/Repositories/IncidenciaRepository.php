@@ -9,6 +9,7 @@ use Carbon\Carbon;
 /**
  * Repositorio de Incidencias (Inyección Directa SQL)
  * Versión Blindada contra "Unique Violation" e ID Huérfanos.
+ * Corregido para filtrado por Día Exacto y Rangos.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class IncidenciaRepository
@@ -28,7 +29,6 @@ class IncidenciaRepository
             DB::connection($this->connection)->statement("SET TIME ZONE 'Etc/GMT+6'");
 
             // 1. Insertar en la TABLA PADRE (workflow_abstractexception)
-            // Laravel obtendrá el ID de la secuencia automáticamente
             $newId = DB::connection($this->connection)
                 ->table('workflow_abstractexception')
                 ->insertGetId([
@@ -40,8 +40,6 @@ class IncidenciaRepository
             }
 
             // BLINDAJE 2: ANTI-HUÉRFANOS
-            // Si por algún error previo existe el hijo pero no el padre, o viceversa,
-            // aseguramos que el espacio para $newId en att_leave esté limpio.
             DB::connection($this->connection)
                 ->table('att_leave')
                 ->where('abstractexception_ptr_id', $newId)
@@ -104,6 +102,10 @@ class IncidenciaRepository
         return $query->orderBy('id', 'asc')->get();
     }
 
+    /**
+     * OBTENCIÓN DE INCIDENCIAS CON FILTROS CORREGIDOS
+     * Soporta búsqueda por nombre/ID, día de registro, día exacto e intervalos de tiempo.
+     */
     public function getIncidencias($search = null, $fechaRegistro = null, $fechaIncidencia = null, $dateStart = null, $dateEnd = null)
     {
         $query = DB::connection($this->connection)
@@ -122,6 +124,7 @@ class IncidenciaRepository
                 'l.apply_time'
             );
 
+        // 1. Filtro por Búsqueda (Nombre o Nómina)
         if ($search) {
             $term = '%' . strtolower($search) . '%';
             $query->where(function($q) use ($term) {
@@ -131,13 +134,24 @@ class IncidenciaRepository
             });
         }
 
+        // 2. Filtro por Día de Captura (Cuándo se registró)
         if ($fechaRegistro) {
             $query->whereDate('l.apply_time', $fechaRegistro);
         }
 
+        // 3. FILTRO POR DÍA INDIVIDUAL (Día Exacto)
+        // Buscamos incidencias cuya vigencia cubra la fecha seleccionada.
+        if ($fechaIncidencia) {
+            $query->whereDate('l.start_time', '<=', $fechaIncidencia)
+                  ->whereDate('l.end_time', '>=', $fechaIncidencia);
+        }
+
+        // 4. FILTRO POR RANGO DE FECHAS
+        // Lógica de traslape: El permiso debe haber empezado antes del fin del rango 
+        // y terminado después del inicio del rango.
         if ($dateStart && $dateEnd) {
-            $query->where('l.start_time', '<=', $dateEnd . ' 23:59:59')
-                  ->where('l.end_time', '>=', $dateStart . ' 00:00:00');
+            $query->whereDate('l.start_time', '<=', $dateEnd)
+                  ->whereDate('l.end_time', '>=', $dateStart);
         }
 
         return $query->orderBy('l.apply_time', 'desc')->paginate(15);
