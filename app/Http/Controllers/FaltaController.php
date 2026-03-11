@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB; 
+use Illuminate\Support\Facades\Session; 
 use App\Services\TarjetaService;
 use App\Repositories\TarjetaRepository;
 use App\Exports\FaltasExport;
@@ -11,6 +12,10 @@ use Maatwebsite\Excel\Facades\Excel;
 use Inertia\Inertia;
 use Exception;
 
+/**
+ * Monitor de Faltas con Procesamiento Único y Filtro de Exclusión
+ * Primeramente Jehová Dios y Jesús Rey.
+ */
 class FaltaController extends Controller
 {
     protected $tarjetaService;
@@ -23,12 +28,11 @@ class FaltaController extends Controller
     }
 
     /**
-     * Muestra la interface de reportes con resultados filtrados.
+     * Muestra la interfaz y PROCESA los datos para dejarlos listos.
      */
     public function index(Request $request)
     {
-        // MAGIA: Le damos 5 minutos de vida a la petición para evitar que
-        // la pantalla se quede en blanco o dé Error 500 al consultar todo el mes.
+        // Ampliamos el tiempo para el cálculo inicial pesado
         set_time_limit(300); 
 
         try {
@@ -36,11 +40,29 @@ class FaltaController extends Controller
             $endDate = $request->input('end_date', now()->format('Y-m-d'));
             $empId = $request->input('emp_id'); 
             $search = $request->input('search', ''); 
+            $dateIncidence = $request->input('date_incidence', '');
+            
+           
+            $exclude = ['1206977']; 
 
             $faltas = [];
             
-            if ($request->has('start_date')) {
-                $faltas = $this->obtenerFaltasProcesadas($empId, $startDate, $endDate);
+            // Si hay parámetros de búsqueda, calculamos
+            if ($request->has('start_date') || $request->has('date_incidence')) {
+                
+                $finalStart = $dateIncidence ?: $startDate;
+                $finalEnd = $dateIncidence ?: $endDate;
+
+                // 1. CALCULAMOS UNA SOLA VEZ (Pasando la lista de exclusión)
+                $faltas = $this->obtenerFaltasProcesadas($empId, $finalStart, $finalEnd, $exclude);
+
+                // 2. GUARDAMOS EN SESIÓN (El almacén para el Excel)
+                // Esto garantiza que el Excel sea idéntico a lo que ves en pantalla
+                Session::put('faltas_actuales', $faltas);
+                Session::put('filtros_actuales', [
+                    'start' => $finalStart,
+                    'end' => $finalEnd
+                ]);
             }
 
             return Inertia::render('Faltas/Index', [
@@ -49,7 +71,9 @@ class FaltaController extends Controller
                     'start_date' => $startDate,
                     'end_date' => $endDate,
                     'emp_id' => $empId,
-                    'search' => $search
+                    'search' => $search,
+                    'date_incidence' => $dateIncidence,
+                    'exclude' => $exclude
                 ],
                 'empleados' => $this->tarjetaRepo->getAllEmployees()
             ]);
@@ -58,24 +82,32 @@ class FaltaController extends Controller
         }
     }
 
-    public function exportar(Request $request)
+    /**
+     * EXPORTAR: Descarga instantánea de lo que ya está en la sesión (ya filtrado).
+     */
+    public function exportar()
     {
-        // También aplicamos la regla de tiempo para la exportación de Excel masiva
-        set_time_limit(300); 
+        // Recuperamos los datos que el método 'index' ya procesó y filtró
+        $faltas = Session::get('faltas_actuales', []);
+        $info = Session::get('filtros_actuales', [
+            'start' => 'N/A', 
+            'end' => 'N/A'
+        ]);
 
-        $startDate = $request->input('start_date');
-        $endDate = $request->input('end_date');
-        $empId = $request->input('emp_id');
-
-        $faltas = $this->obtenerFaltasProcesadas($empId, $startDate, $endDate);
+        if (empty($faltas)) {
+            return redirect()->back()->with('error', 'No hay datos cargados para exportar. Realice una búsqueda primero.');
+        }
 
         return Excel::download(
-            new FaltasExport($faltas, $startDate, $endDate), 
-            "Reporte_Faltas_{$startDate}_al_{$endDate}.xlsx"
+            new FaltasExport($faltas, $info['start'], $info['end']), 
+            "Reporte_Faltas_" . now()->format('Ymd_His') . ".xlsx"
         );
     }
 
-    private function obtenerFaltasProcesadas($empId, $startDate, $endDate)
+    /**
+     * Motor de procesamiento (Cálculo real contra BioTime con exclusión)
+     */
+    private function obtenerFaltasProcesadas($empId, $startDate, $endDate, $exclude = [])
     {
         $listaFaltas = [];
         
@@ -86,6 +118,11 @@ class FaltaController extends Controller
 
         if ($empId) {
             $query->where('e.id', $empId);
+        }
+
+        // --- APLICACIÓN DEL FILTRO DE NÓMINAS ---
+        if (!empty($exclude)) {
+            $query->whereNotIn('e.emp_code', (array)$exclude);
         }
 
         // Bloqueo de empleados sin horario asignado
