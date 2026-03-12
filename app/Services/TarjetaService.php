@@ -258,15 +258,15 @@ class TarjetaService
             $reg->clock_in = $bestIn->format('Y-m-d H:i:s');
         }
 
-        if ($bestOut && $minDistOut <= $umbral) {
-            $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
-        }
-
-        if ($bestOut && $minDistOut <= $umbral) {
-
+        // --- SALIDA: SOLO VÁLIDA SI ES A TIEMPO O TARDÍA (nunca temprana) ---
+        // Tolerancia: hasta 31 minutos (desfase con entrada que es 30)
+        $umbralSalida = 31;
+        if ($bestOut && $minDistOut <= $umbralSalida) {
             if ($bestOut->lessThan($targetOut)) {
+                // Checó antes de la hora oficial: RECHAZADA
                 $reg->clock_out = null;
             } else {
+                // Checó a tiempo o después: ACEPTADA
                 $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
             }
         }

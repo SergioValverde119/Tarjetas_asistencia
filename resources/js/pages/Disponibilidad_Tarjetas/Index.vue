@@ -5,7 +5,6 @@ import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Search, AlertCircle, CheckCircle, Loader2 } from 'lucide-vue-next';
 import { debounce } from 'lodash';
-
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';

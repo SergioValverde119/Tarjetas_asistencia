@@ -200,3 +200,23 @@ function getColorForIncidencia(calificacion) {
     </div>
     </AppLayout>
 </template>
+
+<style scoped>
+/* ESTILO PARA GIRAR TEXTO DE CABECERAS */
+.v-header {
+    height: 90px; 
+    vertical-align: bottom;
+    padding-bottom: 8px !important;
+}
+
+.v-text {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-transform: uppercase;
+    font-weight: 900;
+    font-size: 10px;
+    white-space: nowrap;
+    display: inline-block;
+    margin: 0 auto;
+}
+</style>
