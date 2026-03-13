@@ -4,10 +4,13 @@ namespace App\Services;
 
 use App\Repositories\KardexRepository;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use App\Models\Configuracion;
-use Exception;
 
+/**
+ * Servicio de Kárdex (Motor Unificado)
+ * Procesa la lógica de asistencia vinculando horarios y huellas.
+ * Primeramente Jehová Dios y Jesús Rey.
+ */
 class KardexService
 {
     protected $repository;
@@ -17,265 +20,160 @@ class KardexService
         $this->repository = $repository;
     }
 
+    /**
+     * Genera la data para la tabla principal del Kárdex.
+     */
     public function generarKardex(array $filtros)
     {
-        $empleadosPaginados = $this->repository->getEmpleadosPaginados($filtros);
-        $datosProcesados = $this->procesarBloqueEmpleados($empleadosPaginados->items(), $filtros);
-
+        $empleadosP = $this->repository->getEmpleadosPaginados($filtros);
+        
         return [
-            'datosKardex' => $datosProcesados,
-            'paginador' => $empleadosPaginados,
+            'datosKardex' => $this->procesarBloqueEmpleados($empleadosP->items(), $filtros),
+            'paginador' => $empleadosP,
             'listaNominas' => $this->repository->getNominas(),
             'catalogoPermisos' => $this->repository->getCatalogoPermisos(),
         ];
     }
 
-    public function generarKardexExport(array $filtros)
-    {
-        $empleadosTodos = $this->repository->getEmpleadosTodos($filtros);
-        return $this->procesarBloqueEmpleados($empleadosTodos, $filtros);
-    }
-
+    /**
+     * Obtiene el reporte procesado para la vista individual.
+     */
     public function obtenerReporteMensualEmpleado($empleado, $mes, $ano)
     {
-        $fechaBase = Carbon::createFromDate($ano, $mes, 1);
-        $diasTotalesDelMes = $fechaBase->daysInMonth;
-        $fechaInicioMes = $fechaBase->copy()->startOfDay();
-        $fechaFinMes = $fechaBase->copy()->endOfMonth()->endOfDay();
+        $fBase = Carbon::createFromDate($ano, $mes, 1);
+        $payload = $this->repository->getPayloadData([$empleado->id], $fBase->copy()->startOfDay(), $fBase->copy()->endOfMonth());
+        
+        $procesado = $this->procesarLogicaKardex(
+            [$empleado], 
+            $payload, 
+            $mes, $ano, 1, $fBase->daysInMonth
+        );
 
-        $payloadData = $this->repository->getPayloadData([$empleado->id], $fechaInicioMes, $fechaFinMes);
-        $permisos = $this->repository->getPermisos([$empleado->id], $fechaInicioMes, $fechaFinMes);
-        $festivos = $this->repository->getDiasFestivos($fechaInicioMes, $fechaFinMes);
-
-        $resultados = $this->procesarLogicaKardex([$empleado], $payloadData, $permisos, $festivos, $mes, $ano, 1, $diasTotalesDelMes);
-        return $resultados[0];
+        return $procesado[0];
     }
 
     private function procesarBloqueEmpleados($empleados, $filtros)
     {
-        $fechaBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
-        $diasTotalesDelMes = $fechaBase->daysInMonth;
-        $diaInicio = ((int)$filtros['quincena'] == 2) ? 16 : 1;
-        $diaFin = ((int)$filtros['quincena'] == 1) ? 15 : $diasTotalesDelMes;
+        $fBase = Carbon::createFromDate((int)$filtros['ano'], (int)$filtros['mes'], 1);
+        $diaI = ((int)$filtros['quincena'] == 2) ? 16 : 1;
+        $diaF = ((int)$filtros['quincena'] == 1) ? 15 : $fBase->daysInMonth;
 
-        $fechaInicioMes = $fechaBase->copy()->day($diaInicio)->startOfDay();
-        $fechaFinMes = $fechaBase->copy()->day($diaFin)->endOfMonth()->endOfDay();
-
-        $empleadoIDs = collect($empleados)->pluck('id')->toArray();
+        $payload = $this->repository->getPayloadData(
+            collect($empleados)->pluck('id')->toArray(), 
+            $fBase->copy()->day($diaI), 
+            $fBase->copy()->day($diaF)
+        );
         
-        $payloadData = collect(); $permisos = collect(); $festivos = collect();
-
-        if (count($empleadoIDs) > 0) {
-            $payloadData = $this->repository->getPayloadData($empleadoIDs, $fechaInicioMes, $fechaFinMes);
-            $permisos = $this->repository->getPermisos($empleadoIDs, $fechaInicioMes, $fechaFinMes);
-            $festivos = $this->repository->getDiasFestivos($fechaInicioMes, $fechaFinMes);
-        }
-
-        return $this->procesarLogicaKardex($empleados, $payloadData, $permisos, $festivos, (int)$filtros['mes'], (int)$filtros['ano'], $diaInicio, $diaFin);
+        return $this->procesarLogicaKardex($empleados, $payload, (int)$filtros['mes'], (int)$filtros['ano'], $diaI, $diaF);
     }
 
-    private function procesarLogicaKardex($empleados, $payloadData, $permisos, $festivos, $mes, $ano, $diaInicio, $diaFin)
+    /**
+     * Procesa la lógica de cada día para un grupo de empleados.
+     */
+    private function procesarLogicaKardex($empleados, $payload, $mes, $ano, $diaI, $diaF)
     {
-        try {
-            $reglas = Configuracion::getAllRules();
-        } catch (\Throwable $th) {
-            // Reglas por defecto en caso de falla
-            $reglas = ['tolerancia_entrada' => 10, 'limite_retardo_leve' => 15, 'conteo_rl_para_rg' => 4];
-        }
+        $reglas = Configuracion::getAllRules();
+        $resultados = [];
 
-        $filasDelKardex = [];
+        foreach ($empleados as $emp) {
+            $cont = ['rg' => 0, 'rl' => 0, 'j' => 0, 'f' => 0, 'om' => 0];
+            $rlAcum = 0;
+            $dataEmp = $payload->get($emp->id) ?? collect();
 
-        foreach ($empleados as $empleado) {
-            // CONTADORES DEL TRABAJO
-            $contadores = ['rg' => 0, 'rl' => 0, 'j' => 0, 'f' => 0, 'omisiones' => 0];
-            $retardosLevesAcumulados = 0;
-            $limiteConversion = $reglas['conteo_rl_para_rg'] ?? 4;
-            
-            $filaEmpleado = [
-                'id' => $empleado->id, 
-                'emp_code' => $empleado->emp_code,
-                'nombre' => $empleado->first_name . ' ' . $empleado->last_name,
-                'nomina' => $empleado->nomina, 
-                'incidencias_diarias' => [],
+            // --- DETECCIÓN DEL NOMBRE DEL HORARIO ---
+            // Buscamos en el payload si algún día tiene el shift_name
+            $shiftName = 'Sin horario';
+            $primerDiaConDatos = $dataEmp->first(fn($d) => !empty($d->shift_name));
+            if ($primerDiaConDatos) {
+                $shiftName = $primerDiaConDatos->shift_name;
+            } else {
+                // Si el mes no tiene asignación, rescatamos el último histórico
+                $historial = $this->repository->getUltimoHorarioAsignado($emp->id);
+                if ($historial) $shiftName = $historial->nombre;
+            }
+
+            $fila = [
+                'id' => $emp->id, 
+                'emp_code' => $emp->emp_code, 
+                'nombre' => $emp->first_name.' '.$emp->last_name, 
+                'nomina' => $emp->nomina, 
+                'horario_nombre' => $shiftName, // Propiedad vital para el front
+                'incidencias_diarias' => []
             ];
 
-            $payloadParaEmpleado = $payloadData->get($empleado->id) ?? collect();
-            $permisosParaEmpleado = $permisos->get($empleado->id) ?? collect();
-            $fechaContratacion = $empleado->hire_date ? Carbon::parse($empleado->hire_date)->startOfDay() : null;
+            for ($d = $diaI; $d <= $diaF; $d++) {
+                $fActual = Carbon::createFromDate($ano, $mes, $d)->startOfDay();
+                $fStr = $fActual->toDateString();
+                $reg = $dataEmp->firstWhere('att_date', $fStr);
 
-            for ($dia = $diaInicio; $dia <= $diaFin; $dia++) {
-                $fechaActual = Carbon::createFromDate($ano, $mes, $dia)->startOfDay();
-                $fechaString = $fechaActual->toDateString();
+                $inc = ['calificacion' => '', 'checkin' => '', 'checkout' => '', 'observaciones' => '', 'nombre_permiso' => ''];
 
-                if ($fechaActual->greaterThanOrEqualTo(Carbon::today()) || ($fechaContratacion && $fechaActual->isBefore($fechaContratacion))) {
-                    $filaEmpleado['incidencias_diarias'][$dia] = null;
-                    continue; 
-                }
+                if ($fActual->isWeekend()) {
+                    $inc['calificacion'] = 'DESC';
+                } elseif ($reg) {
+                    $this->interpretarHuellas($reg);
+                    $inc['checkin'] = $reg->clock_in ? substr($reg->clock_in, 11, 5) : '';
+                    $inc['checkout'] = $reg->clock_out ? substr($reg->clock_out, 11, 5) : '';
 
-                $esFestivo = $festivos->contains(fn($h) => str_starts_with($h->start_date, $fechaString));
-                $festivoInfo = $esFestivo ? $festivos->first(fn($h) => str_starts_with($h->start_date, $fechaString)) : null;
-                $permiso = $this->buscarPermiso($permisosParaEmpleado, $fechaActual);
-                $payloadDia = $payloadParaEmpleado->firstWhere('att_date', $fechaString);
-
-                // Estructura rica para la vista
-                $incidencia = [
-                    'calificacion' => '', 'checkin' => '', 'checkout' => '', 'observaciones' => '', 'nombre_permiso' => ''
-                ];
-
-                if ($fechaActual->isWeekend()) {
-                    $incidencia['calificacion'] = 'DESC';
-                }
-                else if ($esFestivo && (!$payloadDia || (!$payloadDia->clock_in && !$payloadDia->clock_out))) {
-                    $incidencia['calificacion'] = 'J'; 
-                    $incidencia['observaciones'] = $festivoInfo->alias ?? 'Día Festivo';
-                    $incidencia['nombre_permiso'] = 'FESTIVO';
-                    $contadores['j']++;
-                }
-                else if (!$payloadDia) {
-                    $incidencia['calificacion'] = 'F';
-                    $contadores['f']++;
-                }
-                else {
-                    $this->procesarHuellas($payloadDia);
-
-                    $incidencia['checkin'] = $payloadDia->clock_in ? Carbon::parse($payloadDia->clock_in)->format('H:i:s') : '';
-                    $incidencia['checkout'] = $payloadDia->clock_out ? Carbon::parse($payloadDia->clock_out)->format('H:i:s') : '';
-
-                    $incidenciaAMostrar = !empty(trim($payloadDia->nombre_permiso ?? '')) ? $payloadDia->motivo_permiso : null;
-
-                    // Si hay justificación en BioTime (Permisos)
-                    if ($incidenciaAMostrar || $permiso) {
-                        // if ($payloadDia->clock_in && $incidenciaAMostrar) {
-                        //     $entradaOficial = Carbon::parse($payloadDia->att_date . ' ' . $payloadDia->in_time);
-                        //     $entradaReal = Carbon::parse($payloadDia->clock_in);
-                        //     if ($entradaOficial->diffInMinutes($entradaReal, false) > ($reglas['limite_retardo_leve'] ?? 15)) {
-                        //         $payloadDia->clock_in = null;
-                        //     }
-                        // }
-                        $incidencia['calificacion'] = 'J';
-                        $incidencia['observaciones'] = $incidenciaAMostrar ?? 'Justificado';
-                        $incidencia['nombre_permiso'] = $payloadDia->nombre_permiso ?? ($permiso->report_symbol ?? 'Permiso');
-                        $contadores['j']++;
-                    }
-                    else if (!$payloadDia->clock_in && !$payloadDia->clock_out && empty($payloadDia->timetable_name)) {
-                        $incidencia['calificacion'] = 'F';
-                        $incidencia['observaciones'] = 'Sin horario asignado';
-                        $contadores['f']++;
-                    }
-                    else if (!$payloadDia->clock_in || !$payloadDia->clock_out) {
-                        $incidencia['calificacion'] = 'F';
-                        $contadores['f']++;
-                        if ($payloadDia->clock_in || $payloadDia->clock_out) {
-                            $contadores['omisiones']++;
-                            $incidencia['observaciones'] = !$payloadDia->clock_in ? 'Falta Entrada' : 'Falta Salida';
+                    if (!empty($reg->nombre_permiso)) {
+                        $inc['calificacion'] = 'J';
+                        $inc['observaciones'] = $reg->motivo_permiso;
+                        $inc['nombre_permiso'] = $reg->nombre_permiso;
+                        $cont['j']++;
+                    } elseif (!$reg->clock_in || !$reg->clock_out) {
+                        $inc['calificacion'] = 'F';
+                        $inc['observaciones'] = !$reg->clock_in ? 'Falta Entrada' : 'Falta Salida';
+                        $cont['f']++; $cont['om']++;
+                    } else {
+                        $cal = $this->evaluar($reg, $reglas);
+                        if ($cal === 'RL') {
+                            $rlAcum++;
+                            if ($rlAcum >= ($reglas['conteo_rl_para_rg'] ?? 4)) { $cal = 'RG'; $rlAcum = 0; }
                         }
-                    } 
-                    else {
-                        $calif = $this->evaluarRetardo($payloadDia, $reglas);
-                        
-                        if ($calif === 'RL') {
-                            $retardosLevesAcumulados++;
-                            if ($retardosLevesAcumulados >= $limiteConversion) {
-                                $calif = 'RG';
-                                $retardosLevesAcumulados = 0;
-                                $incidencia['observaciones'] = 'Acumulación de ' . $limiteConversion . ' Retardos Leves';
-                            }
-                        }
-                        
-                        $incidencia['calificacion'] = $calif;
-
-                        if ($calif === 'RL') $contadores['rl']++;
-                        if ($calif === 'RG') $contadores['rg']++;
+                        $inc['calificacion'] = $cal;
+                        if ($cal === 'RL') $cont['rl']++;
+                        if ($cal === 'RG') $cont['rg']++;
                     }
+                } else {
+                    $inc['calificacion'] = 'F'; $cont['f']++;
                 }
-                
-                $filaEmpleado['incidencias_diarias'][$dia] = $incidencia;
+                $fila['incidencias_diarias'][$d] = $inc;
             }
-
-            $filaEmpleado['total_rg'] = $contadores['rg'];
-            $filaEmpleado['total_rl'] = $contadores['rl'];
-            $filaEmpleado['total_j'] = $contadores['j'];
-            $filaEmpleado['total_f'] = $contadores['f'];
-            $filaEmpleado['total_omisiones'] = $contadores['omisiones'];
-
-            $filasDelKardex[] = $filaEmpleado;
+            $fila = array_merge($fila, [
+                'total_rg' => $cont['rg'], 'total_rl' => $cont['rl'], 
+                'total_j' => $cont['j'], 'total_f' => $cont['f'], 
+                'total_omisiones' => $cont['om']
+            ]);
+            $resultados[] = $fila;
         }
-        return $filasDelKardex;
+        return $resultados;
     }
 
-    private function procesarHuellas($reg)
-    {
-        if (empty($reg->in_time) || empty($reg->all_punches)) return;
-        $reg->clock_in = null; $reg->clock_out = null;
-        $fechaStr = Carbon::parse($reg->att_date)->format('Y-m-d');
+    private function interpretarHuellas($r) {
+        $r->clock_in = null; $r->clock_out = null;
+        if (empty($r->in_time) || empty($r->all_punches)) return;
         
-        $date = Carbon::parse($reg->att_date);
-        $inicioPrimavera = Carbon::parse("first sunday of april $date->year");
-        $finOtono = Carbon::parse("last sunday of october $date->year");
-        $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
-        $horasAjuste = $esVerano ? 1 : 0;
-
-        $duracionMinutos = $reg->duration ?? 480;
-        $targetIn = Carbon::parse($fechaStr . ' ' . $reg->in_time);
-        $targetOut = (clone $targetIn)->addMinutes($duracionMinutos);
-
-        $punchesRaw = array_filter(explode(',', $reg->all_punches ?? ''), fn($p) => !empty(trim($p)));
-        $punchesAjustados = []; $lastAdded = null;
-        foreach ($punchesRaw as $pStr) {
-            try {
-                $p = Carbon::parse(trim($pStr));
-                if ($horasAjuste != 0) $p->addHours($horasAjuste);
-                if (!$lastAdded || abs($p->diffInSeconds($lastAdded)) > 30) {
-                    $punchesAjustados[] = $p; $lastAdded = $p;
-                }
-            } catch (Exception $e) {}
+        $tIn = Carbon::parse($r->att_date.' '.$r->in_time);
+        $tOut = (clone $tIn)->addMinutes($r->duration ?? 480);
+        $punches = array_filter(explode(',', $r->all_punches));
+        
+        $bestIn = null; $bestOut = null; $minIn = 999; $minOut = 999;
+        foreach ($punches as $pStr) {
+            $p = Carbon::parse($pStr);
+            $dIn = abs($tIn->diffInMinutes($p, false));
+            $dOut = abs($tOut->diffInMinutes($p, false));
+            if ($dIn < $dOut && $dIn <= 30) { if ($dIn < $minIn) { $minIn = $dIn; $bestIn = $p; } }
+            elseif ($dOut <= 31) { if ($dOut < $minOut) { $minOut = $dOut; $bestOut = $p; } }
         }
-
-        $bestIn = null; $bestOut = null;
-        $minDistIn = 999999; $minDistOut = 999999;
-        foreach ($punchesAjustados as $punch) {
-            $distIn = abs($targetIn->diffInMinutes($punch, false));
-            $distOut = abs($targetOut->diffInMinutes($punch, false));
-            if ($distIn < $distOut) {
-                if ($distIn < $minDistIn) { $minDistIn = $distIn; $bestIn = $punch; }
-            } else {
-                if ($distOut < $minDistOut) { $minDistOut = $distOut; $bestOut = $punch; }
-            }
-        }
-
-        $umbral = 30; 
-        if ($bestIn && $minDistIn <= $umbral) $reg->clock_in = $bestIn->format('Y-m-d H:i:s');
-        if ($bestOut && $minDistOut <= $umbral) {
-            if ($bestOut->lessThan($targetOut)) {
-                $reg->clock_out = null; 
-            } else {
-                $reg->clock_out = $bestOut->format('Y-m-d H:i:s');
-            }
-        }
+        $r->clock_in = $bestIn?->toDateTimeString();
+        $r->clock_out = ($bestOut && $bestOut >= $tOut) ? $bestOut->toDateTimeString() : null;
     }
 
-    private function evaluarRetardo($registro, $reglas)
-    {
-        if (!$registro->clock_in || !$registro->in_time) return 'OK';
-        $fechaCheckIn = Carbon::parse($registro->att_date)->format('Y-m-d');
-        $horaEntradaEstandar = Carbon::parse($fechaCheckIn . ' ' . $registro->in_time);
-        $horaRealEntrada = Carbon::parse($registro->clock_in);
-        
-        $diferenciaMinutos = $horaEntradaEstandar->diffInMinutes($horaRealEntrada, false);
-        
-        $tolerancia = $reglas['tolerancia_entrada'] ?? 10;
-        $limiteLeve = $reglas['limite_retardo_leve'] ?? 15;
-
-        if ($diferenciaMinutos <= $tolerancia) return 'OK';
-        if ($diferenciaMinutos > $tolerancia && $diferenciaMinutos <= $limiteLeve) return 'RL';
+    private function evaluar($r, $rules) {
+        if (!$r->clock_in) return 'F';
+        $dif = Carbon::parse($r->att_date.' '.$r->in_time)->diffInMinutes(Carbon::parse($r->clock_in), false);
+        if ($dif <= ($rules['tolerancia_entrada'] ?? 10)) return 'OK';
+        if ($dif <= ($rules['limite_retardo_leve'] ?? 15)) return 'RL';
         return 'RG';
-    }
-
-    private function buscarPermiso($permisosEmpleado, $fechaActual) {
-        foreach ($permisosEmpleado as $permiso) {
-            $inicio = Carbon::parse($permiso->start_time)->startOfDay();
-            $fin = Carbon::parse($permiso->end_time)->endOfDay();
-            if ($fechaActual->between($inicio, $fin, true)) return $permiso;
-        } return null;
     }
 }
