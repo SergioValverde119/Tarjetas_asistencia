@@ -78,6 +78,11 @@ function getColorForIncidencia(calificacion) {
         default: return 'bg-blue-200 text-blue-800 font-bold'; 
     }
 }
+// Dentro del <script setup>
+function exportarDirectorioEstatico() {
+    // Llamada directa sin query string para que sea "de cajón"
+    window.location.href = kardex.exportar_horarios().url;
+}
 </script>
 
 <template>
@@ -94,9 +99,10 @@ function getColorForIncidencia(calificacion) {
                         <UserMinusIcon class="h-5 w-5" :class="form.sin_horario ? 'text-white' : 'text-gray-500'" />
                         <span>{{ form.sin_horario ? 'Viendo Sin Horario' : 'Sin Horario' }}</span>
                     </button>
-                    <Link :href="reglas.index().url" class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border border-gray-300 bg-white py-2 px-4 font-bold text-gray-700 shadow-sm hover:bg-gray-50">
-                        <Cog6ToothIcon class="h-5 w-5 text-gray-500" /> <span>Reglas</span>
-                    </Link>
+                    <button @click="exportarDirectorioEstatico" class="w-full sm:w-auto justify-center flex items-center gap-2 rounded-md border border-green-600 bg-green-600 py-2 px-4 font-bold text-white shadow-sm hover:bg-green-700 transition-all">
+                        <ArrowDownTrayIcon class="h-5 w-5 text-white" /> 
+                        <span>Exportar Empleados</span>
+                    </button>
                 </div>
             </div>
 

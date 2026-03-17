@@ -23,6 +23,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/', [KardexController::class, 'index'])->name('index');
             Route::post('/buscar', [KardexController::class, 'buscar'])->name('buscar');
             Route::get('/exportar', [KardexController::class, 'exportar'])->name('exportar');
+            Route::get('/exportar-horarios', [KardexController::class, 'exportarHorarios'])->name('exportar_horarios');
         });
 
         Route::get('/empleado/{id}', [EmpleadoController::class, 'show'])->name('empleado.show');

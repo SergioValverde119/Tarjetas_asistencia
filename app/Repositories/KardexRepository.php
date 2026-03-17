@@ -247,4 +247,36 @@ class KardexRepository
             ->get()
             ->groupBy('employee_id');
     }
+
+    // app/Repositories/KardexRepository.php
+/**
+ * Obtiene el directorio completo de empleados con sus horarios (estático).
+ */
+public function getDirectorioEstaticoHorarios()
+{
+    return DB::connection($this->connection)
+        ->table('personnel_employee')
+        ->select(
+            'personnel_employee.id',
+            'personnel_employee.emp_code',
+            'personnel_employee.first_name',
+            'personnel_employee.last_name',
+            DB::raw("(SELECT area_name FROM personnel_area pa JOIN personnel_employee_area pea ON pa.id = pea.area_id WHERE pea.employee_id = personnel_employee.id AND pa.area_name != 'SEDUVI' LIMIT 1) as area_nombre"),
+            'sh.alias as nombre_turno',
+            'sd.day_index',
+            'ti.in_time',
+            DB::raw("(ti.in_time::time + (ti.work_time_duration || ' minutes')::interval)::time as out_time")
+        )
+        ->where('personnel_employee.enable_att', true)
+        ->where('personnel_employee.status', 0) // Solo empleados activos
+        ->leftJoin('att_attschedule as s', function($join) {
+            $join->on('personnel_employee.id', '=', 's.employee_id')
+                 ->whereRaw('?::date BETWEEN s.start_date AND s.end_date', [now()->toDateString()]);
+        })
+        ->leftJoin('att_attshift as sh', 's.shift_id', '=', 'sh.id')
+        ->leftJoin('att_shiftdetail as sd', 'sh.id', '=', 'sd.shift_id')
+        ->leftJoin('att_timeinterval as ti', 'sd.time_interval_id', '=', 'ti.id')
+        ->orderBy('personnel_employee.emp_code')
+        ->get();
+}
 }

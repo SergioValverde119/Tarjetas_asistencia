@@ -11,7 +11,7 @@ use App\Services\KardexService;
 
 /**
  * Controlador de Empleado
- * Sincronizado con la vista Empleado/Show.vue
+ * Sincronizado para que los nombres coincidan con la vista Vue (Show.vue).
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class EmpleadoController extends Controller
@@ -53,29 +53,35 @@ class EmpleadoController extends Controller
                 return redirect()->route('kardex.index')->with('error', 'Empleado no encontrado.');
             }
 
-            // 2. Obtener estadísticas del servicio
+            // 2. Obtener estadísticas del servicio (Motor unificado)
             $datosProcesados = $this->kardexService->obtenerReporteMensualEmpleado($empleado, $mes, $ano);
 
-            // --- MAPEO DE TOTALES PARA LA VISTA ---
-            // La vista espera: total_faltas, total_rg, total_rl, total_permisos, total_omisiones
+            // --- CORRECCIÓN: Nombres sincronizados con el frontend ---
             $stats = (object)[
-                'total_faltas' => $datosProcesados['total_f'],
-                'total_rg' => $datosProcesados['total_rg'],
-                'total_rl' => $datosProcesados['total_rl'],
-                'total_permisos' => $datosProcesados['total_j'],
-                'total_omisiones' => $datosProcesados['total_omisiones'],
-                'incidencias_diarias' => $datosProcesados['incidencias_diarias']
+                'total_f' => $datosProcesados['total_f'] ?? 0,
+                'total_rg' => $datosProcesados['total_rg'] ?? 0,
+                'total_rl' => $datosProcesados['total_rl'] ?? 0,
+                'total_j' => $datosProcesados['total_j'] ?? 0,
+                'total_omisiones' => $datosProcesados['total_omisiones'] ?? 0,
+                'incidencias_diarias' => $datosProcesados['incidencias_diarias'] ?? []
             ];
 
-            // 3. Construir calendario para la vista de lista
+            // 3. Construir calendario para la cuadrícula visual
             $inicioMes = Carbon::createFromDate($ano, $mes, 1)->startOfDay();
             $finMes = $inicioMes->copy()->endOfMonth();
             $calendario = [];
+
+            // Relleno de días vacíos para alinear el calendario (Lun-Dom)
+            $primerDiaSemana = $inicioMes->dayOfWeek; 
+            for ($i = 0; $i < $primerDiaSemana; $i++) {
+                $calendario[] = ['type' => 'empty', 'id' => "empty-$i"];
+            }
 
             for ($day = 1; $day <= $finMes->day; $day++) {
                 $fechaDia = Carbon::createFromDate($ano, $mes, $day);
                 $calendario[] = [
                     'type' => 'day',
+                    'id' => $day,
                     'day' => $day,
                     'nombre_dia' => $fechaDia->isoFormat('ddd'),
                     'incidencia' => $stats->incidencias_diarias[$day] ?? null,
@@ -83,21 +89,23 @@ class EmpleadoController extends Controller
                 ];
             }
 
-            // 4. Obtener horario detallado (Nombre + Días)
+            // 4. Otros datos de apoyo
+            $catalogoPermisos = $this->kardexRepo->getCatalogoPermisos();
             $horarioBase = $this->kardexRepo->getHorarioActualConDias($empleado->id);
 
             return Inertia::render('Empleado/Show', [
                 'empleado' => $empleado,
                 'stats' => $stats,
                 'calendario' => $calendario,
-                'catalogoPermisos' => $this->kardexRepo->getCatalogoPermisos(),
+                'catalogoPermisos' => $catalogoPermisos,
                 'fechaActual' => ucfirst($inicioMes->isoFormat('MMMM YYYY')),
                 'filtros' => ['mes' => $mes, 'ano' => $ano],
                 'horario' => $horarioBase
             ]);
 
         } catch (\Exception $e) {
-            return redirect()->back()->with('error', 'Error: ' . $e->getMessage());
+            report($e);
+            return redirect()->back()->with('error', 'Error al cargar el detalle: ' . $e->getMessage());
         }
     }
 }

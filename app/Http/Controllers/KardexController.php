@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use App\Services\KardexService; 
 use App\Repositories\KardexRepository;
 use App\Exports\KardexExport;
+use App\Exports\EmpleadoHorarioExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Log;
 
@@ -124,4 +125,10 @@ class KardexController extends Controller
             'filtros' => $filtros
         ]);
     }
+    
+
+public function exportarHorarios() {
+    $fileName = 'Directorio_Horarios_Personal_' . now()->format('Y-m-d') . '.xlsx';
+    return \Maatwebsite\Excel\Facades\Excel::download(new EmpleadoHorarioExport($this->kardexService), $fileName);
+}
 }
