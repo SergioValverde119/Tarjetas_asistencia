@@ -12,7 +12,7 @@ use Carbon\Carbon;
  */
 class HorarioRepository
 {
-    protected $connection = 'pgsql_biotime';
+    protected $connection = 'pgsql_original';
 
     // ========================================================================
     // MÉTODOS PARA LAS PLANTILLAS DE HORARIOS (CATÁLOGO)
