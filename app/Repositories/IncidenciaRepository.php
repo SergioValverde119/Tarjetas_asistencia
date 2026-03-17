@@ -135,6 +135,12 @@ class IncidenciaRepository
             $query->whereDate('l.apply_time', $fechaRegistro);
         }
 
+        if ($fechaIncidencia) {
+        // Buscamos incidencias que estén vigentes durante cualquier momento de ese día
+        $query->where('l.start_time', '<=', $fechaIncidencia . ' 23:59:59')
+              ->where('l.end_time', '>=', $fechaIncidencia . ' 00:00:00');
+        }
+
         if ($dateStart && $dateEnd) {
             $query->where('l.start_time', '<=', $dateEnd . ' 23:59:59')
                   ->where('l.end_time', '>=', $dateStart . ' 00:00:00');
