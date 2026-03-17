@@ -18,6 +18,7 @@ class EmpleadoHorarioExport implements FromCollection, WithHeadings, ShouldAutoS
     }
 
     public function collection() {
+        
         return collect($this->kardexService->generarDirectorioHorarios());
     }
 
