@@ -275,12 +275,22 @@ class IncidenciaRepository
                 'e.first_name', 
                 'e.last_name', 
                 'e.emp_code',
-                DB::raw("COALESCE(SUM((l.end_time::date - l.start_time::date) + 1), 0) as total_dias_periodo"),
+                // Subconsulta para contar días hábiles restando fines de semana y feriados calculados
+                DB::raw("COALESCE(SUM((
+                    SELECT count(*) 
+                    FROM generate_series(l.start_time::date, l.end_time::date, '1 day'::interval) d 
+                    WHERE extract(dow from d) NOT IN (0, 6)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM att_holiday h 
+                        WHERE d::date >= h.start_date 
+                        AND d::date < (h.start_date + (h.duration_day * interval '1 day'))
+                    )
+                )), 0) as total_dias_periodo"),
                 DB::raw("MIN(l.start_time)::date as primera_incidencia"),
                 DB::raw("MAX(l.end_time)::date as ultima_incidencia")
             );
 
-        // LÓGICA DE FILTRADO EXCLUYENTE
+        // Lógica de filtrado temporal
         if (!empty($filtros['date_start']) && !empty($filtros['date_end'])) {
             $query->where('l.start_time', '>=', $filtros['date_start'] . ' 00:00:00')
                   ->where('l.start_time', '<=', $filtros['date_end'] . ' 23:59:59');
@@ -288,6 +298,7 @@ class IncidenciaRepository
             $query->whereYear('l.start_time', $filtros['ano']);
         }
 
+        // Filtro de búsqueda por nombre o ID
         if (!($filtros['general'] ?? false) && !empty($filtros['search'])) {
             $term = '%' . strtolower($filtros['search']) . '%';
             $query->where(function($q) use ($term) {
@@ -304,6 +315,7 @@ class IncidenciaRepository
 
     /**
      * Obtiene el detalle para los niveles 2 y 3.
+     * CORRECCIÓN: Se aplica el mismo cálculo de rango de feriados (start_date + duration_day).
      */
     public function getDetallePorEmpleado($empleadoId, $filtros)
     {
@@ -325,7 +337,17 @@ class IncidenciaRepository
                 'l.start_time as desde',
                 'l.end_time as hasta',
                 'l.apply_reason as motivo',
-                DB::raw("(l.end_time::date - l.start_time::date) + 1 as dias")
+                // Cálculo de días hábiles individual restando sábados, domingos y feriados por duración
+                DB::raw("(
+                    SELECT count(*) 
+                    FROM generate_series(l.start_time::date, l.end_time::date, '1 day'::interval) d 
+                    WHERE extract(dow from d) NOT IN (0, 6)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM att_holiday h 
+                        WHERE d::date >= h.start_date 
+                        AND d::date < (h.start_date + (h.duration_day * interval '1 day'))
+                    )
+                ) as dias")
             )
             ->orderBy('l.start_time', 'desc')
             ->get();
