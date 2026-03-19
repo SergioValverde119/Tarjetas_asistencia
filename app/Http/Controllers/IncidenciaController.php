@@ -362,4 +362,33 @@ class IncidenciaController extends Controller
             return response()->json(['message' => 'Error al leer el archivo: ' . $e->getMessage()], 500);
         }
     }
+
+    public function statistics(Request $request)
+    {
+        $filtros = [
+            'search'     => $request->input('search'),
+            'general'    => $request->boolean('general', false),
+            'ano'        => $request->input('ano'),
+            'date_start' => $request->input('date_start'),
+            'date_end'   => $request->input('date_end'),
+        ];
+
+        // Si no hay nada, por defecto año actual
+        if (empty($filtros['ano']) && empty($filtros['date_start'])) {
+            $filtros['ano'] = date('Y');
+        }
+
+        $empleados = $this->repository->getEstadisticasGlobales($filtros);
+
+        $empleados->getCollection()->transform(function ($emp) use ($filtros) {
+            // Pasamos todos los filtros para que el detalle respete el rango
+            $emp->detalles = $this->repository->getDetallePorEmpleado($emp->id, $filtros);
+            return $emp;
+        });
+
+        return Inertia::render('Incidencias/Statistics', [
+            'empleados' => $empleados,
+            'filters'   => $filtros
+        ]);
+    }
 }

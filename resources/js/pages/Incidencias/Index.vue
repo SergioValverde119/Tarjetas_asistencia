@@ -7,11 +7,11 @@ import ErrorModal from '@/components/ErrorModal.vue';
 import { 
     PlusCircle, List, FileText, Calendar, CheckCircle, Clock, 
     Search, Filter, FileUp, Download, X, Loader2, AlertTriangle, 
-    Info, BookOpen, Edit2, RotateCw
+    Info, BookOpen, Edit2, RotateCw, ChartSpline
 } from 'lucide-vue-next';
 import { debounce } from 'lodash';
 import axios from 'axios';
-
+import { statistics } from '@/routes/incidencias';
 // Importamos las rutas (Wayfinder)
 import { create as createIncidencia, edit as editIncidencia } from '@/routes/incidencias';
 
@@ -181,7 +181,7 @@ const formatDate = (dateString) => {
                         <div class="flex gap-2">
                             <button 
                                 @click="showImportModal = true"
-                                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none transition-colors"
+                                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-xs font-black uppercase tracking-widest rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none transition-all active:scale-95"
                             >
                                 <FileUp class="h-4 w-4 mr-2" /> Importar Excel
                             </button>
@@ -199,6 +199,17 @@ const formatDate = (dateString) => {
                                 class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none transition-colors"
                             >
                                 <PlusCircle class="h-4 w-4 mr-2" /> Nueva Individual
+                            </Link>
+                            
+
+                            <!-- MODIFICACIÓN: Botón de estadísticas ahora es naranja con el icono ChartSpline -->
+                            <Link 
+                                v-if="statistics"
+                                :href="statistics().url" 
+                                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-xs font-black uppercase tracking-widest rounded-lg text-white bg-orange-500 hover:bg-orange-600 focus:outline-none transition-all active:scale-95"
+                            >
+                                <ChartSpline class="h-4 w-4 mr-2" /> 
+                                <span>Estadísticas</span>
                             </Link>
                         </div>
                     </div>

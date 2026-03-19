@@ -263,4 +263,71 @@ class IncidenciaRepository
             'leave_category_type' => 0
         ]);
     }
+
+
+    public function getEstadisticasGlobales($filtros)
+    {
+        $query = DB::connection($this->connection)
+            ->table('personnel_employee as e')
+            ->join('att_leave as l', 'e.id', '=', 'l.employee_id')
+            ->select(
+                'e.id', 
+                'e.first_name', 
+                'e.last_name', 
+                'e.emp_code',
+                DB::raw("COALESCE(SUM((l.end_time::date - l.start_time::date) + 1), 0) as total_dias_periodo"),
+                DB::raw("MIN(l.start_time)::date as primera_incidencia"),
+                DB::raw("MAX(l.end_time)::date as ultima_incidencia")
+            );
+
+        // LÓGICA DE FILTRADO EXCLUYENTE
+        if (!empty($filtros['date_start']) && !empty($filtros['date_end'])) {
+            $query->where('l.start_time', '>=', $filtros['date_start'] . ' 00:00:00')
+                  ->where('l.start_time', '<=', $filtros['date_end'] . ' 23:59:59');
+        } else if (!empty($filtros['ano'])) {
+            $query->whereYear('l.start_time', $filtros['ano']);
+        }
+
+        if (!($filtros['general'] ?? false) && !empty($filtros['search'])) {
+            $term = '%' . strtolower($filtros['search']) . '%';
+            $query->where(function($q) use ($term) {
+                $q->whereRaw("LOWER(e.first_name || ' ' || e.last_name) LIKE ?", [$term])
+                  ->orWhereRaw("CAST(e.emp_code AS TEXT) LIKE ?", [$term]);
+            });
+        }
+
+        return $query->groupBy('e.id', 'e.first_name', 'e.last_name', 'e.emp_code')
+            ->orderBy('total_dias_periodo', 'desc')
+            ->paginate(15)
+            ->withQueryString();
+    }
+
+    /**
+     * Obtiene el detalle para los niveles 2 y 3.
+     */
+    public function getDetallePorEmpleado($empleadoId, $filtros)
+    {
+        $query = DB::connection($this->connection)
+            ->table('att_leave as l')
+            ->join('att_leavecategory as c', 'l.category_id', '=', 'c.id')
+            ->where('l.employee_id', $empleadoId);
+
+        if (!empty($filtros['date_start']) && !empty($filtros['date_end'])) {
+            $query->where('l.start_time', '>=', $filtros['date_start'] . ' 00:00:00')
+                  ->where('l.start_time', '<=', $filtros['date_end'] . ' 23:59:59');
+        } else if (!empty($filtros['ano'])) {
+            $query->whereYear('l.start_time', $filtros['ano']);
+        }
+
+        return $query->select(
+                'c.category_name as tipo',
+                'c.report_symbol as simbolo',
+                'l.start_time as desde',
+                'l.end_time as hasta',
+                'l.apply_reason as motivo',
+                DB::raw("(l.end_time::date - l.start_time::date) + 1 as dias")
+            )
+            ->orderBy('l.start_time', 'desc')
+            ->get();
+    }
 }

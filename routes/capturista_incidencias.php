@@ -16,6 +16,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/incidencias/categoria', [IncidenciaController::class, 'storeCategory'])->name('incidencias.category.store');
         Route::get('/incidencias/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('incidencias.template');
         Route::post('/incidencias/importar', [IncidenciaController::class, 'import'])->name('incidencias.import');
+        Route::get('/incidencias/estadisticas', [IncidenciaController::class, 'statistics'])->name('incidencias.statistics');
     });
 
 });
