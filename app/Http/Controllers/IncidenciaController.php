@@ -14,6 +14,8 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\IncidenciasResultExport; 
 use App\Exports\IncidenciasTemplateExport;
 use Illuminate\Validation\ValidationException;
+use App\Exports\IncidenciasEstadisticasExport;
+
 
 /**
  * Controlador de Incidencias
@@ -363,32 +365,114 @@ class IncidenciaController extends Controller
         }
     }
 
-    public function statistics(Request $request)
+      public function statistics(Request $request)
     {
-        $filtros = [
-            'search'     => $request->input('search'),
-            'general'    => $request->boolean('general', false),
-            'ano'        => $request->input('ano'),
-            'date_start' => $request->input('date_start'),
-            'date_end'   => $request->input('date_end'),
-        ];
+        try {
+            $filtros = [
+                'search'        => $request->input('search'),
+                'general'       => $request->boolean('general', false),
+                'department_id' => $request->input('department_id'),
+                'ano'           => $request->input('ano'),
+                'date_start'    => $request->input('date_start'),
+                'date_end'      => $request->input('date_end'),
+            ];
 
-        // Si no hay nada, por defecto año actual
-        if (empty($filtros['ano']) && empty($filtros['date_start'])) {
-            $filtros['ano'] = date('Y');
+            return Inertia::render('Incidencias/Statistics', [
+                'empleados'     => $this->repository->getEstadisticasGlobales($filtros),
+                'departamentos' => $this->repository->getDepartamentos(),
+                'filters'       => $filtros
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Error en Vista de Estadísticas: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Error al cargar las estadísticas.']);
         }
+    }
 
-        $empleados = $this->repository->getEstadisticasGlobales($filtros);
+    /**
+     * Exportación a Excel OPTIMIZADA (Sin N+1 consultas).
+     */
+    public function exportStatistics(Request $request)
+    {
+        ini_set('memory_limit', '1024M'); // Aumentamos a 1GB por si la lista es enorme
+        set_time_limit(0);
 
-        $empleados->getCollection()->transform(function ($emp) use ($filtros) {
-            // Pasamos todos los filtros para que el detalle respete el rango
-            $emp->detalles = $this->repository->getDetallePorEmpleado($emp->id, $filtros);
-            return $emp;
-        });
+        try {
+            $filtros = [
+                'search'        => $request->input('search'),
+                'general'       => $request->boolean('general', false),
+                'department_id' => $request->input('department_id'),
+                'ano'           => $request->input('ano'),
+                'date_start'    => $request->input('date_start'),
+                'date_end'      => $request->input('date_end'),
+            ];
 
-        return Inertia::render('Incidencias/Statistics', [
-            'empleados' => $empleados,
-            'filters'   => $filtros
-        ]);
+            // 1. Obtener empleados (Consulta 1)
+            $empleados = $this->repository->getEstadisticasParaExportar($filtros);
+
+            if ($empleados->isEmpty()) {
+                return back()->withErrors(['error' => 'No hay datos para exportar.']);
+            }
+
+            // 2. Obtener TODOS los detalles de estos empleados en UNA SOLA consulta (Consulta 2)
+            $empIds = $empleados->pluck('id')->toArray();
+            $todosLosDetalles = $this->repository->getDetallesBulk($empIds, $filtros);
+            
+            // Agrupamos en memoria (PHP es más rápido para esto que hacer cientos de queries)
+            $detallesPorEmpleado = collect($todosLosDetalles)->groupBy('employee_id');
+
+            $resumenCategorias = [];
+            $listadoDetallado = [];
+
+            // 3. Procesar datos en memoria
+            foreach ($empleados as $emp) {
+                // Obtenemos los detalles de la colección en memoria, no de la BD
+                $detalles = $detallesPorEmpleado->get($emp->id, collect());
+                
+                if ($detalles->isEmpty()) continue;
+
+                // --- NIVEL 2: Resumen por Categoría ---
+                $agrupados = $detalles->groupBy('tipo');
+                foreach ($agrupados as $tipo => $items) {
+                    $resumenCategorias[] = [
+                        'nomina' => $emp->emp_code,
+                        'nombre' => "{$emp->first_name} {$emp->last_name}",
+                        'tipo'   => $tipo,
+                        'dias'   => $items->sum('dias'),
+                        'veces'  => $items->count(),
+                        'primero'=> $items->min('desde') ? Carbon::parse($items->min('desde'))->format('d/m/Y') : '---',
+                        'ultimo' => $items->max('hasta') ? Carbon::parse($items->max('hasta'))->format('d/m/Y') : '---',
+                    ];
+                }
+
+                // --- NIVEL 3: Detalle Individual ---
+                foreach ($detalles as $d) {
+                    $listadoDetallado[] = [
+                        'nomina' => $emp->emp_code,
+                        'nombre' => "{$emp->first_name} {$emp->last_name}",
+                        'tipo'   => $d->tipo,
+                        'inicio' => $d->desde ? Carbon::parse($d->desde)->format('d/m/Y H:i') : '---',
+                        'final'  => $d->hasta ? Carbon::parse($d->hasta)->format('d/m/Y H:i') : '---',
+                        'motivo' => $d->motivo ?? 'Sin observaciones',
+                    ];
+                }
+            }
+
+            $exportData = [
+                'resumen_categorias' => $resumenCategorias,
+                'listado_detallado'  => $listadoDetallado
+            ];
+
+            $startLabel = $filtros['date_start'] ?: ($filtros['ano'] ? "01/01/{$filtros['ano']}" : "Inicio");
+            $endLabel   = $filtros['date_end']   ?: ($filtros['ano'] ? "31/12/{$filtros['ano']}" : "Fin");
+
+            return Excel::download(
+                new IncidenciasEstadisticasExport($exportData, $startLabel, $endLabel), 
+                'Reporte_Incidencias_BioTime.xlsx'
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Fallo crítico en Excel: " . $e->getMessage());
+            return back()->withErrors(['error' => 'El reporte es demasiado grande o hubo un error en el servidor.']);
+        }
     }
 }

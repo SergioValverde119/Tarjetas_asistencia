@@ -265,7 +265,23 @@ class IncidenciaRepository
     }
 
 
-    public function getEstadisticasGlobales($filtros)
+    
+    /**
+     * Obtiene los departamentos para el catálogo.
+     */
+    public function getDepartamentos()
+    {
+        return DB::connection($this->connection)
+            ->table('personnel_department')
+            ->select('id', 'dept_name', 'parent_dept_id')
+            ->orderBy('dept_name', 'asc')
+            ->get();
+    }
+
+    /**
+     * Centralización de la lógica para el alcance de la búsqueda.
+     */
+    private function getBaseQuery($filtros)
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee as e')
@@ -275,7 +291,6 @@ class IncidenciaRepository
                 'e.first_name', 
                 'e.last_name', 
                 'e.emp_code',
-                // Subconsulta para contar días hábiles restando fines de semana y feriados calculados
                 DB::raw("COALESCE(SUM((
                     SELECT count(*) 
                     FROM generate_series(l.start_time::date, l.end_time::date, '1 day'::interval) d 
@@ -290,15 +305,21 @@ class IncidenciaRepository
                 DB::raw("MAX(l.end_time)::date as ultima_incidencia")
             );
 
-        // Lógica de filtrado temporal
-        if (!empty($filtros['date_start']) && !empty($filtros['date_end'])) {
-            $query->where('l.start_time', '>=', $filtros['date_start'] . ' 00:00:00')
-                  ->where('l.start_time', '<=', $filtros['date_end'] . ' 23:59:59');
-        } else if (!empty($filtros['ano'])) {
-            $query->whereYear('l.start_time', $filtros['ano']);
+        if (!empty($filtros['department_id'])) {
+            $deptId = (int)$filtros['department_id'];
+            $query->whereIn('e.department_id', function($subquery) use ($deptId) {
+                $subquery->select('id')
+                    ->from(DB::raw("(
+                        WITH RECURSIVE sub_depts AS (
+                            SELECT id FROM personnel_department WHERE id = $deptId
+                            UNION ALL
+                            SELECT d.id FROM personnel_department d
+                            INNER JOIN sub_depts sd ON d.parent_dept_id = sd.id
+                        ) SELECT id FROM sub_depts
+                    ) as hierarchical_depts"));
+            });
         }
 
-        // Filtro de búsqueda por nombre o ID
         if (!($filtros['general'] ?? false) && !empty($filtros['search'])) {
             $term = '%' . strtolower($filtros['search']) . '%';
             $query->where(function($q) use ($term) {
@@ -307,22 +328,63 @@ class IncidenciaRepository
             });
         }
 
-        return $query->groupBy('e.id', 'e.first_name', 'e.last_name', 'e.emp_code')
-            ->orderBy('total_dias_periodo', 'desc')
-            ->paginate(15)
-            ->withQueryString();
+        if (!empty($filtros['date_start']) && !empty($filtros['date_end'])) {
+            $query->where('l.start_time', '>=', $filtros['date_start'] . ' 00:00:00')
+                  ->where('l.start_time', '<=', $filtros['date_end'] . ' 23:59:59');
+        } else if (!empty($filtros['ano'])) {
+            $query->whereYear('l.start_time', $filtros['ano']);
+        }
+
+        return $query;
     }
 
     /**
-     * Obtiene el detalle para los niveles 2 y 3.
-     * CORRECCIÓN: Se aplica el mismo cálculo de rango de feriados (start_date + duration_day).
+     * MODIFICACIÓN: Ahora adjunta los detalles a los empleados paginados
+     * para que la vista de Vue pueda mostrarlos correctamente.
      */
-    public function getDetallePorEmpleado($empleadoId, $filtros)
+    public function getEstadisticasGlobales($filtros)
     {
+        $paginated = $this->getBaseQuery($filtros)
+            ->groupBy('e.id', 'e.first_name', 'e.last_name', 'e.emp_code')
+            ->orderBy('total_dias_periodo', 'desc')
+            ->paginate(15)
+            ->withQueryString();
+
+        // Extraemos los IDs de los empleados de la página actual
+        $empIds = collect($paginated->items())->pluck('id')->toArray();
+
+        // Buscamos sus detalles de forma masiva (solo de esos 15)
+        $detalles = $this->getDetallesBulk($empIds, $filtros)->groupBy('employee_id');
+
+        // Los inyectamos en la colección paginada
+        $paginated->getCollection()->transform(function ($emp) use ($detalles) {
+            $emp->detalles = $detalles->get($emp->id, collect());
+            return $emp;
+        });
+
+        return $paginated;
+    }
+
+    public function getEstadisticasParaExportar($filtros)
+    {
+        return $this->getBaseQuery($filtros)
+            ->groupBy('e.id', 'e.first_name', 'e.last_name', 'e.emp_code')
+            ->orderBy('total_dias_periodo', 'desc')
+            ->get();
+    }
+
+    /**
+     * Método optimizado para obtener detalles MASIVOS.
+     * Evita hacer una consulta por cada empleado (Problema N+1).
+     */
+    public function getDetallesBulk($empleadoIds, $filtros)
+    {
+        if (empty($empleadoIds)) return collect();
+
         $query = DB::connection($this->connection)
             ->table('att_leave as l')
             ->join('att_leavecategory as c', 'l.category_id', '=', 'c.id')
-            ->where('l.employee_id', $empleadoId);
+            ->whereIn('l.employee_id', $empleadoIds);
 
         if (!empty($filtros['date_start']) && !empty($filtros['date_end'])) {
             $query->where('l.start_time', '>=', $filtros['date_start'] . ' 00:00:00')
@@ -332,12 +394,12 @@ class IncidenciaRepository
         }
 
         return $query->select(
+                'l.employee_id',
                 'c.category_name as tipo',
                 'c.report_symbol as simbolo',
                 'l.start_time as desde',
                 'l.end_time as hasta',
                 'l.apply_reason as motivo',
-                // Cálculo de días hábiles individual restando sábados, domingos y feriados por duración
                 DB::raw("(
                     SELECT count(*) 
                     FROM generate_series(l.start_time::date, l.end_time::date, '1 day'::interval) d 
