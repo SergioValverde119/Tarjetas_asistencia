@@ -22,8 +22,8 @@ class BiotimeApiService
     {
         $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://10.37.1.6:8024'), '/');
         $this->token    = env('BIOTIME_API_TOKEN', null); 
-        $this->username = env('BIOTIME_API_USER', 'admin');
-        $this->password = env('BIOTIME_API_PASSWORD', 'admin');
+        $this->username = env('BIOTIME_API_USER', 'api');
+        $this->password = env('BIOTIME_API_PASSWORD', 'Axelaxel1.');
     }
 
     /**
@@ -31,24 +31,34 @@ class BiotimeApiService
      */
     public function login()
     {
+        // Si ya tenemos un token cargado de forma manual en el constructor, lo usamos.
         if ($this->token) {
             return $this->token;
         }
 
         try {
-            $response = Http::post("{$this->baseUrl}/api-token-auth/", [
+            // El endpoint correcto proporcionado es jwt-api-token-auth/
+            $response = Http::post("{$this->baseUrl}/jwt-api-token-auth/", [
                 'username' => $this->username,
                 'password' => $this->password,
             ]);
 
             if ($response->successful()) {
-                $this->token = $response->json()['token'];
-                return $this->token;
+                $data = $response->json();
+                
+                // BioTime suele devolver el token en la llave 'token' o 'jwt'
+                $this->token = $data['token'] ?? ($data['jwt'] ?? null);
+                
+                if ($this->token) {
+                    return $this->token;
+                }
             }
             
-            throw new Exception("Falla de autenticación en BioTime.");
+            Log::error("Falla de login BioTime: " . $response->body());
+            return null;
+            
         } catch (Exception $e) {
-            Log::error("Error login API: " . $e->getMessage());
+            Log::error("Error login API BioTime: " . $e->getMessage());
             return null;
         }
     }
