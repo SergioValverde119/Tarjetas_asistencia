@@ -20,8 +20,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/{id}/editar', [IncidenciaController::class, 'edit'])->name('edit');
             Route::get('/estadisticas', [IncidenciaController::class, 'statistics'])->name('statistics');
             Route::get('/estadisticas/exportar', [IncidenciaController::class, 'exportStatistics'])->name('statistics.export');
-            Route::get('/plantilla', [IncidenciaController::class, 'descargarPlantilla'])->name('template');
-            Route::post('/importar', [IncidenciaController::class, 'importar'])->name('import');
+            Route::get('/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('template');
+            Route::post('/importar', [IncidenciaController::class, 'import'])->name('import');
         
         });
     });
