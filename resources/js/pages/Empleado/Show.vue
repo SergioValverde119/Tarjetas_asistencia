@@ -20,7 +20,7 @@ import {
     ChatBubbleLeftRightIcon 
 } from '@heroicons/vue/24/outline';
 import { home } from '@/routes';
-
+import CardGenerator from './CardGenerator.vue';
 const props = defineProps({
     empleado: Object,
     stats: Object,
@@ -238,13 +238,19 @@ const breadcrumbs = [
 
         <div class="max-w-7xl mx-auto py-8 sm:px-6 lg:px-8">
             
-            <div class="mb-4">
-                <!-- Botón Volver con Persistencia de Filtros -->
-                <Link :href="backUrl" class="flex items-center text-gray-500 hover:text-blue-600 transition-colors font-medium text-sm w-max">
-                    <ArrowLeftIcon class="w-4 h-4 mr-1" />
-                    Volver al Kárdex General
-                </Link>
-            </div>
+            <div class="mb-4 flex justify-between items-center">
+                    <Link :href="backUrl" class="flex items-center text-gray-500 hover:text-blue-600 transition-colors font-medium text-sm w-max">
+                        <ArrowLeftIcon class="w-4 h-4 mr-1" />
+                        Volver al Kárdex General
+                    </Link>
+
+                    <!-- IMPLEMENTACIÓN DEL MÓDULO GENERADOR -->
+                    <CardGenerator 
+                        :employee="empleado" 
+                        :month="form.mes" 
+                        :year="form.ano" 
+                    />
+                </div>
 
             <!-- TARJETA UNIFICADA: PERFIL COMPACTO -->
             <div class="bg-white overflow-hidden shadow-md rounded-lg mb-6 border border-gray-100">
