@@ -13,6 +13,7 @@ use App\Http\Controllers\IncidenciaController;
 use App\Http\Controllers\ChecadasBiometricosController;
 use App\Http\Controllers\FaltaController;
 use App\Http\Controllers\HorarioController;
+use App\Http\Controllers\ListaAsistenciaController;
 use Illuminate\Support\Facades\Storage;
 
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
@@ -66,4 +67,12 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     // 8. REPORTE DE FALTAS ACUMULADAS
     Route::get('/admin/faltas', [FaltaController::class, 'index'])->name('faltas.index');
     Route::get('/admin/faltas/exportar', [FaltaController::class, 'exportar'])->name('faltas.exportar');
+
+    Route::prefix('asistencia')->name('asistencia.')->group(function () {
+            // Esta es la pantalla de búsqueda y selección (Index)
+            Route::get('/', [ListaAsistenciaController::class, 'index'])->name('index');
+            
+            // Esta es la pantalla que genera el PDF (Show)
+            Route::get('/lista/{id}', [ListaAsistenciaController::class, 'show'])->name('lista');
+        });
 });
