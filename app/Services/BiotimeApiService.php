@@ -9,7 +9,7 @@ use Exception;
 /**
  * Servicio para interactuar con la API de BioTime 8.5/9.0
  * Versión optimizada: Solo checadas y sin etiquetas de sistema externo.
- * Corregido: Renovación automática de Token cuando expira la firma.
+ * Corregido: Renovación automática de Token y manejo de registros duplicados.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class BiotimeApiService
@@ -33,7 +33,6 @@ class BiotimeApiService
      */
     public function login($force = false)
     {
-        // Si ya tenemos un token y no estamos forzando, lo usamos.
         if ($this->token && !$force) {
             return $this->token;
         }
@@ -64,7 +63,7 @@ class BiotimeApiService
 
     /**
      * Crear una Checada/Transacción vía API.
-     * Mantiene tu estructura de datos intacta y maneja el error de firma expirada.
+     * Maneja el error de firma expirada y omite errores de registros duplicados.
      */
     public function crearChecada($data, $isRetry = false)
     {
@@ -73,7 +72,6 @@ class BiotimeApiService
         }
 
         try {
-            // TU ESTRUCTURA ORIGINAL (No modificada)
             $payload = [
                 'emp_code'       => (string) $data['emp_code'],
                 'emp'            => (int) $data['emp_id'],
@@ -96,13 +94,27 @@ class BiotimeApiService
 
             $result = $response->json();
 
-            // --- ÚNICA MODIFICACIÓN: MANEJO DE EXPIRACIÓN ---
+            // 1. MANEJO DE EXPIRACIÓN DE TOKEN
             if ($response->status() === 401 || (isset($result['detail']) && str_contains(strtolower($result['detail']), 'expired'))) {
                 if (!$isRetry) {
                     Log::warning("Firma expirada detectada. Renovando token y reintentando...");
-                    $this->login(true); // Forzamos nuevo login
+                    $this->login(true);
                     if ($this->token) {
-                        return $this->crearChecada($data, true); // Reintento
+                        return $this->crearChecada($data, true);
+                    }
+                }
+            }
+
+            // 2. MANEJO DE REGISTROS DUPLICADOS (ERROR "CONJUNTO ÚNICO")
+            // Si el error indica que ya existe, lo tratamos como "éxito" para no interrumpir el flujo
+            if (isset($result['non_field_errors']) && is_array($result['non_field_errors'])) {
+                foreach ($result['non_field_errors'] as $errorMsg) {
+                    if (str_contains($errorMsg, 'conjunto único') || str_contains($errorMsg, 'unique set')) {
+                        return [
+                            'success' => true, 
+                            'already_exists' => true,
+                            'message' => 'El registro ya existe en BioTime.'
+                        ];
                     }
                 }
             }
