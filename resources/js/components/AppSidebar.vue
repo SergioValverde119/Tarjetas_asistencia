@@ -20,7 +20,7 @@ import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
 import * as incidencias from '@/routes/incidencias';
-import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert, CalendarClock } from 'lucide-vue-next';
+import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert, CalendarClock, TableProperties } from 'lucide-vue-next';
 import kardex from '@/routes/kardex';
 import buscar from '@/routes/asistencia_cruda';
 import faltas from '@/routes/faltas';
@@ -129,6 +129,11 @@ const mainNavItems = computed(() => {
                 title: 'Reporte Faltas',
                 href: faltas.index ? faltas.index().url : '#',
                 icon: BookAlert
+            },
+            {
+                title: 'Listas de asistencia',
+                href: faltas.index ? faltas.index().url : '#',
+                icon: TableProperties
             },
             { 
                 title: 'Generador de Tarjetas', 

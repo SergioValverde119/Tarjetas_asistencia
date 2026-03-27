@@ -8,7 +8,7 @@ use Exception;
 
 /**
  * Servicio para interactuar con la API de BioTime 8.5/9.0
- * Versión optimizada: Solo checadas y sin etiquetas de sistema externo.
+ * Versión corregida: Manejo automático de expiración de firma JWT (signature has expired).
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class BiotimeApiService
@@ -21,6 +21,7 @@ class BiotimeApiService
     public function __construct()
     {
         $this->baseUrl  = rtrim(env('BIOTIME_API_URL', 'http://10.37.1.6:8024'), '/');
+        // El token del ENV es el inicial, pero el servicio puede renovarlo en tiempo de ejecución
         $this->token    = env('BIOTIME_API_TOKEN', null); 
         $this->username = env('BIOTIME_API_USER', 'api');
         $this->password = env('BIOTIME_API_PASSWORD', 'Axelaxel1.');
@@ -28,16 +29,16 @@ class BiotimeApiService
 
     /**
      * Autenticación JWT.
+     * @param bool $force Si es true, ignora el token actual y pide uno nuevo al servidor.
      */
-    public function login()
+    public function login($force = false)
     {
-        // Si ya tenemos un token cargado de forma manual en el constructor, lo usamos.
-        if ($this->token) {
+        // Si ya tenemos un token y no estamos forzando renovación, lo usamos
+        if ($this->token && !$force) {
             return $this->token;
         }
 
         try {
-            // El endpoint correcto proporcionado es jwt-api-token-auth/
             $response = Http::post("{$this->baseUrl}/jwt-api-token-auth/", [
                 'username' => $this->username,
                 'password' => $this->password,
@@ -46,10 +47,12 @@ class BiotimeApiService
             if ($response->successful()) {
                 $data = $response->json();
                 
-                // BioTime suele devolver el token en la llave 'token' o 'jwt'
-                $this->token = $data['token'] ?? ($data['jwt'] ?? null);
+                // BioTime devuelve el token en 'token' o 'jwt'
+                $newToken = $data['token'] ?? ($data['jwt'] ?? null);
                 
-                if ($this->token) {
+                if ($newToken) {
+                    $this->token = $newToken;
+                    // Opcional: Podrías guardar este token en Cache para no loguear en cada petición
                     return $this->token;
                 }
             }
@@ -65,11 +68,18 @@ class BiotimeApiService
 
     /**
      * Crear una Checada/Transacción vía API.
-     * Se han eliminado las etiquetas fijas para que parezca un registro original del reloj.
+     * Maneja el reintento automático si detecta "signature has expired".
      */
-    public function crearChecada($data)
+    public function crearChecada($data, $isRetry = false)
     {
-        if (!$this->token) { $this->login(); }
+        // Asegurar que tenemos un token inicial
+        if (!$this->token) { 
+            $this->login(); 
+        }
+
+        if (!$this->token) {
+            return ['success' => false, 'error' => 'No se pudo obtener el token de autenticación.'];
+        }
 
         try {
             $payload = [
@@ -77,29 +87,51 @@ class BiotimeApiService
                 'emp'            => (int) $data['emp_id'],
                 'punch_time'     => $data['punch_time'],
                 'upload_time'    => now()->format('Y-m-d H:i:s'),
-                'punch_state'    => (string) $data['punch_state'],
-                'verify_type'    => (int) ($data['verify_type'] ?? 1), // 1 = Huella por defecto
+                'punch_state'    => (string) ($data['punch_state'] ?? '0'),
+                'verify_type'    => (int) ($data['verify_type'] ?? 1), 
                 'work_code'      => (string) ($data['work_code'] ?? '0'),
                 'terminal_sn'    => $data['terminal_sn'] ?? null,
                 'terminal'       => (int) ($data['terminal_id'] ?? null),
-                'terminal_alias' => $data['terminal_alias'] ?? null,
-                'area_alias'     => $data['area_alias'] ?? null, // Eliminado 'SISTEMA_WEB'
                 'temperature'    => "0.0",
                 'source'         => 1,
                 'purpose'        => 9
             ];
 
-            $response = Http::withToken($this->token, 'JWT')
-                ->post("{$this->baseUrl}/iclock/api/transactions/", $payload);
+            // BioTime requiere el prefijo "JWT " (con espacio) en el header de Authorization
+            $response = Http::withHeaders([
+                'Authorization' => 'JWT ' . $this->token,
+                'Content-Type'  => 'application/json',
+            ])->post("{$this->baseUrl}/iclock/api/transactions/", $payload);
 
-            if ($response->successful()) {
-                return ['success' => true, 'data' => $response->json()];
+            $result = $response->json();
+
+            // --- DETECCIÓN DE TOKEN EXPIRADO ---
+            // Si el status es 401 o el mensaje dice "expired"
+            if ($response->status() === 401 || (isset($result['detail']) && str_contains(strtolower($result['detail']), 'expired'))) {
+                if (!$isRetry) {
+                    Log::warning("Firma expirada detectada para {$data['emp_code']}. Renovando token...");
+                    
+                    $this->login(true); // Forzamos un nuevo login para obtener un token fresco
+                    
+                    if ($this->token) {
+                        // Reintentamos la operación una única vez con el nuevo token
+                        return $this->crearChecada($data, true);
+                    }
+                }
             }
 
-            return ['success' => false, 'error' => $response->json() ?? $response->body()];
+            if ($response->successful() || $response->status() === 201) {
+                return ['success' => true, 'data' => $result];
+            }
+
+            return [
+                'success' => false, 
+                'error'   => $result ?? $response->body(),
+                'status'  => $response->status()
+            ];
 
         } catch (Exception $e) {
-            Log::error("Error inyectando checada: " . $e->getMessage());
+            Log::error("Error crítico inyectando checada: " . $e->getMessage());
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
