@@ -25,6 +25,7 @@ import kardex from '@/routes/kardex';
 import buscar from '@/routes/asistencia_cruda';
 import faltas from '@/routes/faltas';
 import horarios from '@/routes/horarios';
+import listas from '@/routes/asistencia';
 
 const { toggleSidebar } = useSidebar();
 const page = usePage();
@@ -132,7 +133,7 @@ const mainNavItems = computed(() => {
             },
             {
                 title: 'Listas de asistencia',
-                href: faltas.index ? faltas.index().url : '#',
+                href: listas.index ? listas.index().url : '#',
                 icon: TableProperties
             },
             { 

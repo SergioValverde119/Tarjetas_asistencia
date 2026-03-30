@@ -69,10 +69,7 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     Route::get('/admin/faltas/exportar', [FaltaController::class, 'exportar'])->name('faltas.exportar');
 
     Route::prefix('asistencia')->name('asistencia.')->group(function () {
-            // Esta es la pantalla de búsqueda y selección (Index)
             Route::get('/', [ListaAsistenciaController::class, 'index'])->name('index');
-            
-            // Esta es la pantalla que genera el PDF (Show)
             Route::get('/lista/{id}', [ListaAsistenciaController::class, 'show'])->name('lista');
         });
 });

@@ -1,105 +1,138 @@
+<script>
+// Definición del Layout fuera del script setup para evitar errores de compilación con defineOptions
+import AppLayout from '@/layouts/AppLayout.vue';
+export default { layout: AppLayout };
+</script>
+
 <script setup>
-import { ref, computed, nextTick } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { ref, watch, computed, nextTick } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
+import { SidebarProvider } from '@/components/ui/sidebar';
+import { 
+    Search, Calendar, Printer, FileDown,
+    RotateCw, Filter, CheckCircle, Loader2,
+    ChevronDown, UserCheck, ArrowLeft, RefreshCw
+} from 'lucide-vue-next';
+import { debounce } from 'lodash';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// Iconos para la interfaz (no se imprimen)
-import { Printer } from 'lucide-vue-next';
-import { 
-    ArrowDownTrayIcon, 
-    ArrowLeftIcon, 
-    ArrowPathIcon 
-} from '@heroicons/vue/24/outline';
-
+// Componentes del PDF
 import EncabezadoPdf from '../Tarjeta/EncabezadoPdf.vue';
 import PieDePaginaPdf from '../Tarjeta/PieDePaginaPdf.vue';
 
-// Propiedades recibidas del controlador
+/**
+ * Pantalla de Gestión de Listas de Asistencia Manual.
+ * Integra búsqueda y previsualización en una sola vista.
+ * Primeramente Jehová Dios y Jesús Rey.
+ */
 const props = defineProps({
-    employee: { 
-        type: Object, 
-        default: () => ({}) 
-    },
-    selectedMonth: { 
-        type: Number, 
-        default: 1 
-    },
-    selectedYear: { 
-        type: Number, 
-        default: 2025 
-    },
-    months: { 
-        type: Array, 
-        default: () => [] 
-    },
-    schedule: { 
-        type: String, 
-        default: "08:00 - 16:00" 
-    },
-    justifications: { 
-        type: Array, 
-        default: () => [] 
-    },
-    holidays: { 
-        type: Array, 
-        default: () => [] 
-    },
-    weekends: { 
-        type: Array, 
-        default: () => [] 
-    }
+    employees: { type: Array, default: () => [] },
+    filters: { type: Object, default: () => ({}) },
+    months: { type: Array, default: () => [] },
+    // Estas props vendrán cuando se presione "Crear" (Inertia Reload)
+    selectedEmployee: { type: Object, default: null },
+    attendanceData: { type: Object, default: null }
 });
 
+// --- ESTADO ---
+const form = ref({
+    employee_id: props.filters.employee_id || '',
+    search: props.filters.search || '',
+    mes: parseInt(props.filters.mes) || new Date().getMonth() + 1,
+    ano: parseInt(props.filters.ano) || new Date().getFullYear()
+});
+
+const isSearching = ref(false);
 const isGenerating = ref(false);
+const showDropdown = ref(false);
+const showList = ref(!!props.attendanceData);
 
-const monthName = computed(() => {
-    return props.months[props.selectedMonth - 1] || '---';
+// --- BÚSQUEDA ---
+const handleSearch = debounce((val) => {
+    isSearching.value = true;
+    router.get('/asistencia', { search: val }, {
+        preserveState: true, preserveScroll: true, replace: true,
+        only: ['employees'],
+        onFinish: () => isSearching.value = false
+    });
+}, 400);
+
+watch(() => form.value.search, (val) => {
+    if (form.value.employee_id && val !== `${props.selectedEmployee?.first_name} ${props.selectedEmployee?.last_name}`) {
+        form.value.employee_id = '';
+    }
+    showDropdown.value = true;
+    handleSearch(val);
 });
 
-const daysInMonth = computed(() => {
-    return new Date(props.selectedYear, props.selectedMonth, 0).getDate();
-});
+const selectEmployee = (emp) => {
+    form.value.employee_id = emp.id;
+    form.value.search = `${emp.first_name} ${emp.last_name}`;
+    showDropdown.value = false;
+};
 
-// Generación de quincenas
+// --- ACCIONES ---
+const crearLista = () => {
+    if (!form.value.employee_id) return;
+    router.get('/asistencia', {
+        employee_id: form.value.employee_id,
+        mes: form.value.mes,
+        ano: form.value.ano,
+        search: form.value.search
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => { showList.value = true; }
+    });
+};
+
+const limpiarFiltros = () => {
+    form.value.search = '';
+    form.value.employee_id = '';
+    showList.value = false;
+    router.get('/asistencia');
+};
+
+// --- LÓGICA DE LA CUADRÍCULA ---
+const daysInMonth = computed(() => new Date(form.value.ano, form.value.mes, 0).getDate());
 const firstFortnight = computed(() => Array.from({ length: 15 }, (_, i) => i + 1));
 const secondFortnight = computed(() => {
     const days = [];
-    for (let i = 16; i <= daysInMonth.value; i++) {
-        days.push(i);
-    }
+    const total = daysInMonth.value;
+    for (let i = 16; i <= total; i++) days.push(i);
     return days;
 });
 
 const getDayStatus = (day) => {
-    const weekend = props.weekends.find(w => w.day === day);
+    if (!props.attendanceData) return null;
+    const { weekends, holidays, justifications } = props.attendanceData;
+    
+    const weekend = weekends?.find(w => w.day === day);
     if (weekend) return { label: weekend.label, isBlocked: true };
-    if (props.holidays.includes(day)) return { label: 'DÍA FERIADO', isBlocked: true };
-    const just = props.justifications.find(j => parseInt(j.day) === day);
+    
+    if (holidays?.map(Number).includes(Number(day))) return { label: 'DÍA FERIADO', isBlocked: true };
+    
+    const just = justifications?.find(j => parseInt(j.day) === day);
     if (just) return { label: just.motivo.toUpperCase(), isBlocked: true };
+    
     return null;
 };
 
+// --- DESCARGA E IMPRESIÓN ---
 const descargarPDF = async () => {
     if (isGenerating.value) return;
     isGenerating.value = true;
     try {
         await nextTick();
-        await new Promise(resolve => setTimeout(resolve, 600));
         const element = document.getElementById('pdf-to-capture');
-        const canvas = await html2canvas(element, { 
-            scale: 2, 
-            useCORS: true, 
-            backgroundColor: '#ffffff' 
-        });
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
         const pdf = new jsPDF('p', 'mm', 'letter');
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Lista_${props.employee.emp_code}_${monthName.value}.pdf`);
-    } catch (error) {
-        console.error("Error al generar el PDF:", error);
+        pdf.save(`Lista_${props.selectedEmployee?.emp_code}_${props.months[form.value.mes-1]}.pdf`);
     } finally {
         isGenerating.value = false;
     }
@@ -107,262 +140,272 @@ const descargarPDF = async () => {
 
 const handlePrint = () => window.print();
 
+const anosDisponibles = computed(() => {
+    const c = new Date().getFullYear();
+    return [c, c - 1, c - 2];
+});
 </script>
 
 <template>
-    <Head :title="`Lista Asistencia - ${employee.emp_code}`" />
-    
-    <div class="no-print sticky top-0 z-50 bg-gray-800 p-4 mb-6 shadow-xl flex justify-between items-center">
-        <Link href="/asistencia" class="text-white text-xs font-bold uppercase flex items-center gap-2">
-            <ArrowLeftIcon class="w-4 h-4" /> Volver
-        </Link>
-        <div class="flex gap-3">
-            <button @click="handlePrint" class="bg-gray-600 text-white px-5 py-2 rounded-lg text-[10px] font-bold uppercase flex items-center gap-2">
-                <Printer class="w-4 h-4" /> Imprimir
-            </button>
-            <button @click="descargarPDF" :disabled="isGenerating" class="bg-gray-100 text-gray-900 px-6 py-2 rounded-lg text-[10px] font-bold uppercase flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-50">
-                <ArrowPathIcon v-if="isGenerating" class="w-4 h-4 animate-spin" />
-                <ArrowDownTrayIcon v-else class="w-4 h-4" />
-                {{ isGenerating ? 'Procesando...' : 'Descargar PDF' }}
-            </button>
-        </div>
-    </div>
+    <Head title="Asistencia Manual" />
 
-    <div class="page-container pb-20">
-        <div id="pdf-to-capture" class="pdf-card-container">
-            <EncabezadoPdf />
+    <SidebarProvider>
+        <AppSidebar>
+            <div class="p-6 bg-slate-100 min-h-screen w-full flex flex-col font-sans">
+                
+                <!-- BARRA DE FILTROS INTEGRADA -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 w-full mb-6 no-print">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-sm font-black text-slate-700 flex items-center gap-2 uppercase tracking-widest leading-none">
+                            <Filter class="h-4 w-4 text-blue-500" /> Búsqueda Avanzada
+                        </h3>
+                        <button @click="limpiarFiltros" class="text-[10px] text-slate-400 hover:text-red-600 font-black uppercase tracking-tighter transition-all flex items-center gap-1">
+                            <RotateCw class="h-3 w-3" /> Reiniciar Selección
+                        </button>
+                    </div>
 
-            <!-- Información Personal -->
-            <div class="personal-data-list">
-                <div class="info-row">
-                    <span class="label">Nombre:</span>
-                    <span class="value">{{ employee.first_name }} {{ employee.last_name }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Área de adscripción:</span>
-                    <span class="value uppercase">{{ employee.department_name }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Número de empleado:</span>
-                    <span class="value font-mono">{{ employee.emp_code }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Jefe inmediato:</span>
-                    <span class="value line-empty"></span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Horario:</span>
-                    <!-- Se asume que el dato ya viene en formato 24h desde el controlador -->
-                    <span class="value uppercase">{{ schedule }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Mes y Año:</span>
-                    <span class="value font-bold uppercase">{{ monthName }} / {{ selectedYear }}</span>
-                </div>
-            </div>
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                        <!-- Buscador -->
+                        <div class="md:col-span-4 relative">
+                            <label class="block text-[9px] font-black text-slate-400 mb-1 uppercase tracking-widest">1. Trabajador</label>
+                            <div class="relative">
+                                <Search class="absolute left-3 top-2.5 h-4 w-4 text-slate-300" />
+                                <input 
+                                    v-model="form.search" 
+                                    @focus="showDropdown = true" 
+                                    type="text" 
+                                    class="block w-full pl-10 pr-10 rounded-lg border-slate-200 text-sm h-10 font-bold uppercase bg-slate-50 focus:ring-blue-500" 
+                                    placeholder="Nombre o nómina..." 
+                                />
+                                <div v-if="showDropdown && employees.length > 0" class="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto">
+                                    <div v-for="emp in employees" :key="emp.id" @click="selectEmployee(emp)" class="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors">
+                                        <div class="font-black text-slate-800 uppercase text-[11px] leading-tight">{{ emp.first_name }} {{ emp.last_name }}</div>
+                                        <div class="text-[9px] font-bold text-blue-600 uppercase mt-0.5">ID: {{ emp.emp_code }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
-            <div class="fortnights-container">
-                <div class="fortnight-wrapper" v-for="(days, idx) in [firstFortnight, secondFortnight]" :key="idx">
-                    <div class="fortnight-card">
-                        <div class="fortnight-header">REGISTROS DE ASISTENCIA</div>
-                        <div class="fortnight-body">
-                            <table class="schedule-table-pdf">
-                                <thead>
-                                    <tr>
-                                        <th class="col-dia">Día</th>
-                                        <th>Entrada</th>
-                                        <th>Firma</th>
-                                        <th>Salida</th>
-                                        <th>Firma</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="day in days" :key="day">
-                                        <td class="font-bold">{{ String(day).padStart(2, '0') }}</td>
-                                        <template v-if="getDayStatus(day)">
-                                            <td colspan="4" class="blocked-cell">{{ getDayStatus(day).label }}</td>
-                                        </template>
-                                        <template v-else>
-                                            <td></td><td></td><td></td><td></td>
-                                        </template>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <!-- Mes -->
+                        <div class="md:col-span-3">
+                            <label class="block text-[9px] font-black text-slate-400 mb-1 uppercase tracking-widest">2. Mes</label>
+                            <div class="relative">
+                                <select v-model="form.mes" class="block w-full rounded-lg border-slate-200 text-sm h-10 font-black bg-slate-50 appearance-none pl-3 pr-8">
+                                    <option v-for="(m, idx) in months" :key="idx" :value="idx + 1">{{ m }}</option>
+                                </select>
+                                <ChevronDown class="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <!-- Año -->
+                        <div class="md:col-span-2">
+                            <label class="block text-[9px] font-black text-slate-400 mb-1 uppercase tracking-widest">3. Año</label>
+                            <div class="relative">
+                                <select v-model="form.ano" class="block w-full rounded-lg border-slate-200 text-sm h-10 font-black bg-slate-50 appearance-none pl-3 pr-8">
+                                    <option v-for="a in anosDisponibles" :key="a" :value="a">{{ a }}</option>
+                                </select>
+                                <ChevronDown class="absolute right-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
+                            </div>
+                        </div>
+
+                        <!-- BOTÓN CREAR -->
+                        <div class="md:col-span-3">
+                            <button 
+                                @click="crearLista" 
+                                :disabled="!form.employee_id" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 rounded-lg shadow-lg shadow-blue-200 text-xs uppercase tracking-[0.2em] transition-all active:scale-95 disabled:opacity-30 disabled:grayscale"
+                            >
+                                Crear Formato
+                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- SECCIÓN DE FIRMAS: Distancia duplicada (60px) para evitar el encime -->
-            <div class="signature-section-bottom">
-                <div class="signature-row">
-                    <div class="signature-box">
-                        <div class="signature-line"></div>
-                        <p class="signature-name">{{ employee.first_name }} {{ employee.last_name }}</p>
+                <!-- CONTENEDOR DE LA LISTA YA HECHA -->
+                <div class="flex-grow flex flex-col items-center">
+                    
+                    <div v-if="!showList" class="flex-grow flex flex-col items-center justify-center p-20 border-4 border-dashed border-slate-200 rounded-3xl w-full bg-white/40">
+                        <UserCheck class="h-16 w-16 text-slate-200 mb-4" />
+                        <p class="text-slate-400 font-black uppercase text-xs tracking-[0.3em]">Seleccione un trabajador y presione Crear</p>
                     </div>
-                    <div class="signature-box">
-                        <div class="signature-line"></div>
-                        <p class="signature-name">&nbsp;</p>
+
+                    <div v-else class="w-full flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        
+                        <!-- BOTONES DE ACCIÓN SOBRE LA LISTA -->
+                        <div class="w-full max-w-[215.9mm] mb-4 flex justify-end gap-3 no-print">
+                            <button @click="handlePrint" class="flex items-center gap-2 bg-slate-700 hover:bg-slate-800 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md">
+                                <Printer class="h-4 w-4" /> Imprimir
+                            </button>
+                            <button @click="descargarPDF" :disabled="isGenerating" class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md">
+                                <RefreshCw v-if="isGenerating" class="h-4 w-4 animate-spin" />
+                                <FileDown v-else class="h-4 w-4" />
+                                {{ isGenerating ? 'Procesando...' : 'Descargar PDF' }}
+                            </button>
+                        </div>
+
+                        <!-- EL PDF (CUADRÍCULA LIMPIA) -->
+                        <div id="pdf-to-capture" class="pdf-paper shadow-2xl">
+                            <EncabezadoPdf />
+
+                            <!-- Info Personal Restaurada -->
+                            <div class="personal-info-grid">
+                                <div class="row"><span class="lbl">Nombre del Trabajador:</span><span class="val">{{ selectedEmployee?.first_name }} {{ selectedEmployee?.last_name }}</span></div>
+                                <div class="row"><span class="lbl">Área de adscripción:</span><span class="val uppercase">{{ selectedEmployee?.department_name }}</span></div>
+                                <div class="row"><span class="lbl">Número de empleado:</span><span class="val font-mono font-bold tracking-tight">{{ selectedEmployee?.emp_code }}</span></div>
+                                <div class="row"><span class="lbl">Horario Establecido (24h):</span><span class="val">{{ attendanceData?.schedule || '08:00 - 16:00' }}</span></div>
+                                <div class="row"><span class="lbl">Mes y Año de Registro:</span><span class="val font-bold uppercase">{{ months[form.mes-1] }} / {{ form.ano }}</span></div>
+                            </div>
+
+                            <!-- Tablas -->
+                            <div class="grids-wrapper">
+                                <div class="col" v-for="(days, idx) in [firstFortnight, secondFortnight]" :key="idx">
+                                    <table class="att-table">
+                                        <thead>
+                                            <tr><th class="w-8">Día</th><th>Entrada</th><th>Firma</th><th>Salida</th><th>Firma</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="day in days" :key="day">
+                                                <td class="bg-slate-50 font-bold text-[9pt]">{{ String(day).padStart(2, '0') }}</td>
+                                                <template v-if="getDayStatus(day)">
+                                                    <td colspan="4" class="blocked">{{ getDayStatus(day).label }}</td>
+                                                </template>
+                                                <template v-else><td></td><td></td><td></td><td></td></template>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Firmas a 120px -->
+                            <div class="sig-section">
+                                <div class="sig-box">
+                                    <div class="line"></div>
+                                    <p class="nme">{{ selectedEmployee?.first_name }} {{ selectedEmployee?.last_name }}</p>
+                                </div>
+                                <div class="sig-box">
+                                    <div class="line"></div>
+                                    <p class="nme">&nbsp;</p>
+                                </div>
+                            </div>
+
+                            <PieDePaginaPdf :year="form.ano" />
+                        </div>
                     </div>
                 </div>
+
+                <!-- FOOTER -->
+                <div class="text-center py-6 no-print">
+                    <p class="text-[9px] font-black text-slate-300 uppercase tracking-[0.4em]">En el Nombre de Jehová Dios y Jesús Rey</p>
+                </div>
             </div>
-            
-            <PieDePaginaPdf :year="selectedYear" />
-        </div>
-    </div>
+        </AppSidebar>
+    </SidebarProvider>
 </template>
 
 <style scoped>
-.page-container {
-    background-color: #e2e8f0;
-    min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    padding-top: 10px;
-}
-
-.pdf-card-container {
+/* Estilos para el papel PDF */
+.pdf-paper {
     width: 215.9mm;
-    height: 279.4mm;
-    padding: 6mm 10mm; 
-    background-color: white;
-    font-family: Arial, sans-serif;
-    color: #000;
-    position: relative;
+    min-height: 279.4mm;
+    background: white;
+    padding: 10mm 12mm;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    color: #000;
+    font-family: Arial, sans-serif;
 }
 
-.personal-data-list {
-    margin: 5px 0 10px 0;
+.personal-info-grid {
+    margin: 10px 0 15px 0;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
 }
 
-.info-row {
+.personal-info-grid .row {
     display: flex;
     align-items: flex-end;
     font-size: 9.5pt;
 }
 
-.info-row .label {
+.personal-info-grid .lbl {
     font-weight: bold;
-    min-width: 160px;
+    min-width: 175px;
 }
 
-.info-row .value {
+.personal-info-grid .val {
     flex-grow: 1;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid #cbd5e1;
     padding-left: 8px;
+    height: 18px;
 }
 
-.info-row .line-empty {
-    height: 16px;
-    border-bottom: 1px solid #ccc;
-}
-
-.fortnights-container {
+.grids-wrapper {
     display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    flex-grow: 0; 
+    gap: 12px;
+    margin-top: 5px;
 }
 
-.fortnight-wrapper {
+.grids-wrapper .col {
     width: 50%;
-    display: flex;
-    flex-direction: column;
 }
 
-.fortnight-card {
-    border: 1px solid #000;
-    border-radius: 6px;
-    overflow: hidden;
-    height: fit-content;
-}
-
-.fortnight-header {
-    background-color: #51575c;
-    color: white;
-    font-weight: bold;
-    padding: 4px 10px; 
-    font-size: 9pt;
-    text-align: center;
-}
-
-.fortnight-body {
-    padding: 5px;
-    background-color: white;
-}
-
-.schedule-table-pdf {
+.att-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 7.5pt;
     table-layout: fixed;
 }
 
-.schedule-table-pdf th,
-.schedule-table-pdf td {
+.att-table th, .att-table td {
     border: 1px solid #000;
-    padding: 2px;
+    padding: 2.5px 2px;
     text-align: center;
 }
 
-.schedule-table-pdf th {
-    background-color: #f2f2f2;
+.att-table th {
+    background-color: #f8fafc;
     font-weight: bold;
-    font-size: 7pt;
+    text-transform: uppercase;
+    font-size: 6.5pt;
 }
 
-.col-dia { width: 12%; }
+.att-table tr { height: 21px; }
 
-.schedule-table-pdf tr {
-    height: 21px; 
-}
-
-.blocked-cell {
-    background-color: #d1d5db;
+.blocked {
+    background-color: #e2e8f0;
     font-weight: bold;
     font-size: 6.5pt;
-    color: #374151;
+    color: #1f2937;
 }
 
-/* DISTANCIA: Separación de 60px entre tablas y firmas (el doble de la anterior) */
-.signature-section-bottom {
-    margin-top: 60px; 
-    margin-bottom: 10px;
-}
-
-.signature-row {
+.sig-section {
+    margin-top: 120px;
     display: flex;
     justify-content: space-around;
-    align-items: flex-end;
-    gap: 40px;
+    margin-bottom: 25px;
 }
 
-.signature-box {
+.sig-box {
     width: 40%;
     text-align: center;
 }
 
-.signature-line {
-    border-top: 1px solid #000;
-    margin-bottom: 3px;
+.sig-box .line {
+    border-top: 1.2px solid #000;
+    margin-bottom: 4px;
 }
 
-.signature-name {
-    font-size: 8.5pt;
+.sig-box .nme {
+    font-size: 9pt;
     font-weight: bold;
     text-transform: uppercase;
-    margin: 0;
 }
 
 @media print {
     .no-print { display: none !important; }
-    .page-container { background: white; padding: 0; }
-    .pdf-card-container { box-shadow: none; margin: 0; border: none; }
+    body { background: white; padding: 0; }
+    .pdf-paper { box-shadow: none; margin: 0; border: none; }
 }
 </style>
