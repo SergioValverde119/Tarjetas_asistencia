@@ -96,7 +96,7 @@ const handlePrint = () => {
                 <div class="info-item"><span class="label">Nombre del Trabajador:</span><span class="value">{{ employee?.first_name }} {{ employee?.last_name }}</span></div>
                 <div class="info-item"><span class="label">Área de adscripción:</span><span class="value">{{ employee?.department_name }}</span></div>
                 <div class="info-item"><span class="label">Número de empleado:</span><span class="value font-bold">{{ employee?.emp_code }}</span></div>
-                <div class="info-item"><span class="label">Horario establecido (24h):</span><span class="value">{{ attendanceData?.schedule || '08:00 - 16:00' }}</span></div>
+                <div class="info-item"><span class="label">Horario establecido (24h):</span><span class="value">{{ attendanceData?.schedule || 'SIN HORARIO' }}</span></div>
                 <div class="info-item"><span class="label">Mes y Año de Registro:</span><span class="value">{{ months[selectedMonth - 1] }} / {{ selectedYear }}</span></div>
             </div>
 
@@ -104,7 +104,13 @@ const handlePrint = () => {
                 <div class="table-col" v-for="(days, idx) in [firstFortnight, secondFortnight]" :key="idx">
                     <table class="att-table">
                         <thead>
-                            <tr><th class="w-10">Día</th><th>Entrada</th><th>Firma</th><th>Salida</th><th>Firma</th></tr>
+                            <tr>
+                                <th class="w-[8%]">Día</th>
+                                <th class="w-[19%]">Entrada</th>
+                                <th class="w-[27%]">Firma</th>
+                                <th class="w-[19%]">Salida</th>
+                                <th class="w-[27%]">Firma</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <tr v-for="day in days" :key="day">
@@ -112,7 +118,12 @@ const handlePrint = () => {
                                 <template v-if="getDayStatus(day)">
                                     <td colspan="4" class="blocked">{{ getDayStatus(day).label }}</td>
                                 </template>
-                                <template v-else><td></td><td></td><td></td><td></td></template>
+                                <template v-else>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                </template>
                             </tr>
                         </tbody>
                     </table>
@@ -156,9 +167,11 @@ const handlePrint = () => {
 .grids-wrapper { display: flex; gap: 15px; margin-top: 10px; }
 .table-col { width: 50%; }
 .att-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7.5pt; }
-.att-table th, .att-table td { border: 1px solid #000; padding: 2.5px 2px; text-align: center; }
-.att-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 6.5pt; }
-.att-table tr { height: 21px; }
+.att-table th, .att-table td { border: 1px solid #000; padding: 2px 2px; text-align: center; vertical-align: middle; }
+.att-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 6.5pt; height: 24px; }
+
+/* Celdas más altas para mayor comodidad al firmar (32px) */
+.att-table tr { height: 28px; }
 
 .day-num { background-color: #f8fafc; font-weight: bold; font-size: 9pt; }
 .blocked { 
@@ -170,7 +183,8 @@ const handlePrint = () => {
     padding: 1px;
 }
 
-.signature-section { margin-top: 35px; margin-bottom: 30px; }
+/* Sección de firmas con las medidas solicitadas */
+.signature-section { margin-top: 60px; margin-bottom: 30px; }
 .signature-row { display: flex; justify-content: space-around; }
 .signature-box { width: 40%; text-align: center; }
 .signature-box .line { border-top: 1.2px solid #000; margin-bottom: 4px; }

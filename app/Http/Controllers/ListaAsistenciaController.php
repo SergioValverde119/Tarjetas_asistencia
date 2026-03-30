@@ -9,8 +9,8 @@ use Carbon\Carbon;
 
 /**
  * Controlador para la Gestión de Listas de Asistencia.
- * Configurado con los nombres de columna reales: 'alias' para el nombre del feriado.
- * En el Nombre de Jehová Dios y Jesús Rey.
+ * Sincronizado con la estructura real de att_attschedule de BioTime.
+ * Primeramente Jehová Dios y Jesús Rey.
  */
 class ListaAsistenciaController extends Controller
 {
@@ -48,30 +48,67 @@ class ListaAsistenciaController extends Controller
                 ->first();
 
             if ($selectedEmployee) {
-                // Generar lista de fines de semana
+                // --- LÓGICA DE HORARIOS SEGÚN TU REPOSITORIO ---
+                
+                // 1. Intentar buscar asignación individual (att_attschedule)
+                $asignacion = DB::connection('pgsql_biotime')
+                    ->table('att_attschedule as asch')
+                    ->join('att_attshift as s', 'asch.shift_id', '=', 's.id')
+                    ->where('asch.employee_id', $employeeId)
+                    ->whereRaw('CURRENT_DATE BETWEEN asch.start_date AND asch.end_date')
+                    ->select('s.id')
+                    ->first();
+
+                // 2. Si no hay individual, buscar por departamento (att_departmentschedule)
+                if (!$asignacion) {
+                    $asignacion = DB::connection('pgsql_biotime')
+                        ->table('personnel_employee as e')
+                        ->join('att_departmentschedule as dsch', 'e.department_id', '=', 'dsch.department_id')
+                        ->join('att_attshift as s', 'dsch.shift_id', '=', 's.id')
+                        ->where('e.id', $employeeId)
+                        ->select('s.id')
+                        ->first();
+                }
+
+                $displaySchedule = "SIN HORARIO ASIGNADO";
+
+                if ($asignacion) {
+                    // Obtener el primer intervalo disponible del turno
+                    $intervalo = DB::connection('pgsql_biotime')
+                        ->table('att_shiftdetail as sd')
+                        ->join('att_timeinterval as ti', 'sd.time_interval_id', '=', 'ti.id')
+                        ->where('sd.shift_id', $asignacion->id)
+                        ->select(
+                            'ti.in_time', 
+                            DB::raw("(ti.in_time::time + (COALESCE(ti.work_time_duration, 0) || ' minutes')::interval)::time as out_time")
+                        )
+                        ->first();
+
+                    if ($intervalo) {
+                        $in = substr($intervalo->in_time, 0, 5);
+                        $out = substr($intervalo->out_time, 0, 5);
+                        $displaySchedule = "{$in} A {$out}  HRS";
+                    }
+                }
+
+                // Fines de semana
                 $weekends = [];
                 $date = Carbon::createFromDate($year, $month, 1);
-                $daysInMonth = $date->daysInMonth;
-                
-                for ($d = 1; $d <= $daysInMonth; $d++) {
+                for ($d = 1; $d <= $date->daysInMonth; $d++) {
                     $curr = Carbon::createFromDate($year, $month, $d);
                     if ($curr->isSaturday()) $weekends[] = ['day' => $d, 'label' => 'SÁBADO'];
                     elseif ($curr->isSunday()) $weekends[] = ['day' => $d, 'label' => 'DOMINGO'];
                 }
 
-                // FERIADOS: Usando la columna 'alias' confirmada por la consulta
+                // FERIADOS (Columna 'alias')
                 $holidays = DB::connection('pgsql_biotime')
                     ->table('att_holiday')
                     ->whereYear('start_date', $year)
                     ->whereMonth('start_date', $month)
-                    ->select(
-                        DB::raw("EXTRACT(DAY FROM start_date) as day"),
-                        'alias as name' 
-                    )
-                    ->get()
-                    ->toArray();
+                    ->select(DB::raw("EXTRACT(DAY FROM start_date) as day"), 'alias as name')
+                    ->get()->toArray();
 
-                // JUSTIFICACIONES (Incidencias con motivo real)
+                // JUSTIFICACIONES (Motivos reales)
                 $justifications = DB::connection('pgsql_biotime')
                     ->table('att_leave as l')
                     ->join('att_leavecategory as c', 'l.category_id', '=', 'c.id')
@@ -85,7 +122,7 @@ class ListaAsistenciaController extends Controller
                     ->get();
 
                 $attendanceData = [
-                    'schedule' => '08:00 - 16:00',
+                    'schedule' => $displaySchedule,
                     'weekends' => $weekends,
                     'holidays' => $holidays,
                     'justifications' => $justifications
