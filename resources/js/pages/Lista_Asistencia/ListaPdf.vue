@@ -93,11 +93,31 @@ const handlePrint = () => {
             <EncabezadoPdf />
 
             <div class="personal-info-list">
-                <div class="info-item"><span class="label">Nombre del Trabajador:</span><span class="value">{{ employee?.first_name }} {{ employee?.last_name }}</span></div>
-                <div class="info-item"><span class="label">Área de adscripción:</span><span class="value">{{ employee?.department_name }}</span></div>
-                <div class="info-item"><span class="label">Número de empleado:</span><span class="value font-bold">{{ employee?.emp_code }}</span></div>
-                <div class="info-item"><span class="label">Horario establecido (24h):</span><span class="value">{{ attendanceData?.schedule || 'SIN HORARIO' }}</span></div>
-                <div class="info-item"><span class="label">Mes y Año de Registro:</span><span class="value">{{ months[selectedMonth - 1] }} / {{ selectedYear }}</span></div>
+                <div class="info-item">
+                    <span class="label">Nombre del Trabajador:</span>
+                    <span class="value">{{ employee?.first_name }} {{ employee?.last_name }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Área de adscripción:</span>
+                    <span class="value uppercase">{{ employee?.department_name }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Número de empleado:</span>
+                    <span class="value font-bold">{{ employee?.emp_code }}</span>
+                </div>
+                <!-- LÍNEA DE JEFE INMEDIATO (SOLO RAYA) -->
+                <div class="info-item">
+                    <span class="label">Jefe inmediato:</span>
+                    <span class="value">&nbsp;</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Horario:</span>
+                    <span class="value uppercase">{{ attendanceData?.schedule || 'SIN HORARIO' }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Mes y Año de Registro:</span>
+                    <span class="value font-bold uppercase">{{ months[selectedMonth - 1] }} / {{ selectedYear }}</span>
+                </div>
             </div>
 
             <div class="grids-wrapper">
@@ -119,10 +139,7 @@ const handlePrint = () => {
                                     <td colspan="4" class="blocked">{{ getDayStatus(day).label }}</td>
                                 </template>
                                 <template v-else>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
+                                    <td></td><td></td><td></td><td></td>
                                 </template>
                             </tr>
                         </tbody>
@@ -154,15 +171,33 @@ const handlePrint = () => {
     color: #000;
     font-family: Arial, sans-serif;
     position: relative;
-    /* FORZAR GRÁFICOS DE FONDO Y COLORES */
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
 }
 
 .personal-info-list { margin: 10px 0 10px 0; display: flex; flex-direction: column; gap: 4px; }
-.info-item { display: flex; align-items: baseline; font-size: 9.5pt; }
-.info-item .label { font-weight: bold; min-width: 180px; padding-right: 5px; text-transform: uppercase; }
-.info-item .value { flex-grow: 1; border-bottom: 1.2px solid #cbd5e1; padding-left: 8px; padding-bottom: 2px; text-transform: uppercase; }
+
+.info-item { 
+    display: flex; 
+    align-items: baseline; 
+    font-size: 9.5pt; 
+}
+
+.info-item .label { 
+    font-weight: bold; 
+    min-width: 180px; 
+    padding-right: 5px; 
+    text-transform: uppercase; 
+}
+
+.info-item .value { 
+    flex-grow: 1; 
+    border-bottom: 1.2px solid #cbd5e1; 
+    padding-left: 8px; 
+    padding-bottom: 2px; 
+    text-transform: uppercase;
+    text-align: center; /* Centrado de datos sobre la línea */
+}
 
 .grids-wrapper { display: flex; gap: 15px; margin-top: 10px; }
 .table-col { width: 50%; }
@@ -170,7 +205,7 @@ const handlePrint = () => {
 .att-table th, .att-table td { border: 1px solid #000; padding: 2px 2px; text-align: center; vertical-align: middle; }
 .att-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 6.5pt; height: 24px; }
 
-/* Celdas más altas para mayor comodidad al firmar (32px) */
+/* Altura de celdas para comodidad al firmar */
 .att-table tr { height: 28px; }
 
 .day-num { background-color: #f8fafc; font-weight: bold; font-size: 9pt; }
@@ -183,7 +218,6 @@ const handlePrint = () => {
     padding: 1px;
 }
 
-/* Sección de firmas con las medidas solicitadas */
 .signature-section { margin-top: 60px; margin-bottom: 30px; }
 .signature-row { display: flex; justify-content: space-around; }
 .signature-box { width: 40%; text-align: center; }
@@ -213,7 +247,6 @@ const handlePrint = () => {
         left: 0 !important;
         width: 215.9mm !important;
         height: 279.4mm !important;
-        /* Asegurar que se herede la propiedad de color exacto */
         print-color-adjust: exact !important;
         -webkit-print-color-adjust: exact !important;
     }
