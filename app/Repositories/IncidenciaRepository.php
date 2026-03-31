@@ -414,4 +414,14 @@ class IncidenciaRepository
             ->orderBy('l.start_time', 'desc')
             ->get();
     }
+
+        public function getAreas()
+    {
+        return DB::connection($this->connection)
+            ->table('personnel_area')
+            ->select('id', 'area_name', 'area_code')
+            ->orderBy('area_name', 'asc')
+            ->get();
+    }
+    
 }

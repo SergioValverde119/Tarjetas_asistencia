@@ -27,9 +27,10 @@ class TarjetaController extends Controller
     private function getRollingMonths()
     {
         $months = [];
+        $referencia = Carbon::now()->startOfMonth();
         // Queremos los últimos 12 meses terminando en el mes que acaba de concluir
         for ($i = 12; $i >= 1; $i--) {
-            $date = Carbon::now()->subMonths($i);
+            $date = (clone $referencia)->subMonths($i);
             $months[] = [
                 'id'    => $date->month,
                 'year'  => $date->year,
