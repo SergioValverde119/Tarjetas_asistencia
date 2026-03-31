@@ -38,27 +38,31 @@ class FaltaController extends Controller
             $dateIncidence = $request->input('date_incidence');
             
             $exclude = [
-                '1020638', '1083527', '1162564', '994908', '927295', '121366',
+                '1206977','1020638', '1083527', '1162564', '994908', '927295', '121366',
                 '124174', '19012781', '969638', '1155039', '159526', '1112581', '1170341',
                 '43513', '208354', '825018', '212450', '186919', '806044', '871088',
                 '181414', '183518', '127133', '203375', '1162441', '1107724', '1032472',
                 '207122', '936674', '836809', '107981', '1124231', '11600013', '1203490', '19012824'
             ]; 
 
-            $finalStart = $dateIncidence ?: $startDate;
-            $finalEnd = $dateIncidence ?: $endDate;
+            $faltas = [];
 
-            // Ejecutamos la consulta por defecto para asegurar que siempre haya datos al cargar
-            $faltas = $this->faltaService->procesarReporteFaltas(
-                $areaId, 
-                $empId, 
-                $finalStart, 
-                $finalEnd, 
-                $exclude
-            );
+            // Solo ejecutamos la consulta pesada si el usuario ha interactuado con los filtros
+            if ($request->hasAny(['start_date', 'date_incidence', 'area_id', 'emp_id'])) {
+                $finalStart = $dateIncidence ?: $startDate;
+                $finalEnd = $dateIncidence ?: $endDate;
 
-            Session::put('faltas_actuales', $faltas);
-            Session::put('filtros_actuales', ['start' => $finalStart, 'end' => $finalEnd]);
+                $faltas = $this->faltaService->procesarReporteFaltas(
+                    $areaId, 
+                    $empId, 
+                    $finalStart, 
+                    $finalEnd, 
+                    $exclude
+                );
+
+                Session::put('faltas_actuales', $faltas);
+                Session::put('filtros_actuales', ['start' => $finalStart, 'end' => $finalEnd]);
+            }
 
             return Inertia::render('Faltas/Index', [
                 'faltas' => $faltas,
