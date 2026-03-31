@@ -12,13 +12,23 @@ use Inertia\Inertia;
 use Exception;
 
 /**
- * Controlador para la gestión de Faltas Injustificadas.
+ * Controlador exclusivo para el Monitor de Faltas.
+ * Gestiona la consulta de ausencias y exportación a Excel.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class FaltaController extends Controller
 {
     protected $faltaService;
     protected $faltaRepo;
+
+    // Lista centralizada de nóminas a excluir (Administrativos/Especiales)
+    protected $exclude = [
+        '1206977','1020638', '1083527', '1162564', '994908', '927295', '121366',
+        '124174', '19012781', '969638', '1155039', '159526', '1112581', '1170341',
+        '43513', '208354', '825018', '212450', '186919', '806044', '871088',
+        '181414', '183518', '127133', '203375', '1162441', '1107724', '1032472',
+        '207122', '936674', '836809', '107981', '1124231', '11600013', '1203490', '19012824'
+    ];
 
     public function __construct(FaltaService $faltaService, FaltaRepository $faltaRepo)
     {
@@ -37,27 +47,20 @@ class FaltaController extends Controller
             $areaId = $request->input('area_id'); 
             $dateIncidence = $request->input('date_incidence');
             
-            $exclude = [
-                '1206977','1020638', '1083527', '1162564', '994908', '927295', '121366',
-                '124174', '19012781', '969638', '1155039', '159526', '1112581', '1170341',
-                '43513', '208354', '825018', '212450', '186919', '806044', '871088',
-                '181414', '183518', '127133', '203375', '1162441', '1107724', '1032472',
-                '207122', '936674', '836809', '107981', '1124231', '11600013', '1203490', '19012824'
-            ]; 
-
             $faltas = [];
 
-            // Solo ejecutamos la consulta pesada si el usuario ha interactuado con los filtros
+            // Solo se ejecuta la búsqueda si el usuario envía algún filtro
             if ($request->hasAny(['start_date', 'date_incidence', 'area_id', 'emp_id'])) {
                 $finalStart = $dateIncidence ?: $startDate;
                 $finalEnd = $dateIncidence ?: $endDate;
 
+                // El cálculo de faltas sigue excluyendo a estas nóminas
                 $faltas = $this->faltaService->procesarReporteFaltas(
                     $areaId, 
                     $empId, 
                     $finalStart, 
                     $finalEnd, 
-                    $exclude
+                    $this->exclude
                 );
 
                 Session::put('faltas_actuales', $faltas);
@@ -73,6 +76,7 @@ class FaltaController extends Controller
                     'area_id' => $areaId,
                     'date_incidence' => $dateIncidence
                 ],
+                // MODIFICACIÓN: Ya no pasamos el filtro de exclusión aquí para que aparezcan en el buscador
                 'empleados' => $this->faltaRepo->getAllEmployees(),
                 'areas' => $this->faltaRepo->getAreas() 
             ]);

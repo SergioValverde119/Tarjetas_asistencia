@@ -9,7 +9,6 @@ use Exception;
 
 /**
  * Servicio para el procesamiento lógico de Faltas.
- * Clasifica ausencias basado en el cruce de huellas vs horario oficial.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class FaltaService
@@ -24,21 +23,24 @@ class FaltaService
     public function procesarReporteFaltas($areaId, $empId, $startDate, $endDate, $exclude = [])
     {
         try {
+            // 1. Normalización de la lista negra de nóminas
+            $excludeList = array_map(fn($i) => trim((string)$i), (array)$exclude);
+
             $empleados = $this->repository->getEmpleadosParaMonitoreo($areaId, $empId, $exclude);
             $resultadoFinal = [];
 
             foreach ($empleados as $emp) {
-                $asistencia = $this->repository->getAsistenciaConHorarioDinamico($emp->id, $startDate, $endDate);
-
-                if (empty($asistencia)) {
+                // --- CANDADO DE SEGURIDAD ABSOLUTO ---
+                // Si la nómina del empleado está en la lista de exclusión, lo expulsamos.
+                // Esto garantiza que el usuario Sergio Axel (1206977) nunca aparezca.
+                if (in_array(trim((string)$emp->emp_code), $excludeList)) {
                     continue;
                 }
 
+                $asistencia = $this->repository->getAsistenciaConHorarioDinamico($emp->id, $startDate, $endDate);
+
                 foreach ($asistencia as $reg) {
-                    // Si el día no tiene in_time, BioTime no lo cuenta como laborable
-                    if (empty($reg->in_time)) {
-                        continue;
-                    }
+                    if (empty($reg->in_time)) continue;
 
                     $marcajes = $this->procesarMarcajesFisicos($reg);
                     $estatus = $this->determinarEstatus($reg, $marcajes);
@@ -56,11 +58,10 @@ class FaltaService
                     }
                 }
             }
-
             return $resultadoFinal;
 
         } catch (Exception $e) {
-            Log::error("FaltaService@procesarReporteFaltas FATAL ERROR: " . $e->getMessage());
+            Log::error("FaltaService ERROR: " . $e->getMessage());
             throw $e;
         }
     }
@@ -69,67 +70,54 @@ class FaltaService
     {
         if (!empty($reg->nombre_permiso)) return 'J';
         if ($reg->es_festivo && $reg->enable_holiday) return 'J';
-        
-        // Si falta la entrada O la salida válida, es falta
-        if (!$marcajes['entrada'] || !$marcajes['salida']) {
-            return 'F';
-        }
-
+        if (!$marcajes['entrada'] || !$marcajes['salida']) return 'F';
         return 'OK';
     }
 
     private function procesarMarcajesFisicos($reg)
     {
         $resultados = ['entrada' => null, 'salida' => null];
-        if (empty($reg->all_punches)) {
-            return $resultados;
-        }
+        if (empty($reg->all_punches)) return $resultados;
 
-        $fecha = Carbon::parse($reg->fecha);
         $targetIn = Carbon::parse($reg->fecha . ' ' . $reg->in_time);
         $targetOut = Carbon::parse($reg->fecha . ' ' . $reg->off_time);
 
-        $year = $fecha->year;
-        $esVerano = $fecha->between(
-            Carbon::parse("first sunday of april $year"),
-            Carbon::parse("last sunday of october $year")
+        $esVerano = Carbon::parse($reg->fecha)->between(
+            Carbon::parse("first sunday of april ".date('Y')),
+            Carbon::parse("last sunday of october ".date('Y'))
         );
 
-        $punchesRaw = array_filter(explode(',', $reg->all_punches));
-        $punches = [];
+        $punches = array_filter(explode(',', $reg->all_punches));
+        $punchesAjustados = [];
 
-        foreach ($punchesRaw as $pStr) {
+        foreach ($punches as $pStr) {
             $p = Carbon::parse(trim($pStr));
             if ($esVerano) $p->addHour();
-            $punches[] = $p;
+            $punchesAjustados[] = $p;
         }
 
         $bestIn = null; $bestOut = null;
         $minDistIn = 999999; $minDistOut = 999999;
 
-        foreach ($punches as $h) {
+        foreach ($punchesAjustados as $h) {
             $distIn = abs($targetIn->diffInMinutes($h, false));
             if ($distIn <= 30) {
-                $esPuntual = $h->lte($targetIn);
+                $isPuntual = $h->lte($targetIn);
                 $mejorEsPuntual = $bestIn ? $bestIn->lte($targetIn) : false;
-                if (!$bestIn || ($esPuntual && !$mejorEsPuntual) || ($esPuntual === $mejorEsPuntual && $distIn < $minDistIn)) {
-                    $minDistIn = $distIn;
-                    $bestIn = $h;
+                if (!$bestIn || ($isPuntual && !$mejorEsPuntual) || ($isPuntual === $mejorEsPuntual && $distIn < $minDistIn)) {
+                    $minDistIn = $distIn; $bestIn = $h;
                 }
             }
-
             $diffOut = $targetOut->diffInMinutes($h, false);
             if ($diffOut >= 0 && $diffOut <= 31) {
                 if (!$bestOut || $diffOut < $minDistOut) {
-                    $minDistOut = $diffOut;
-                    $bestOut = $h;
+                    $minDistOut = $diffOut; $bestOut = $h;
                 }
             }
         }
 
         $resultados['entrada'] = $bestIn ? $bestIn->format('Y-m-d H:i:s') : null;
         $resultados['salida'] = $bestOut ? $bestOut->format('Y-m-d H:i:s') : null;
-
         return $resultados;
     }
 }
