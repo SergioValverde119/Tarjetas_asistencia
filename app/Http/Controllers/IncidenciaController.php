@@ -15,6 +15,7 @@ use App\Exports\IncidenciasResultExport;
 use App\Exports\IncidenciasTemplateExport;
 use Illuminate\Validation\ValidationException;
 use App\Exports\IncidenciasEstadisticasExport;
+use Illuminate\Support\Facades\Log;
 
 
 /**
@@ -488,50 +489,55 @@ class IncidenciaController extends Controller
      * Procesa la inyección masiva por área.
      */
     public function storeBySection(Request $request)
-    {
-        $validated = $request->validate([
-            'area_id'     => 'required|integer',
-            'category_id' => 'required|integer',
-            'start_time'  => 'required|date',
-            'end_time'    => 'required|date|after_or_equal:start_time',
-            'reason'      => 'required|string|max:250',
-        ]);
+{
+    $validated = $request->validate([
+        'area_id'     => 'required|integer', 
+        'category_id' => 'required|integer',
+        'start_time'  => 'required|date',
+        'end_time'    => 'required|date|after_or_equal:start_time',
+        'reason'      => 'required|string|max:250',
+    ]);
 
-        try {
-            // Buscamos personal por la columna area_id (personnel_area)
-            $employeeIds = DB::connection('pgsql_biotime')
-                ->table('personnel_employee')
-                ->where('area_id', $validated['area_id'])
-                ->where('status', 0)
-                ->pluck('id');
+    try {
+        // CORRECCIÓN CRÍTICA: JOIN con la tabla personnel_employee_area
+        // ya que area_id no es una columna de personnel_employee
+        $employeeIds = DB::connection('pgsql_biotime')
+            ->table('personnel_employee as e')
+            ->join('personnel_employee_area as ea', 'e.id', '=', 'ea.employee_id')
+            ->where('ea.area_id', $validated['area_id'])
+            ->where('e.status', 0)
+            ->pluck('e.id');
 
-            if ($employeeIds->isEmpty()) {
-                throw new Exception("No hay empleados activos en esta área sindical.");
-            }
-
-            $ingresados = 0;
-            $omitidos = 0;
-
-            DB::transaction(function() use ($employeeIds, $validated, &$ingresados, &$omitidos) {
-                foreach ($employeeIds as $empId) {
-                    // Jerarquía: Verificar si ya tiene algo registrado
-                    if ($this->repository->findOverlap($empId, $validated['start_time'], $validated['end_time'])) {
-                        $omitidos++;
-                        continue;
-                    }
-
-                    $data = $validated;
-                    $data['employee_id'] = $empId;
-                    $this->repository->createIncidencia($data);
-                    $ingresados++;
-                }
-            });
-
-            return redirect()->route('incidencias.index')
-                ->with('success', "Proceso Exitoso. Se inyectaron $ingresados incidencias. $omitidos empleados fueron omitidos por tener permisos previos.");
-
-        } catch (Exception $e) {
-            return redirect()->back()->with('error', 'Fallo en proceso: ' . $e->getMessage());
+        if ($employeeIds->isEmpty()) {
+            return redirect()->back()->with('error', "Atención: No se encontraron empleados activos vinculados a esta área/sección.");
         }
+
+        $ingresados = 0;
+        $omitidos = 0;
+
+        DB::transaction(function() use ($employeeIds, $validated, &$ingresados, &$omitidos) {
+            foreach ($employeeIds as $empId) {
+                if ($this->repository->findOverlap($empId, $validated['start_time'], $validated['end_time'])) {
+                    $omitidos++;
+                    continue;
+                }
+
+                $data = $validated;
+                $data['employee_id'] = $empId;
+                $this->repository->createIncidencia($data);
+                $ingresados++;
+            }
+        });
+
+        if ($ingresados === 0) {
+            return redirect()->back()->with('error', "No se inyectó nada. Los empleados ya tenían permisos en este horario.");
+        }
+
+        return redirect()->route('incidencias.index')
+            ->with('success', "¡Éxito! Se registraron $ingresados incidencias. Se omitieron $omitidos por traslapes.");
+
+    } catch (Exception $e) {
+        return redirect()->back()->with('error', 'Fallo en proceso: ' . $e->getMessage());
     }
+}
 }

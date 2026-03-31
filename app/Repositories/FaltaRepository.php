@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  */
 class FaltaRepository
 {
-    protected $connection = 'pgsql_original';
+    protected $connection = 'pgsql_biotime';
 
     public function getAreas()
     {
