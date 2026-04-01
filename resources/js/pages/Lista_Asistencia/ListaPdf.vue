@@ -1,8 +1,8 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { Printer, FileDown, RefreshCw } from 'lucide-vue-next';
+import { Printer, FileDown, RefreshCw, LayoutPanelLeft } from 'lucide-vue-next';
 import EncabezadoPdf from '../Tarjeta/EncabezadoPdf.vue';
 import PieDePaginaPdf from '../Tarjeta/PieDePaginaPdf.vue';
 
@@ -15,6 +15,14 @@ const props = defineProps({
 });
 
 const isGenerating = ref(false);
+
+// --- ESTADO PARA EL ÁREA (DEPARTAMENTO) EDITABLE ---
+const editableDept = ref('');
+
+// Sincronizar cuando cambie el empleado seleccionado
+watch(() => props.employee, (newEmp) => {
+    editableDept.value = newEmp?.department_name || '';
+}, { immediate: true });
 
 const daysInMonth = computed(() => new Date(props.selectedYear, props.selectedMonth, 0).getDate());
 const firstFortnight = computed(() => Array.from({ length: 15 }, (_, i) => i + 1));
@@ -48,7 +56,13 @@ const descargarPDF = async () => {
         await new Promise(resolve => setTimeout(resolve, 800));
         const element = document.getElementById('hoja-asistencia-pdf');
         if (!element) return;
-        const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+        
+        const canvas = await html2canvas(element, { 
+            scale: 3, 
+            useCORS: true, 
+            backgroundColor: '#ffffff'
+        });
+
         const pdf = new jsPDF('p', 'mm', 'letter');
         const imgData = canvas.toDataURL('image/jpeg', 1.0);
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -62,20 +76,19 @@ const descargarPDF = async () => {
     }
 };
 
-const handlePrint = () => {
-    window.print();
-};
+const handlePrint = () => { window.print(); };
 </script>
 
 <template>
-    <div class="w-full flex flex-col items-center animate-in fade-in duration-500 pb-12">
+    <div class="w-full flex flex-col items-center animate-in fade-in duration-500 pb-12 text-black">
         
-        <!-- CONTROLES -->
-        <div class="w-full max-w-[215.9mm] mb-6 flex justify-between items-center no-print px-4 sm:px-0">
+        <!-- 1. FILA SUPERIOR: TÍTULO Y BOTONES A LA DERECHA (ZONA NO IMPRIMIBLE) -->
+        <div class="w-full max-w-[215.9mm] mb-4 flex justify-between items-center no-print px-4 sm:px-0">
             <div class="flex items-center gap-2">
                 <div class="h-2 w-2 bg-emerald-500 rounded-full animate-pulse"></div>
                 <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Vista Previa Lista de Firmas</span>
             </div>
+
             <div class="flex gap-3">
                 <button @click="handlePrint" class="flex items-center gap-2 bg-slate-800 hover:bg-black text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md active:scale-95">
                     <Printer class="w-4 h-4" /> Imprimir
@@ -88,7 +101,25 @@ const handlePrint = () => {
             </div>
         </div>
 
-        <!-- LA HOJA FÍSICA -->
+        <!-- 2. FILA MEDIA: MODIFICAR DEPARTAMENTO (ZONA NO IMPRIMIBLE) -->
+        <div class="w-full max-w-[215.9mm] mb-6 flex justify-start items-center no-print px-4 sm:px-0">
+            <div class="flex items-center gap-3 w-full max-w-sm">
+                <span class="text-[10px] font-black uppercase text-slate-500 whitespace-nowrap">Modificar Departamento:</span>
+                <div class="relative flex-grow">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <LayoutPanelLeft class="h-3.5 w-3.5 text-blue-500" />
+                    </div>
+                    <input 
+                        v-model="editableDept" 
+                        type="text" 
+                        class="block w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold uppercase focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
+                        placeholder="ESCRIBA EL NUEVO ÁREA..."
+                    />
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. LA HOJA FÍSICA (EL PDF) -->
         <div id="hoja-asistencia-pdf" class="pdf-paper shadow-2xl">
             <EncabezadoPdf />
 
@@ -97,23 +128,27 @@ const handlePrint = () => {
                     <span class="label">Nombre del Trabajador:</span>
                     <span class="value">{{ employee?.first_name }} {{ employee?.last_name }}</span>
                 </div>
+                
                 <div class="info-item">
                     <span class="label">Área de adscripción:</span>
-                    <span class="value uppercase">{{ employee?.department_name }}</span>
+                    <span class="value uppercase">{{ editableDept }}</span>
                 </div>
+
                 <div class="info-item">
                     <span class="label">Número de empleado:</span>
                     <span class="value font-bold">{{ employee?.emp_code }}</span>
                 </div>
-                <!-- LÍNEA DE JEFE INMEDIATO (SOLO RAYA) -->
+
                 <div class="info-item">
                     <span class="label">Jefe inmediato:</span>
                     <span class="value">&nbsp;</span>
                 </div>
+
                 <div class="info-item">
                     <span class="label">Horario:</span>
                     <span class="value uppercase">{{ attendanceData?.schedule || 'SIN HORARIO' }}</span>
                 </div>
+                
                 <div class="info-item">
                     <span class="label">Mes y Año de Registro:</span>
                     <span class="value font-bold uppercase">{{ months[selectedMonth - 1] }} / {{ selectedYear }}</span>
@@ -162,9 +197,9 @@ const handlePrint = () => {
 <style scoped>
 .pdf-paper {
     width: 215.9mm;
-    min-height: 279.4mm;
+    height: 279.4mm; /* Cambiado de min-height a height fijo para evitar que crezca */
     background: white;
-    padding: 10mm 12mm;
+    padding: 8mm 10mm; /* Reducción ligera de paddings internos */
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -173,9 +208,10 @@ const handlePrint = () => {
     position: relative;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+    overflow: hidden; /* Evita que contenido extra genere páginas nuevas */
 }
 
-.personal-info-list { margin: 10px 0 10px 0; display: flex; flex-direction: column; gap: 4px; }
+.personal-info-list { margin: 5px 0 5px 0; display: flex; flex-direction: column; gap: 2px; } /* Gap reducido de 4px a 2px */
 
 .info-item { 
     display: flex; 
@@ -194,19 +230,23 @@ const handlePrint = () => {
     flex-grow: 1; 
     border-bottom: 1.2px solid #cbd5e1; 
     padding-left: 8px; 
-    padding-bottom: 2px; 
+    padding-bottom: 1px; /* Reducido de 2px a 1px */
     text-transform: uppercase;
-    text-align: center; /* Centrado de datos sobre la línea */
+    text-align: center;
+    min-height: 21px; /* Reducido de 24px a 21px */
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    line-height: 1.1; /* Reducido ligeramente */
 }
 
-.grids-wrapper { display: flex; gap: 15px; margin-top: 10px; }
+.grids-wrapper { display: flex; gap: 15px; margin-top: 5px; } /* Margen reducido */
 .table-col { width: 50%; }
 .att-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7.5pt; }
-.att-table th, .att-table td { border: 1px solid #000; padding: 2px 2px; text-align: center; vertical-align: middle; }
-.att-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 6.5pt; height: 24px; }
+.att-table th, .att-table td { border: 1px solid #000; padding: 1px 2px; text-align: center; vertical-align: middle; }
+.att-table th { background-color: #f1f5f9; font-weight: bold; text-transform: uppercase; font-size: 6.5pt; height: 22px; } /* Altura reducida */
 
-/* Altura de celdas para comodidad al firmar */
-.att-table tr { height: 28px; }
+.att-table tr { height: 27px; } /* Altura de fila reducida de 28px a 27px */
 
 .day-num { background-color: #f8fafc; font-weight: bold; font-size: 9pt; }
 .blocked { 
@@ -218,7 +258,7 @@ const handlePrint = () => {
     padding: 1px;
 }
 
-.signature-section { margin-top: 60px; margin-bottom: 30px; }
+.signature-section { margin-top: 45px; margin-bottom: 20px; } /* Margen reducido de 60px a 45px */
 .signature-row { display: flex; justify-content: space-around; }
 .signature-box { width: 40%; text-align: center; }
 .signature-box .line { border-top: 1.2px solid #000; margin-bottom: 4px; }
@@ -227,28 +267,29 @@ const handlePrint = () => {
 .mt-auto { margin-top: auto !important; }
 
 @media print {
-    @page { size: letter; margin: 0 !important; }
-    :global(nav), :global(aside), :global(header), :global(button), :global(.no-print), .no-print {
-        display: none !important;
+    @page { 
+        size: letter; 
+        margin: 0 !important; 
     }
-    :global(body), :global(html) {
-        background: white !important;
+    html, body {
+        height: 100%;
         margin: 0 !important;
         padding: 0 !important;
-        height: auto !important;
+        overflow: hidden !important; /* Solución para la hoja en blanco */
+    }
+    :global(nav), :global(aside), :global(header), :global(button), :global(.no-print), .no-print {
+        display: none !important;
     }
     .pdf-paper {
         box-shadow: none !important;
         margin: 0 !important;
-        padding: 10mm 12mm !important;
-        border: none !important;
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
+        padding: 8mm 10mm !important;
         width: 215.9mm !important;
         height: 279.4mm !important;
-        print-color-adjust: exact !important;
-        -webkit-print-color-adjust: exact !important;
+        border: none !important;
+        position: absolute !important;
+        top: 0;
+        left: 0;
     }
 }
 </style>
