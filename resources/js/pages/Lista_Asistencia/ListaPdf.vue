@@ -3,8 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { Printer, FileDown, RefreshCw, LayoutPanelLeft } from 'lucide-vue-next';
-import EncabezadoPdf from '../Tarjeta/EncabezadoPdf.vue';
-import PieDePaginaPdf from '../Tarjeta/PieDePaginaPdf.vue';
+import EncabezadoPdf from '@/pages/Tarjeta/EncabezadoPdf.vue';
+import PieDePaginaPdf from '@/pages/Tarjeta/PieDePaginaPdf.vue';
 
 const props = defineProps({
     employee: Object,

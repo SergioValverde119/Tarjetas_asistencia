@@ -3,8 +3,8 @@
 // IMPORTS
 // =================================================================================================
 import { computed } from 'vue';
-import EncabezadoPdf from './EncabezadoPdf.vue'; // Componente modular para el encabezado del documento.
-import PieDePaginaPdf from './PieDePaginaPdf.vue'; // Componente modular para el pie de página del documento.
+import EncabezadoPdf from '@/pages/Tarjeta/EncabezadoPdf.vue'; 
+import PieDePaginaPdf from '@/pages/Tarjeta/PieDePaginaPdf.vue'; // Componente modular para el pie de página del documento.
 
 // =================================================================================================
 // PROPS (Propiedades)
