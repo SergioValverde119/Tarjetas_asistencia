@@ -258,7 +258,7 @@ const handlePrint = () => { window.print(); };
     padding: 1px;
 }
 
-.signature-section { margin-top: 45px; margin-bottom: 20px; } /* Margen reducido de 60px a 45px */
+.signature-section { margin-top: 60px; margin-bottom: 20px; } /* Margen reducido de 60px a 45px */
 .signature-row { display: flex; justify-content: space-around; }
 .signature-box { width: 40%; text-align: center; }
 .signature-box .line { border-top: 1.2px solid #000; margin-bottom: 4px; }
