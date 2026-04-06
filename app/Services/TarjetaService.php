@@ -588,13 +588,13 @@ class TarjetaService
         $relojEntrada = [
             'id' => 20,
             'sn' => 'CQUG232460132',
-            'alias' => 'Entrada 1 (Rescate API)'
+            'alias' => 'Entrada 1'
         ];
 
         $relojSalida = [
             'id' => 19,
             'sn' => 'CQUG232460120',
-            'alias' => 'Salida 1 (Rescate API)'
+            'alias' => 'Salida 1'
         ];
 
         foreach ($rows as $row) {
@@ -630,9 +630,9 @@ class TarjetaService
                         
                         $inicioPrimavera = \Carbon\Carbon::parse("first sunday of april {$entrada->year}");
                         $finOtono = \Carbon\Carbon::parse("last sunday of october {$entrada->year}");
-                        if ($entrada->greaterThanOrEqualTo($inicioPrimavera) && $entrada->lessThan($finOtono)) {
-                            $entrada->subHour();
-                        }
+                        // if ($entrada->greaterThanOrEqualTo($inicioPrimavera) && $entrada->lessThan($finOtono)) {
+                        //     $entrada->subHour();
+                        // }
                         
                         $horaEntradaFormat = $entrada->format('Y-m-d H:i:s');
                         
@@ -679,9 +679,9 @@ class TarjetaService
                         
                         $inicioPrimavera = \Carbon\Carbon::parse("first sunday of april {$salida->year}");
                         $finOtono = \Carbon\Carbon::parse("last sunday of october {$salida->year}");
-                        if ($salida->greaterThanOrEqualTo($inicioPrimavera) && $salida->lessThan($finOtono)) {
-                            $salida->subHour();
-                        }
+                        // if ($salida->greaterThanOrEqualTo($inicioPrimavera) && $salida->lessThan($finOtono)) {
+                        //     $salida->subHour();
+                        // }
                         
                         $horaSalidaFormat = $salida->format('Y-m-d H:i:s');
                         
