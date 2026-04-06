@@ -197,20 +197,54 @@ class KardexService
     /**
      * Analiza las huellas en bruto para encontrar la mejor entrada y salida.
      */
-    private function interpretarHuellas($r) {
-        $r->clock_in = null; $r->clock_out = null;
+    private function interpretarHuellas($r) 
+    {
+        $r->clock_in = null; 
+        $r->clock_out = null;
+        
         if (empty($r->in_time) || empty($r->all_punches)) return;
+
+        // --- CÁLCULO DE AJUSTE DE HORARIO (DST) ---
+        $date = Carbon::parse($r->att_date);
+        $inicioPrimavera = Carbon::parse("first sunday of april {$date->year}");
+        $finOtono = Carbon::parse("last sunday of october {$date->year}");
+        $esVerano = $date->greaterThanOrEqualTo($inicioPrimavera) && $date->lessThan($finOtono);
+        $horasAjuste = $esVerano ? 1 : 0;
+
         $punches = array_filter(explode(',', $r->all_punches));
         $tIn = Carbon::parse($r->att_date.' '.$r->in_time);
         $tOut = (clone $tIn)->addMinutes($r->duration ?? 480);
-        $bestIn = null; $bestOut = null; $minIn = 999; $minOut = 999;
+        
+        $bestIn = null; 
+        $bestOut = null; 
+        $minIn = 999; 
+        $minOut = 999;
+
         foreach ($punches as $pStr) {
-            $p = Carbon::parse($pStr);
+            $p = Carbon::parse(trim($pStr));
+
+            // Aplicar el ajuste de hora si estamos en periodo de verano
+            if ($horasAjuste > 0) {
+                $p->addHours($horasAjuste);
+            }
+
             $dIn = abs($tIn->diffInMinutes($p, false));
             $dOut = abs($tOut->diffInMinutes($p, false));
-            if ($dIn < $dOut && $dIn <= 61) { if ($dIn < $minIn) { $minIn = $dIn; $bestIn = $p; } }
-            elseif ($dOut <= 31) { if ($dOut < $minOut) { $minOut = $dOut; $bestOut = $p; } }
+            
+            if ($dIn < $dOut && $dIn <= 61) { 
+                if ($dIn < $minIn) { 
+                    $minIn = $dIn; 
+                    $bestIn = $p; 
+                } 
+            } 
+            elseif ($dOut <= 31) { 
+                if ($dOut < $minOut) { 
+                    $minOut = $dOut; 
+                    $bestOut = $p; 
+                } 
+            }
         }
+        
         $r->clock_in = $bestIn?->toDateTimeString();
         $r->clock_out = ($bestOut && $bestOut >= $tOut) ? $bestOut->toDateTimeString() : null;
     }
