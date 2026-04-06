@@ -77,7 +77,19 @@ class ChecadasBiometricosController extends Controller
 
         $checadas = $query->orderBy('t.punch_time', 'DESC')->get();
 
-        $checadas = $checadas->map(function($item) {
+         $checadas->transform(function($item) {
+            $p = Carbon::parse($item->fecha_hora);
+            
+            // Período de ajuste: Primer domingo de abril al último domingo de octubre
+            $inicioPrimavera = Carbon::parse("first sunday of april {$p->year}");
+            $finOtono = Carbon::parse("last sunday of october {$p->year}");
+            
+            if ($p->greaterThanOrEqualTo($inicioPrimavera) && $p->lessThan($finOtono)) {
+                $p->addHour(1); // Sumamos la hora de ajuste para compensar el desfase
+            }
+            
+            $item->fecha_hora = $p->format('Y-m-d H:i:s');
+
             $item->horario = $item->horario_nombre ? [
                 'nombre' => $item->horario_nombre,
                 'entrada' => $item->timetable_in,
