@@ -6,34 +6,22 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session; 
 use App\Services\FaltaService;
 use App\Repositories\FaltaRepository;
+use App\Models\ExclusionFalta;
 use App\Exports\FaltasExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Inertia\Inertia;
-use Exception;
+use Throwable; 
+use Illuminate\Support\Facades\Log;
 
 /**
- * Controlador exclusivo para el Monitor de Faltas.
- * Gestiona la consulta de ausencias y exportación a Excel.
+ * Controlador para el Monitor de Faltas.
+ * Optimizado para procesos pesados y grandes volúmenes de datos.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class FaltaController extends Controller
 {
     protected $faltaService;
     protected $faltaRepo;
-
-    // Lista centralizada de nóminas a excluir (Administrativos/Especiales)
-    protected $exclude = [
-        '1206977','1020638', '1083527', '1162564', '994908', '927295', '121366',
-        '124174', '19012781', '969638', '1155039', '159526', '1112581', '1170341',
-        '43513', '208354', '825018', '212450', '186919', '806044', '871088',
-        '181414', '183518', '127133', '203375', '1162441', '1107724', '1032472',
-        '207122', '936674', '836809', '107981', '1124231', '11600013', '1203490', '19012824', '159587',
-        '919436', '213547', '62215', '128436', '144146', '125022', '204627', '243062',
-        '915174', '159564', '806015', '1189825', '159351', '213591', '161651', '802330', 
-        '183018', '165558', '806076', '193016', '5297', '996009', '175627', '177368',
-        '147829', '876747', '159537', '835827', '82675', '867078', '803941','100002','100003','100004','100005','181452',
-        '56716', '11057', '100009', '137424'
-    ];
 
     public function __construct(FaltaService $faltaService, FaltaRepository $faltaRepo)
     {
@@ -43,51 +31,69 @@ class FaltaController extends Controller
 
     public function index(Request $request)
     {
+        // --- CONFIGURACIÓN PARA PROCESOS MASIVOS ---
+        // Forzamos al máximo los límites del servidor para evitar el error de los 30 segundos
+        ini_set('max_execution_time', '0'); // Tiempo ilimitado
+        ini_set('memory_limit', '1024M');    // 1GB de RAM para el proceso
         set_time_limit(0); 
 
         try {
             $startDate = $request->input('start_date', now()->startOfMonth()->format('Y-m-d'));
             $endDate = $request->input('end_date', now()->format('Y-m-d'));
-            $empId = $request->input('emp_id'); 
-            $areaId = $request->input('area_id'); 
-            $dateIncidence = $request->input('date_incidence');
+            $empId = $request->filled('emp_id') ? $request->input('emp_id') : null;
+            $dateIncidence = $request->filled('date_incidence') ? $request->input('date_incidence') : null;
+            $areaId = null; 
             
             $faltas = [];
 
-            // Solo se ejecuta la búsqueda si el usuario envía algún filtro
-            if ($request->hasAny(['start_date', 'date_incidence', 'area_id', 'emp_id'])) {
+            // 1. Obtención segura de exclusiones
+            try {
+                $excludeList = ExclusionFalta::getListaCodigos();
+            } catch (Throwable $dbError) {
+                Log::warning("Exclusiones no cargadas: " . $dbError->getMessage());
+                $excludeList = []; 
+            }
+
+            // 2. Ejecución de la búsqueda
+            if ($request->hasAny(['start_date', 'date_incidence', 'emp_id'])) {
                 $finalStart = $dateIncidence ?: $startDate;
                 $finalEnd = $dateIncidence ?: $endDate;
 
-                // El cálculo de faltas sigue excluyendo a estas nóminas
+                // El servicio ejecuta el loop de empleados. 
+                // Si son muchos, aquí es donde se consumía el tiempo.
                 $faltas = $this->faltaService->procesarReporteFaltas(
-                    $areaId, 
+                    null, 
                     $empId, 
                     $finalStart, 
                     $finalEnd, 
-                    $this->exclude
+                    $excludeList
                 );
 
                 Session::put('faltas_actuales', $faltas);
                 Session::put('filtros_actuales', ['start' => $finalStart, 'end' => $finalEnd]);
             }
 
+            // 3. Retorno a la vista
             return Inertia::render('Faltas/Index', [
                 'faltas' => $faltas,
                 'filters' => [
-                    'start_date' => $startDate,
-                    'end_date' => $endDate,
-                    'emp_id' => $empId,
-                    'area_id' => $areaId,
+                    'start_date'     => $startDate,
+                    'end_date'       => $endDate,
+                    'emp_id'         => $empId,
+                    'area_id'        => $areaId,
                     'date_incidence' => $dateIncidence
                 ],
-                // MODIFICACIÓN: Ya no pasamos el filtro de exclusión aquí para que aparezcan en el buscador
+                // Nota: getAllEmployees también puede ser pesado si hay miles de empleados.
                 'empleados' => $this->faltaRepo->getAllEmployees(),
-                'areas' => $this->faltaRepo->getAreas() 
             ]);
 
-        } catch (Exception $e) {
-            return redirect()->back()->with('error', 'Error en el monitor: ' . $e->getMessage());
+        } catch (Throwable $e) {
+            Log::error("Fallo crítico en Monitor de Faltas: " . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return redirect()->back()->with('error', 'El servidor tardó demasiado o se agotó la memoria. Intente filtrar por un rango de fechas más corto.');
         }
     }
 
