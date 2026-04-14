@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Repositorio especializado para el cálculo de Faltas.
- * Optimizado para manejar empleados con una o múltiples áreas asignadas.
+ * Optimizado para manejar empleados con múltiples áreas, priorizando su sección real sobre SEDUVI.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class FaltaRepository
@@ -16,8 +16,7 @@ class FaltaRepository
 
     /**
      * Obtiene los empleados para el monitoreo.
-     * Se usa una subconsulta para el área para garantizar que cada empleado
-     * sea una sola fila en el reporte, incluso si tiene áreas duplicadas.
+     * Ajustado: La subconsulta ahora ordena para dejar "SEDUVI" al final y tomar el área específica.
      */
     public function getEmpleadosParaMonitoreo($areaId = null, $empId = null, $exclude = [])
     {
@@ -28,10 +27,12 @@ class FaltaRepository
                 'e.emp_code', 
                 'e.first_name', 
                 'e.last_name',
-                // Subconsulta: Trae solo el primer nombre de área encontrado
+                // LÓGICA DE PRIORIDAD: Si tiene varias áreas, ordena poniendo SEDUVI al final (1) y el resto al principio (0)
                 DB::raw("(SELECT a.area_name FROM personnel_area a 
                           JOIN personnel_employee_area pea ON a.id = pea.area_id 
-                          WHERE pea.employee_id = e.id LIMIT 1) as area_name")
+                          WHERE pea.employee_id = e.id 
+                          ORDER BY (CASE WHEN a.area_name = 'SEDUVI' THEN 1 ELSE 0 END) ASC, a.area_name ASC 
+                          LIMIT 1) as area_name")
             )
             ->where('e.status', 0);
 
@@ -40,7 +41,6 @@ class FaltaRepository
             $query->whereNotIn('e.emp_code', $excludeList);
         }
 
-        // Filtro por área usando la tabla intermedia (Mucho más preciso)
         if ($areaId) {
             $query->whereExists(function ($q) use ($areaId) {
                 $q->select(DB::raw(1))
@@ -61,7 +61,7 @@ class FaltaRepository
     }
 
     /**
-     * Catálogo de empleados con área segura para buscadores.
+     * Catálogo de empleados con área filtrada para buscadores.
      */
     public function getAllEmployees($exclude = [])
     {
@@ -72,9 +72,12 @@ class FaltaRepository
                 'e.emp_code', 
                 'e.first_name', 
                 'e.last_name',
+                // Misma lógica de prioridad para que el buscador muestre el área real
                 DB::raw("(SELECT a.area_name FROM personnel_area a 
                           JOIN personnel_employee_area pea ON a.id = pea.area_id 
-                          WHERE pea.employee_id = e.id LIMIT 1) as area_name")
+                          WHERE pea.employee_id = e.id 
+                          ORDER BY (CASE WHEN a.area_name = 'SEDUVI' THEN 1 ELSE 0 END) ASC, a.area_name ASC 
+                          LIMIT 1) as area_name")
             )
             ->where('e.status', 0);
 
@@ -90,13 +93,14 @@ class FaltaRepository
     {
         return DB::connection($this->connection)
             ->table('personnel_area')
+            ->where('area_name', '!=', 'SEDUVI') // Opcional: ocultar SEDUVI de los filtros si no se usa para filtrar
             ->select('id', 'area_name', 'area_code')
             ->orderBy('area_name', 'asc')
             ->get();
     }
 
     /**
-     * Consulta Maestra de Asistencia con integración de área segura.
+     * Consulta Maestra de Asistencia con integración de área priorizada.
      */
     public function getAsistenciaConHorarioDinamico($empId, $startDate, $endDate)
     {
@@ -120,10 +124,12 @@ class FaltaRepository
                         e.id, 
                         e.department_id, 
                         e.enable_holiday, 
-                        -- Integramos la subconsulta para evitar duplicar días por áreas múltiples
+                        -- LÓGICA DE PRIORIDAD EN SQL PURO: Preferimos cualquier área que NO sea SEDUVI
                         (SELECT a.area_name FROM personnel_area a 
                          JOIN personnel_employee_area pea ON a.id = pea.area_id 
-                         WHERE pea.employee_id = e.id LIMIT 1) as nombre_area 
+                         WHERE pea.employee_id = e.id 
+                         ORDER BY (CASE WHEN a.area_name = 'SEDUVI' THEN 1 ELSE 0 END) ASC, a.area_name ASC 
+                         LIMIT 1) as nombre_area 
                     FROM personnel_employee e
                     WHERE e.id = ?
                 ),
@@ -175,4 +181,4 @@ class FaltaRepository
             return [];
         }
     }
-}
+} 
