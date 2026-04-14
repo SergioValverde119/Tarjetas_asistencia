@@ -49,6 +49,7 @@ class FaltaService
                         $resultadoFinal[] = [
                             'nomina'   => $emp->emp_code,
                             'nombre'   => "{$emp->first_name} {$emp->last_name}",
+                            'area'     => $emp->area_name ?? 'Sin Área',
                             'fecha'    => $reg->fecha,
                             'checkin'  => $marcajes['entrada'] ? Carbon::parse($marcajes['entrada'])->format('H:i') : null,
                             'checkout' => $marcajes['salida'] ? Carbon::parse($marcajes['salida'])->format('H:i') : null,
@@ -92,7 +93,9 @@ class FaltaService
 
         foreach ($punches as $pStr) {
             $p = Carbon::parse(trim($pStr));
-            if ($esVerano) $p->addHour();
+           
+            if ($esVerano)  $p->addHour();
+            
             $punchesAjustados[] = $p;
         }
 

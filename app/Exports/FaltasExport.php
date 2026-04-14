@@ -42,6 +42,7 @@ class FaltasExport implements FromArray, WithHeadings, WithStyles, ShouldAutoSiz
         return [
             $falta['nomina'],
             $falta['nombre'],
+            $falta['area'],
             $falta['fecha'],
             $falta['checkin'] ?? '--:--',
             $falta['checkout'] ?? '--:--',
@@ -62,6 +63,7 @@ class FaltasExport implements FromArray, WithHeadings, WithStyles, ShouldAutoSiz
             [
                 'Nómina', 
                 'Nombre del Empleado', 
+                'Área / Sección',
                 'Fecha de la Falta', 
                 'Entrada Detectada', 
                 'Salida Detectada', 

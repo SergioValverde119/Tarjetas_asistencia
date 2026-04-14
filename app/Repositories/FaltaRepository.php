@@ -7,38 +7,53 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Repositorio especializado para el cálculo de Faltas.
- * Conectado a la réplica de BioTime (pgsql_biotime).
+ * Optimizado para manejar empleados con una o múltiples áreas asignadas.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class FaltaRepository
 {
-    // Cambiamos la conexión a la réplica de BioTime
     protected $connection = 'pgsql_biotime';
 
     /**
-     * Obtiene los empleados para el monitoreo aplicando filtros de exclusión.
+     * Obtiene los empleados para el monitoreo.
+     * Se usa una subconsulta para el área para garantizar que cada empleado
+     * sea una sola fila en el reporte, incluso si tiene áreas duplicadas.
      */
     public function getEmpleadosParaMonitoreo($areaId = null, $empId = null, $exclude = [])
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee as e')
-            ->select('e.id', 'e.emp_code', 'e.first_name', 'e.last_name')
+            ->select(
+                'e.id', 
+                'e.emp_code', 
+                'e.first_name', 
+                'e.last_name',
+                // Subconsulta: Trae solo el primer nombre de área encontrado
+                DB::raw("(SELECT a.area_name FROM personnel_area a 
+                          JOIN personnel_employee_area pea ON a.id = pea.area_id 
+                          WHERE pea.employee_id = e.id LIMIT 1) as area_name")
+            )
             ->where('e.status', 0);
 
-        // Exclusión preventiva en base de datos
         if (!empty($exclude) && !$empId) {
             $excludeList = array_map(fn($item) => trim((string)$item), (array)$exclude);
             $query->whereNotIn('e.emp_code', $excludeList);
         }
 
+        // Filtro por área usando la tabla intermedia (Mucho más preciso)
         if ($areaId) {
-            $query->where('e.area_id', $areaId);
+            $query->whereExists(function ($q) use ($areaId) {
+                $q->select(DB::raw(1))
+                  ->from('personnel_employee_area')
+                  ->whereColumn('employee_id', 'e.id')
+                  ->where('area_id', $areaId);
+            });
         }
 
         if ($empId) {
-            $query->where(function($q) use ($empId) {
+            $query->where(function ($q) use ($empId) {
                 $q->where('e.id', is_numeric($empId) ? (int)$empId : 0)
-                  ->orWhere('e.emp_code', (string)$empId);
+                    ->orWhere('e.emp_code', (string)$empId);
             });
         }
 
@@ -46,13 +61,21 @@ class FaltaRepository
     }
 
     /**
-     * Obtiene el catálogo para el buscador de la UI.
+     * Catálogo de empleados con área segura para buscadores.
      */
     public function getAllEmployees($exclude = [])
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee as e')
-            ->select('e.id', 'e.emp_code', 'e.first_name', 'e.last_name')
+            ->select(
+                'e.id', 
+                'e.emp_code', 
+                'e.first_name', 
+                'e.last_name',
+                DB::raw("(SELECT a.area_name FROM personnel_area a 
+                          JOIN personnel_employee_area pea ON a.id = pea.area_id 
+                          WHERE pea.employee_id = e.id LIMIT 1) as area_name")
+            )
             ->where('e.status', 0);
 
         if (!empty($exclude)) {
@@ -73,7 +96,7 @@ class FaltaRepository
     }
 
     /**
-     * Consulta Maestra de Asistencia (SQL Dinámico).
+     * Consulta Maestra de Asistencia con integración de área segura.
      */
     public function getAsistenciaConHorarioDinamico($empId, $startDate, $endDate)
     {
@@ -93,13 +116,20 @@ class FaltaRepository
                     SELECT (fecha + interval '1 day')::date FROM calendario WHERE fecha < ?::date
                 ),
                 info_emp AS (
-                    SELECT id, department_id, enable_holiday FROM personnel_employee WHERE id = ?
+                    SELECT 
+                        e.id, 
+                        e.department_id, 
+                        e.enable_holiday, 
+                        -- Integramos la subconsulta para evitar duplicar días por áreas múltiples
+                        (SELECT a.area_name FROM personnel_area a 
+                         JOIN personnel_employee_area pea ON a.id = pea.area_id 
+                         WHERE pea.employee_id = e.id LIMIT 1) as nombre_area 
+                    FROM personnel_employee e
+                    WHERE e.id = ?
                 ),
                 asignacion_diaria AS (
                     SELECT 
-                        c.fecha,
-                        i.id as emp_id,
-                        i.enable_holiday,
+                        c.fecha, i.id as emp_id, i.enable_holiday, i.nombre_area,
                         COALESCE(
                             (SELECT sch.shift_id FROM att_attschedule sch 
                              WHERE sch.employee_id = i.id AND c.fecha BETWEEN sch.start_date AND sch.end_date 
@@ -107,15 +137,12 @@ class FaltaRepository
                             (SELECT ds.shift_id FROM att_departmentschedule ds 
                              WHERE ds.department_id = i.department_id LIMIT 1)
                         ) as shift_id
-                    FROM calendario c
-                    CROSS JOIN info_emp i
+                    FROM calendario c CROSS JOIN info_emp i
                 ),
                 horario_final AS (
                     SELECT 
-                        ad.fecha, ad.emp_id, ad.enable_holiday,
-                        ti.alias as timetable_name,
-                        ti.in_time,
-                        ti.work_time_duration as duration
+                        ad.fecha, ad.emp_id, ad.enable_holiday, ad.nombre_area,
+                        ti.alias as timetable_name, ti.in_time, ti.work_time_duration as duration
                     FROM asignacion_diaria ad
                     LEFT JOIN att_shiftdetail sd ON ad.shift_id = sd.shift_id 
                         AND (sd.day_index = EXTRACT(DOW FROM ad.fecha)::int OR (sd.day_index = 7 AND EXTRACT(DOW FROM ad.fecha) = 0))
