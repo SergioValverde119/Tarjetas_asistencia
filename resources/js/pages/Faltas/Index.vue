@@ -1,12 +1,13 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, Link } from '@inertiajs/vue3'; // 1. Agregado 'Link'
 import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { 
-    FileDown, Filter, Loader2, AlertCircle, Search, RotateCw, CheckCircle, Users, Calendar
+    FileDown, Filter, Loader2, AlertCircle, Search, RotateCw, CheckCircle, Users, Calendar, ShieldAlert // 2. Agregado 'ShieldAlert'
 } from 'lucide-vue-next';
 import { debounce } from 'lodash';
+import { index as listExclusions } from "@/routes/exclusion"; // 3. Importación de Wayfinder
 
 const props = defineProps({
     faltas: { type: Array, default: () => [] },
@@ -84,9 +85,9 @@ const isDirty = computed(() => {
     const currentEmp = isGeneral.value ? '' : String(selectedEmp.value || '');
 
     return String(startDate.value || '') !== pStart ||
-           String(endDate.value || '') !== pEnd ||
-           String(dateIncidence.value || '') !== pInc ||
-           currentEmp !== pEmp;
+            String(endDate.value || '') !== pEnd ||
+            String(dateIncidence.value || '') !== pInc ||
+            currentEmp !== pEmp;
 });
 
 const loading = ref(false);
@@ -246,7 +247,16 @@ const setRange = (type) => {
                                     Excel
                                 </button>
 
-                                <!-- Botón de Reiniciar Filtros movido aquí para ahorrar espacio -->
+                                <!-- BOTÓN AGREGADO: GESTIÓN DE EXCLUSIONES -->
+                                <Link 
+                                    :href="listExclusions.url()"
+                                    class="flex-none px-4 h-full bg-red-50 border border-red-100 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all flex items-center justify-center shadow-sm"
+                                    title="Gestionar Nóminas Excluidas"
+                                >
+                                    <ShieldAlert class="h-4 w-4" />
+                                </Link>
+
+                                <!-- Botón de Reiniciar Filtros -->
                                 <button 
                                     @click="limpiarFiltros" 
                                     class="flex-none px-4 h-full bg-gray-50 border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 rounded-xl transition-colors flex items-center justify-center shadow-sm"

@@ -14,6 +14,7 @@ use App\Http\Controllers\ChecadasBiometricosController;
 use App\Http\Controllers\FaltaController;
 use App\Http\Controllers\HorarioController;
 use App\Http\Controllers\ListaAsistenciaController;
+use App\Http\Controllers\ExclusionFaltaController;
 use Illuminate\Support\Facades\Storage;
 
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
@@ -72,4 +73,8 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
             Route::get('/', [ListaAsistenciaController::class, 'index'])->name('index');
             Route::get('/lista/{id}', [ListaAsistenciaController::class, 'show'])->name('lista');
         });
+
+    Route::get('/faltas/exclusiones', [ExclusionFaltaController::class, 'index'])->name('exclusion.index');
+    Route::post('/faltas/exclusiones', [ExclusionFaltaController::class, 'store'])->name('exclusion.store');;
+    Route::delete('/faltas/exclusiones/{id}', [ExclusionFaltaController::class, 'destroy'])->name('exclusion.destroy');
 });
