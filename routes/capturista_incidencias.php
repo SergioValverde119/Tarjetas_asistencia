@@ -22,8 +22,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/estadisticas/exportar', [IncidenciaController::class, 'exportStatistics'])->name('statistics.export');
             Route::get('/plantilla', [IncidenciaController::class, 'downloadTemplate'])->name('template');
             Route::post('/importar', [IncidenciaController::class, 'import'])->name('import');
-            Route::get('por-seccion', [IncidenciaController::class, 'createBySection'])->name('createBySection');
-            Route::post('por-seccion', [IncidenciaController::class, 'storeBySection'])->name('storeBySection');
+            Route::get('/por-horario', [IncidenciaController::class, 'createBySchedule'])->name('createBySchedule');
+            Route::post('/por-horario', [IncidenciaController::class, 'storeBySchedule'])->name('storeBySchedule');
+            Route::get('/por-seccion', [IncidenciaController::class, 'createBySection'])->name('createBySection');
+            Route::post('/por-seccion', [IncidenciaController::class, 'storeBySection'])->name('storeBySection');
+            Route::post('/por-horario/previsualizar', [IncidenciaController::class, 'previewBySchedule'])->name('previewBySchedule');
         
         });
     });

@@ -17,6 +17,7 @@ use Illuminate\Validation\ValidationException;
 use App\Exports\IncidenciasEstadisticasExport;
 use Illuminate\Support\Facades\Log;
 
+use App\Http\Controllers\Incidencias\ConOperacionesExtras;
 
 /**
  * Controlador de Incidencias
@@ -25,6 +26,10 @@ use Illuminate\Support\Facades\Log;
  */
 class IncidenciaController extends Controller
 {
+
+use ConOperacionesExtras;
+
+
     protected $repository;
 
     public function __construct(IncidenciaRepository $repository)

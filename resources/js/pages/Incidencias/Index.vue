@@ -4,7 +4,7 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import ErrorModal from '@/components/ErrorModal.vue'; 
-import { PlusCircle, FileUp, ChartSpline, BookOpen, Users } from 'lucide-vue-next';
+import { PlusCircle, FileUp, ChartSpline, BookOpen, Users, Clock } from 'lucide-vue-next';
 import { debounce } from 'lodash';
 
 // COMPONENTES MODULARES (Ubicados en la carpeta 'components' al lado de este archivo)
@@ -87,6 +87,14 @@ const lanzarExito = (msg) => {
                     </div>
                     <div class="flex flex-wrap justify-end gap-2">
                         
+
+                        <!-- BOTÓN: NUEVA POR HORARIO (Acceso a CrearPorHorario.vue) -->
+                        <Link 
+                            href="/incidencias/por-horario" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-xs font-black uppercase tracking-widest rounded-lg text-white bg-fuchsia-600 hover:bg-fuchsia-700 transition-all active:scale-95 shadow-fuchsia-100"
+                        >
+                            <Clock class="h-4 w-4 mr-2" /> Nueva por Horario
+                        </Link>
                         <!-- BOTÓN: NUEVA POR SECCIÓN (Enlace a CrearPorSeccion.vue) -->
                         <Link 
                             href="/incidencias/por-seccion" 
