@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { Head, router, Link, usePage } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { 
-    FileDown, Filter, Loader2, Search, RotateCw, Users, ShieldAlert, ChevronDown, X, Building2, Tag, Calendar, CheckCircle, Clock
+    FileDown, Filter, Loader2, Search, RotateCw, Users, ShieldAlert, ChevronDown, X, Building2, Tag, Calendar, CheckCircle, Clock, History
 } from 'lucide-vue-next';
 
 // --- INTERFACES DE TYPESCRIPT ---
@@ -52,6 +52,8 @@ const props = defineProps<{
     nominas: Nomina[];
     filters: any;
 }>();
+
+const page = usePage();
 
 // --- ESTADO DE FILTROS ---
 const mode = ref(props.filters?.date_incidence ? 'single' : 'range');
@@ -126,13 +128,11 @@ const selectDept = (dept: Departamento) => {
     showDeptDropdown.value = false;
 };
 
-// Función para limpiar el departamento (Deseleccionar)
 const clearDept = () => {
     selectedDept.value = '';
     deptSearchInput.value = '';
 };
 
-// Si el usuario borra el texto manualmente, deseleccionamos el ID
 watch(deptSearchInput, (newVal) => {
     if (!newVal) selectedDept.value = '';
 });
@@ -227,31 +227,37 @@ const descargarExcel = () => {
     window.location.href = `${window.location.pathname}/exportar?${params.toString()}`;
 };
 
-// --- SUGERENCIAS RÁPIDAS ---
+// --- SUGERENCIAS RÁPIDAS (LIMPIO: SIN TEXTOS EXTRA) ---
 const setRange = (type: string) => {
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
+    
+    // Calculamos AYER para evitar la falta de HOY
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-    if (type === 'hoy') {
-        mode.value = 'single';
-        dateIncidence.value = `${yyyy}-${mm}-${dd}`;
-    } else if (type === 'quincena') {
+    if (type === 'quincena') {
+        mode.value = 'range';
+        startDate.value = today.getDate() <= 15 ? `${yyyy}-${mm}-01` : `${yyyy}-${mm}-16`;
+        endDate.value = yesterdayStr; 
+    } else if (type === 'quincena_pasada') {
         mode.value = 'range';
         if (today.getDate() <= 15) {
+            const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+            const lmYear = lastMonth.getFullYear();
+            const lmNum = String(lastMonth.getMonth() + 1).padStart(2, '0');
+            startDate.value = `${lmYear}-${lmNum}-16`;
+            endDate.value = `${lmYear}-${lmNum}-${lastMonth.getDate()}`;
+        } else {
             startDate.value = `${yyyy}-${mm}-01`;
             endDate.value = `${yyyy}-${mm}-15`;
-        } else {
-            const lastDay = new Date(yyyy, today.getMonth() + 1, 0).getDate();
-            startDate.value = `${yyyy}-${mm}-16`;
-            endDate.value = `${yyyy}-${mm}-${lastDay}`;
         }
     } else if (type === 'mensual') {
         mode.value = 'range';
-        const lastDay = new Date(yyyy, today.getMonth() + 1, 0).getDate();
         startDate.value = `${yyyy}-${mm}-01`;
-        endDate.value = `${yyyy}-${mm}-${lastDay}`;
+        endDate.value = yesterdayStr;
     }
     buscar();
 };
@@ -322,7 +328,6 @@ const setRange = (type: string) => {
                         <!-- FILA 2: DEPARTAMENTO, NÓMINAS Y SWITCH DE MODO -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-gray-100">
                             
-                            <!-- Filtro Departamento con botón de LIMPIEZA (X) -->
                             <div class="flex flex-col relative">
                                 <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
                                     <Building2 class="h-3 w-3" /> Departamento
@@ -336,12 +341,9 @@ const setRange = (type: string) => {
                                         class="w-full h-10 pl-4 pr-16 rounded-xl border border-gray-200 bg-blue-50/20 text-xs font-bold focus:ring-emerald-500 transition-all" 
                                         placeholder="BUSCAR DEPARTAMENTO..."
                                     />
-                                    
-                                    <!-- Botón X para deseleccionar -->
                                     <button v-if="selectedDept" @click="clearDept" class="absolute inset-y-0 right-8 px-2 flex items-center text-gray-400 hover:text-red-500 transition-colors">
                                         <X class="h-4 w-4" />
                                     </button>
-
                                     <div v-if="selectedDept" class="absolute inset-y-0 right-3 flex items-center pointer-events-none">
                                         <CheckCircle class="h-4 w-4 text-emerald-500" />
                                     </div>
@@ -353,7 +355,6 @@ const setRange = (type: string) => {
                                 </div>
                             </div>
 
-                            <!-- Multi-Filtro Nómina (Áreas) con Ref para ClickOutside -->
                             <div class="flex flex-col relative" ref="areaContainer">
                                 <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
                                     <Tag class="h-3 w-3" /> Tipos de Nómina
@@ -375,7 +376,6 @@ const setRange = (type: string) => {
                                 </div>
                             </div>
 
-                            <!-- SWITCH DE MODO DE FECHA -->
                             <div class="flex flex-col">
                                 <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5 ml-1">Modalidad de Tiempo</label>
                                 <div class="flex p-1 bg-slate-100 rounded-xl border border-gray-200 shadow-inner h-10">
@@ -391,16 +391,26 @@ const setRange = (type: string) => {
                             </div>
                         </div>
 
-                        <!-- FILA 3: SUGERENCIAS + INPUTS DE FECHA -->
+                        <!-- FILA 3: SUGERENCIAS RÁPIDAS (BOTONES NORMALES) -->
                         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-4 border-t border-gray-100">
                             
                             <div class="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase text-gray-500 tracking-wider">
-                                <Calendar class="h-3 w-3 text-slate-400" /> Sugerencias:
-                                <button @click="setRange('hoy')" class="px-4 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg border border-blue-200 transition-all active:scale-95 shadow-sm">Hoy</button>
-                                <button @click="setRange('quincena')" class="px-4 py-1.5 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg border border-orange-200 transition-all active:scale-95 shadow-sm">Quincena Actual</button>
-                                <button @click="setRange('mensual')" class="px-4 py-1.5 bg-slate-50 text-slate-700 hover:bg-slate-200 rounded-lg border border-slate-200 transition-all active:scale-95 shadow-sm font-black">Mes Completo</button>
+                                <History class="h-3 w-3 text-slate-400" /> Sugerencias:
+                                
+                                <button @click="setRange('quincena_pasada')" class="px-5 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg border border-slate-300 transition-all active:scale-95 shadow-sm font-black uppercase tracking-tighter">
+                                    Quincena Pasada
+                                </button>
+
+                                <button @click="setRange('quincena')" class="px-5 py-2 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg border border-orange-200 transition-all active:scale-95 shadow-sm font-black uppercase tracking-tighter">
+                                    Quincena Actual
+                                </button>
+                                
+                                <button @click="setRange('mensual')" class="px-5 py-2 bg-slate-50 text-slate-700 hover:bg-slate-200 rounded-lg border border-slate-200 transition-all active:scale-95 shadow-sm font-black uppercase tracking-tighter">
+                                    Mes Actual
+                                </button>
                             </div>
 
+                            <!-- INPUTS DE FECHA (MÁS GRANDES) -->
                             <div class="flex items-center justify-end min-w-[320px]">
                                 <div v-if="mode === 'single'" class="animate-in fade-in slide-in-from-right-2 duration-300">
                                     <input v-model="dateIncidence" type="date" 
@@ -418,7 +428,7 @@ const setRange = (type: string) => {
                             </div>
                         </div>
 
-                        <!-- TAGS (Solo si hay selección) -->
+                        <!-- TAGS -->
                         <div v-if="selectedAreas.length > 0" class="flex flex-wrap gap-2">
                             <span v-for="id in selectedAreas" :key="id" class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase rounded-full border border-emerald-200 shadow-sm">
                                 {{ getAreaName(id) }}

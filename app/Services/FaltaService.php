@@ -43,7 +43,7 @@ class FaltaService
                     if (empty($reg->in_time)) continue;
 
                     $marcajes = $this->procesarMarcajesFisicos($reg);
-                    $estatus = $this->determinarEstatus($reg, $marcajes);
+                    $estatus = $this->determinarEstatus($reg, $marcajes, $reg->fecha);
 
                     if ($estatus === 'F') {
                         $resultadoFinal[] = [
@@ -68,8 +68,16 @@ class FaltaService
         }
     }
 
-    private function determinarEstatus($reg, $marcajes)
+    
+
+    private function determinarEstatus($reg, $marcajes, $fechaRegistro)
     {
+        // 1. Candado de Fecha: Si el día es HOY o es el FUTURO, no es falta aún.
+        $fecha = Carbon::parse($fechaRegistro);
+        if ($fecha->isToday() || $fecha->isFuture()) {
+            return 'PENDIENTE'; 
+        }
+
         if (!empty($reg->nombre_permiso)) return 'J';
         if ($reg->es_festivo && $reg->enable_holiday) return 'J';
         if (!$marcajes['entrada'] || !$marcajes['salida']) return 'F';
