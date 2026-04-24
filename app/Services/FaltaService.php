@@ -20,13 +20,13 @@ class FaltaService
         $this->repository = $repository;
     }
 
-    public function procesarReporteFaltas($areaId, $empId, $startDate, $endDate, $exclude = [])
+    public function procesarReporteFaltas($areaId, $empId, $startDate, $endDate, $exclude = [], $departmentId = null)
     {
         try {
             // 1. Normalización de la lista negra de nóminas
             $excludeList = array_map(fn($i) => trim((string)$i), (array)$exclude);
 
-            $empleados = $this->repository->getEmpleadosParaMonitoreo($areaId, $empId, $exclude);
+            $empleados = $this->repository->getEmpleadosParaMonitoreo($areaId, $empId, $exclude, $departmentId);
             $resultadoFinal = [];
 
             foreach ($empleados as $emp) {
@@ -49,6 +49,7 @@ class FaltaService
                         $resultadoFinal[] = [
                             'nomina'   => $emp->emp_code,
                             'nombre'   => "{$emp->first_name} {$emp->last_name}",
+                            'departamento' => $emp->dept_name ?? 'N/A',
                             'area'     => $emp->area_name ?? 'Sin Área',
                             'fecha'    => $reg->fecha,
                             'checkin'  => $marcajes['entrada'] ? Carbon::parse($marcajes['entrada'])->format('H:i') : null,

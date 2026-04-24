@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, h } from 'vue';
+import { ref, watch, onMounted, computed} from 'vue';
 import { Head, useForm, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout.vue';

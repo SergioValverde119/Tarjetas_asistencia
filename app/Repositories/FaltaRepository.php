@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Repositorio especializado para el cálculo de Faltas.
- * Optimizado para manejar empleados con múltiples áreas, priorizando su sección real sobre SEDUVI.
+ * Optimizado para manejar empleados con múltiples áreas, departamentos y jerarquías.
  * Primeramente Jehová Dios y Jesús Rey.
  */
 class FaltaRepository
@@ -16,17 +16,20 @@ class FaltaRepository
 
     /**
      * Obtiene los empleados para el monitoreo.
-     * Ajustado: La subconsulta ahora ordena para dejar "SEDUVI" al final y tomar el área específica.
+     * Modificado para incluir el nombre del departamento y soportar múltiples áreas (Nóminas).
      */
-    public function getEmpleadosParaMonitoreo($areaId = null, $empId = null, $exclude = [])
+    public function getEmpleadosParaMonitoreo($areaIds = null, $empId = null, $exclude = [], $departmentId = null)
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee as e')
+            // JOIN fundamental para traer el nombre del departamento requerido por la vista
+            ->leftJoin('personnel_department as d', 'e.department_id', '=', 'd.id')
             ->select(
                 'e.id', 
                 'e.emp_code', 
                 'e.first_name', 
                 'e.last_name',
+                'd.dept_name', // Campo vital para que no salga "N/A" en el monitor
                 // LÓGICA DE PRIORIDAD: Si tiene varias áreas, ordena poniendo SEDUVI al final (1) y el resto al principio (0)
                 DB::raw("(SELECT a.area_name FROM personnel_area a 
                           JOIN personnel_employee_area pea ON a.id = pea.area_id 
@@ -34,22 +37,31 @@ class FaltaRepository
                           ORDER BY (CASE WHEN a.area_name = 'SEDUVI' THEN 1 ELSE 0 END) ASC, a.area_name ASC 
                           LIMIT 1) as area_name")
             )
-            ->where('e.status', 0);
+            ->where('e.status', 0); // Solo personal activo
 
+        // 1. Filtro de Exclusión (Lista negra local)
         if (!empty($exclude) && !$empId) {
             $excludeList = array_map(fn($item) => trim((string)$item), (array)$exclude);
             $query->whereNotIn('e.emp_code', $excludeList);
         }
 
-        if ($areaId) {
-            $query->whereExists(function ($q) use ($areaId) {
+        // 2. Filtro por Nómina (Áreas en BioTime) - Soporta selección múltiple
+        if (!empty($areaIds)) {
+            $ids = is_array($areaIds) ? $areaIds : [$areaIds];
+            $query->whereExists(function ($q) use ($ids) {
                 $q->select(DB::raw(1))
                   ->from('personnel_employee_area')
                   ->whereColumn('employee_id', 'e.id')
-                  ->where('area_id', $areaId);
+                  ->whereIn('area_id', $ids);
             });
         }
 
+        // 3. Filtro por Departamento
+        if ($departmentId) {
+            $query->where('e.department_id', $departmentId);
+        }
+
+        // 4. Filtro por Empleado específico
         if ($empId) {
             $query->where(function ($q) use ($empId) {
                 $q->where('e.id', is_numeric($empId) ? (int)$empId : 0)
@@ -59,20 +71,32 @@ class FaltaRepository
 
         return $query->orderBy('e.emp_code', 'asc')->get();
     }
+    /**
+     * Catálogo de departamentos para el autocompletador de la vista.
+     */
+    public function getDepartamentos()
+    {
+        return DB::connection($this->connection)
+            ->table('personnel_department')
+            ->select('id', 'dept_name')
+            ->orderBy('dept_name', 'asc')
+            ->get();
+    }
 
     /**
-     * Catálogo de empleados con área filtrada para buscadores.
+     * Catálogo de empleados con departamento y área filtrada.
      */
     public function getAllEmployees($exclude = [])
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee as e')
+            ->leftJoin('personnel_department as d', 'e.department_id', '=', 'd.id')
             ->select(
                 'e.id', 
                 'e.emp_code', 
                 'e.first_name', 
                 'e.last_name',
-                // Misma lógica de prioridad para que el buscador muestre el área real
+                'd.dept_name',
                 DB::raw("(SELECT a.area_name FROM personnel_area a 
                           JOIN personnel_employee_area pea ON a.id = pea.area_id 
                           WHERE pea.employee_id = e.id 
@@ -89,11 +113,14 @@ class FaltaRepository
         return $query->orderBy('e.first_name', 'asc')->get();
     }
 
+    /**
+     * Catálogo de Áreas (Nóminas) de BioTime.
+     */
     public function getAreas()
     {
         return DB::connection($this->connection)
             ->table('personnel_area')
-            ->where('area_name', '!=', 'SEDUVI') // Opcional: ocultar SEDUVI de los filtros si no se usa para filtrar
+            ->where('area_name', '!=', 'SEDUVI') 
             ->select('id', 'area_name', 'area_code')
             ->orderBy('area_name', 'asc')
             ->get();
@@ -124,7 +151,6 @@ class FaltaRepository
                         e.id, 
                         e.department_id, 
                         e.enable_holiday, 
-                        -- LÓGICA DE PRIORIDAD EN SQL PURO: Preferimos cualquier área que NO sea SEDUVI
                         (SELECT a.area_name FROM personnel_area a 
                          JOIN personnel_employee_area pea ON a.id = pea.area_id 
                          WHERE pea.employee_id = e.id 
@@ -181,4 +207,4 @@ class FaltaRepository
             return [];
         }
     }
-} 
+}

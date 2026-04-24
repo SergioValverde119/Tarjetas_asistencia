@@ -42,7 +42,8 @@ class FaltaController extends Controller
             $endDate = $request->input('end_date', now()->format('Y-m-d'));
             $empId = $request->filled('emp_id') ? $request->input('emp_id') : null;
             $dateIncidence = $request->filled('date_incidence') ? $request->input('date_incidence') : null;
-            $areaId = null; 
+            $departmentId = $request->input('department_id');
+            $areaIds = $this->normalizarFiltrosArea($request->input('area_id')); 
             
             $faltas = [];
 
@@ -55,18 +56,19 @@ class FaltaController extends Controller
             }
 
             // 2. Ejecución de la búsqueda
-            if ($request->hasAny(['start_date', 'date_incidence', 'emp_id'])) {
+            if ($request->hasAny(['start_date', 'date_incidence', 'emp_id', 'department_id', 'area_id'])) {
                 $finalStart = $dateIncidence ?: $startDate;
                 $finalEnd = $dateIncidence ?: $endDate;
 
                 // El servicio ejecuta el loop de empleados. 
                 // Si son muchos, aquí es donde se consumía el tiempo.
                 $faltas = $this->faltaService->procesarReporteFaltas(
-                    null, 
+                    $areaIds, 
                     $empId, 
                     $finalStart, 
                     $finalEnd, 
-                    $excludeList
+                    $excludeList,
+                    $departmentId 
                 );
 
                 Session::put('faltas_actuales', $faltas);
@@ -80,11 +82,14 @@ class FaltaController extends Controller
                     'start_date'     => $startDate,
                     'end_date'       => $endDate,
                     'emp_id'         => $empId,
-                    'area_id'        => $areaId,
+                    'area_id'        => $areaIds,
+                    'department_id'  => $departmentId,
                     'date_incidence' => $dateIncidence
                 ],
                 // Nota: getAllEmployees también puede ser pesado si hay miles de empleados.
                 'empleados' => $this->faltaRepo->getAllEmployees(),
+                'departamentos' => $this->faltaRepo->getDepartamentos(), // Catálogo para el select
+                'nominas'       => $this->faltaRepo->getAreas(),
             ]);
 
         } catch (Throwable $e) {
@@ -110,5 +115,17 @@ class FaltaController extends Controller
             new FaltasExport($faltas, $info['start'], $info['end']), 
             "Reporte_Faltas_" . now()->format('Ymd_His') . ".xlsx"
         );
+    }
+
+    public function normalizarFiltrosArea($areaIds)
+    {
+        if (empty($areaIds)) return null;
+        
+        // Si el frontend envía una cadena separada por comas, la convertimos en arreglo
+        if (is_string($areaIds)) {
+            return explode(',', $areaIds);
+        }
+        
+        return (array) $areaIds;
     }
 }
