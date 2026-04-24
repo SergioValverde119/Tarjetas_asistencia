@@ -4,11 +4,11 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 
-// Iconografía técnica (Solo las utilizadas)
+// Iconografía técnica refinada
 import { 
     FileDown, Filter, Loader2, Search, RotateCw, Users, ShieldAlert, 
     ChevronDown, X, Building2, Tag, CheckCircle, Clock, 
-    ChevronUp 
+    ChevronUp, ChevronRight, FolderTree, Building, Circle
 } from 'lucide-vue-next';
 
 /** * --- IMPORTACIÓN DE RUTAS (WAYFINDER) --- */
@@ -27,6 +27,7 @@ interface Empleado {
 interface Departamento {
     id: number | string;
     dept_name: string;
+    parent_dept_id?: number | string | null;
 }
 
 interface Nomina {
@@ -70,7 +71,7 @@ const selectedAreas = ref<string[]>(Array.isArray(props.filters?.area_id) ? prop
 const isTagsVisible = ref(false); 
 const loading = ref(false);
 
-/** * --- LÓGICA DE BÚSQUEDA DE EMPLEADO --- */
+/** * --- LÓGICA DE SERVIDOR PÚBLICO (EMPLEADO) --- */
 const isGeneral = ref(!props.filters?.emp_id);
 const selectedEmp = ref(props.filters?.emp_id || '');
 const searchInput = ref(''); 
@@ -108,19 +109,89 @@ const selectEmployee = (emp: Empleado) => {
 
 const closeDropdown = () => setTimeout(() => { showDropdown.value = false; }, 200);
 
-/** * --- LÓGICA DE DEPARTAMENTO --- */
+/** * --- LÓGICA DE DEPARTAMENTO (VISTA DE ÁRBOL DINÁMICA) --- */
 const deptSearchInput = ref('');
 const showDeptDropdown = ref(false);
+const expandedNodes = ref(new Set<string>()); // Controla qué ramas están abiertas
 
+// Sincronizar nombre si ya está seleccionado
 if (selectedDept.value) {
     const dept = props.departamentos.find((d: Departamento) => String(d.id) === String(selectedDept.value));
     if (dept) deptSearchInput.value = dept.dept_name;
 }
 
-const filteredDepts = computed(() => {
-    if (!deptSearchInput.value) return props.departamentos;
+/**
+ * Función para alternar la visibilidad de una rama
+ */
+const toggleNode = (id: string | number) => {
+    const idStr = String(id);
+    if (expandedNodes.value.has(idStr)) {
+        expandedNodes.value.delete(idStr);
+    } else {
+        expandedNodes.value.add(idStr);
+    }
+};
+
+/**
+ * Procesador de Árbol Inteligente:
+ * Muestra la estructura jerárquica y maneja el estado de expansión.
+ */
+const hierarchicalDepts = computed(() => {
     const term = normalizeStr(deptSearchInput.value);
-    return props.departamentos.filter((d: Departamento) => normalizeStr(d.dept_name).includes(term));
+    const result: any[] = [];
+    
+    // 1. Mapeo para acceso rápido
+    const map: Record<string, any> = {};
+    props.departamentos.forEach(d => {
+        map[String(d.id)] = { ...d, children: [] };
+    });
+
+    // 2. Construcción del Árbol Real
+    const tree: any[] = [];
+    props.departamentos.forEach(d => {
+        const parentId = d.parent_dept_id && d.parent_dept_id !== "" ? String(d.parent_dept_id) : null;
+        if (parentId && map[parentId]) {
+            map[parentId].children.push(map[String(d.id)]);
+        } else {
+            tree.push(map[String(d.id)]);
+        }
+    });
+
+    // 3. Función para determinar si una rama debe estar abierta por búsqueda
+    const hasMatch = (node: any): boolean => {
+        if (normalizeStr(node.dept_name).includes(term)) return true;
+        return node.children.some((c: any) => hasMatch(c));
+    };
+
+    // 4. Aplanado selectivo (Solo si está expandido o hay búsqueda activa)
+    const flatten = (nodes: any[], level = 0) => {
+        const sorted = [...nodes].sort((a, b) => a.dept_name.localeCompare(b.dept_name));
+        
+        sorted.forEach(node => {
+            const nodeId = String(node.id);
+            const matches = term ? normalizeStr(node.dept_name).includes(term) : true;
+            const branchHasMatch = term ? hasMatch(node) : false;
+            
+            // Si hay búsqueda, mostramos el nodo si él o sus hijos coinciden
+            if (!term || branchHasMatch || matches) {
+                result.push({ 
+                    ...node, 
+                    level, 
+                    hasChildren: node.children.length > 0,
+                    // Si hay búsqueda, forzamos expansión para ver el resultado
+                    isExpanded: term ? branchHasMatch : expandedNodes.value.has(nodeId)
+                });
+
+                // Solo bajamos al siguiente nivel si la rama está abierta
+                if (node.children.length > 0 && (term || expandedNodes.value.has(nodeId))) {
+                    flatten(node.children, level + 1);
+                }
+            }
+        });
+    };
+
+    flatten(tree);
+    return result;
 });
 
 const selectDept = (dept: Departamento) => {
@@ -132,6 +203,7 @@ const selectDept = (dept: Departamento) => {
 const clearDept = () => {
     selectedDept.value = '';
     deptSearchInput.value = '';
+    expandedNodes.value.clear();
 };
 
 watch(deptSearchInput, (newVal) => { if (!newVal) selectedDept.value = ''; });
@@ -233,6 +305,7 @@ const limpiarFiltros = () => {
     dateIncidence.value = ''; startDate.value = ''; endDate.value = '';
     isGeneral.value = true; selectedEmp.value = ''; searchInput.value = '';
     selectedDept.value = ''; deptSearchInput.value = ''; selectedAreas.value = [];
+    expandedNodes.value.clear();
     buscar();
 };
 
@@ -251,7 +324,6 @@ const descargarExcel = () => {
 
     <SidebarProvider>
         <AppSidebar>
-            <!-- Contenedor Principal con Tipografía Dinámica -->
             <div class="p-2 sm:p-4 bg-gray-50 h-screen max-h-screen w-full flex flex-col overflow-hidden text-slate-900 transition-all">
                 <div class="w-full max-w-full flex-grow flex flex-col gap-2 h-full">
 
@@ -262,7 +334,6 @@ const descargarExcel = () => {
                         <div class="flex flex-col lg:flex-row gap-2 items-end">
                             <div class="flex-grow w-full flex flex-col relative">
                                 <div class="flex items-center justify-between mb-0.5">
-                                    <!-- Tipografía responsiva en etiquetas: text-[9px] sube a lg:text-xs -->
                                     <label class="text-[9px] lg:text-xs font-black text-gray-500 uppercase tracking-widest ml-1 flex items-center gap-1">
                                         <Users class="h-3 w-3 lg:h-4 lg:w-4" /> Servidor Público
                                     </label>
@@ -272,7 +343,6 @@ const descargarExcel = () => {
                                     </label>
                                 </div>
                                 <div class="relative">
-                                    <!-- Input dinámico: h-9 sube a lg:h-11 -->
                                     <input type="text" v-model="searchInput" @focus="!isGeneral ? showDropdown = true : null" @blur="closeDropdown" :disabled="isGeneral"
                                         class="pl-9 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-xs lg:text-sm h-9 lg:h-11 transition-all font-bold"
                                         :class="isGeneral ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200' : 'bg-emerald-50/20'"
@@ -292,28 +362,77 @@ const descargarExcel = () => {
 
                             <div class="flex items-center gap-2 w-full lg:w-auto">
                                 <button @click="buscar" :disabled="loading" class="flex-1 lg:flex-none px-5 h-9 lg:h-11 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-black uppercase text-[9px] lg:text-[11px] transition-all shadow-md flex items-center justify-center gap-2" :class="{'btn-pulse': isDirty}">
-                                    <Loader2 v-if="loading" class="h-3.5 w-3.5 lg:h-4 lg:w-4 animate-spin" />
-                                    <Search v-else class="h-3.5 w-3.5 lg:h-4 lg:w-4" /> Consultar
+                                    <Loader2 v-if="loading" class="h-3.5 w-3.5 animate-spin" />
+                                    <Search v-else class="h-3.5 w-3.5" /> Consultar
                                 </button>
                                 <button v-if="faltas.length > 0" @click="descargarExcel" class="px-3 h-9 lg:h-11 bg-green-700 hover:bg-green-800 text-white rounded-lg font-black uppercase text-[9px] lg:text-[11px] transition-all shadow-sm flex items-center gap-2">
-                                    <FileDown class="h-3.5 w-3.5 lg:h-4 lg:w-4" /> Excel
+                                    <FileDown class="h-3.5 w-3.5" /> Excel
                                 </button>
-                                <Link :href="getExclusionsRoute().url" class="px-3 h-9 lg:h-11 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all flex items-center shadow-sm" title="Lista Negra"><ShieldAlert class="h-3.5 w-3.5 lg:h-4 lg:w-4" /></Link>
+                                <Link :href="getExclusionsRoute().url" class="px-3 h-9 lg:h-11 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all flex items-center shadow-sm" title="Lista Negra"><ShieldAlert class="h-3.5 w-3.5" /></Link>
                                 <button @click="limpiarFiltros" class="px-3 h-9 lg:h-11 bg-gray-50 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border shadow-sm"><RotateCw class="h-3.5 w-3.5 lg:h-4 lg:w-4" /></button>
                             </div>
                         </div>
 
-                        <!-- FILA 2: ESTRUCTURA UNIFICADA (DEPTO, NÓMINAS Y TIEMPO) -->
+                        <!-- FILA 2: ESTRUCTURA UNIFICADA (ÁRBOL BIOTIME DINÁMICO) -->
                         <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-2 border-t border-gray-100 items-start">
+                            
+                            <!-- Filtro Departamento (Árbol Interactivo) -->
                             <div class="lg:col-span-3 flex flex-col relative">
-                                <label class="text-[8px] lg:text-xs font-black text-gray-500 uppercase tracking-widest mb-1 ml-1 flex items-center gap-1"><Building2 class="h-2.5 w-2.5 lg:h-3 lg:w-3" /> Departamento</label>
+                                <label class="text-[8px] lg:text-xs font-black text-gray-500 uppercase tracking-widest mb-1 ml-1 flex items-center gap-1">
+                                    <FolderTree class="h-2.5 w-2.5 lg:h-3 lg:w-3 text-blue-600" /> Estructura Institucional
+                                </label>
                                 <div class="relative">
                                     <input type="text" v-model="deptSearchInput" @focus="showDeptDropdown = true" @blur="closeDeptDropdown"
-                                        class="w-full h-8 lg:h-10 pl-3 pr-8 rounded-lg border border-gray-200 bg-blue-50/10 text-[9px] lg:text-xs font-bold focus:ring-emerald-500 transition-all shadow-sm" placeholder="Buscar Depto..." />
-                                    <button v-if="selectedDept" @click="clearDept" class="absolute inset-y-0 right-7 px-1 flex items-center text-gray-400 hover:text-red-500 transition-colors"><X class="h-3 w-3 lg:h-4 lg:w-4" /></button>
-                                    <div v-if="selectedDept" class="absolute inset-y-0 right-2 flex items-center pointer-events-none"><CheckCircle class="h-3 w-3 lg:h-4 lg:w-4 text-emerald-500" /></div>
-                                    <div v-if="showDeptDropdown && filteredDepts.length > 0" class="absolute top-[34px] lg:top-[42px] z-[70] w-full bg-white border border-gray-200 rounded-lg shadow-2xl max-h-32 lg:max-h-48 overflow-y-auto custom-scrollbar">
-                                        <div v-for="d in filteredDepts" :key="d.id" @mousedown.prevent="selectDept(d)" class="px-3 py-1.5 lg:py-2.5 hover:bg-emerald-50 cursor-pointer text-[8.5px] lg:text-xs font-black uppercase text-gray-700 border-b last:border-0 transition-colors">{{ d.dept_name }}</div>
+                                        class="w-full h-8 lg:h-10 pl-3 pr-8 rounded-lg border border-gray-200 bg-blue-50/10 text-[9px] lg:text-xs font-bold focus:ring-emerald-500 transition-all shadow-sm" 
+                                        placeholder="Filtrar Áreas/Direcciones..." />
+                                    
+                                    <button v-if="selectedDept" @click="clearDept" class="absolute inset-y-0 right-7 px-1 flex items-center text-gray-400 hover:text-red-500 transition-colors">
+                                        <X class="h-3 w-3 lg:h-4 lg:w-4" />
+                                    </button>
+                                    <div v-if="selectedDept" class="absolute inset-y-0 right-2 flex items-center pointer-events-none">
+                                        <CheckCircle class="h-3 w-3 lg:h-4 lg:w-4 text-emerald-500" />
+                                    </div>
+
+                                    <!-- Dropdown con Lógica de Árbol Desplegable Refinada -->
+                                    <!-- AUMENTADO min-w-80 A min-w-[450px] PARA ESCRITORIO -->
+                                    <div v-if="showDeptDropdown && hierarchicalDepts.length > 0" class="absolute top-[34px] lg:top-[42px] z-[70] w-full min-w-full lg:min-w-[450px] bg-white border border-gray-200 rounded-lg shadow-2xl max-h-96 overflow-y-auto custom-scrollbar">
+                                        <div 
+                                            v-for="d in hierarchicalDepts" 
+                                            :key="d.id" 
+                                            class="px-2 py-1.5 transition-all flex items-center gap-1 relative group border-b border-slate-50 last:border-0"
+                                            :style="{ paddingLeft: (d.level * 20 + 8) + 'px' }"
+                                            @click="!d.hasChildren ? selectDept(d) : null"
+                                            :class="[!d.hasChildren ? 'cursor-pointer hover:bg-blue-600 hover:text-white' : 'cursor-default bg-white text-gray-700']"
+                                        >
+                                            <!-- Botón de Expandir/Contraer (Solo si tiene hijos) -->
+                                            <button 
+                                                v-if="d.hasChildren"
+                                                @mousedown.prevent.stop="toggleNode(d.id)"
+                                                class="p-1.5 hover:bg-blue-100 rounded-md transition-colors mr-1 shrink-0 z-10"
+                                            >
+                                                <component :is="d.isExpanded ? ChevronDown : ChevronRight" class="h-3.5 w-3.5 lg:h-4 lg:w-4 text-blue-500" />
+                                            </button>
+                                            <div v-else class="w-6 lg:w-7 shrink-0 flex justify-center items-center">
+                                                <Circle class="h-1 w-1 fill-current opacity-30" />
+                                            </div>
+
+                                            <!-- Nombre Seleccionable (AJUSTADO: SIN TRUNCATE Y CON WRAPPING) -->
+                                            <span 
+                                                @mousedown.prevent.stop="selectDept(d)"
+                                                :title="d.dept_name"
+                                                class="flex-grow py-1.5 px-2 rounded-md transition-all cursor-pointer text-[8.5px] lg:text-xs whitespace-normal leading-tight break-words"
+                                                :class="{
+                                                    'font-black text-blue-900 group-hover:text-inherit': d.level === 0, 
+                                                    'font-bold text-slate-600 group-hover:text-inherit': d.level > 0,
+                                                    'bg-blue-700 text-white': String(selectedDept) === String(d.id)
+                                                }"
+                                            >
+                                                {{ d.dept_name }}
+                                            </span>
+
+                                            <!-- Conector Visual (Línea de profundidad sutil) -->
+                                            <div v-if="d.level > 0" class="absolute top-0 bottom-0 border-l border-slate-100" :style="{ left: (d.level * 20 - 4) + 'px' }"></div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -349,7 +468,7 @@ const descargarExcel = () => {
 
                                     <div class="flex-grow w-full">
                                         <div v-if="mode === 'single'" class="animate-in fade-in slide-in-from-right-2 duration-300">
-                                            <input v-model="dateIncidence" type="date" class="w-full rounded-lg border-blue-200 shadow-sm text-[9px] lg:text-xs h-8 lg:h-10 bg-blue-50/30 font-bold focus:ring-blue-500 px-2 text-blue-900" />
+                                            <input v-model="dateIncidence" type="date" class="w-full rounded-lg border-blue-200 shadow-sm text-[9px] h-8 lg:h-10 bg-blue-50/30 font-bold focus:ring-blue-500 px-2 text-blue-900" />
                                         </div>
                                         <div v-else class="flex items-center gap-1 animate-in fade-in slide-in-from-right-2 duration-300 w-full">
                                             <input v-model="startDate" type="date" class="flex-1 min-w-0 rounded-lg border-orange-200 shadow-sm text-[8.5px] lg:text-xs h-8 lg:h-10 bg-orange-50/30 font-bold focus:ring-orange-500 px-2 text-orange-900" />
@@ -376,7 +495,7 @@ const descargarExcel = () => {
                             </div>
                         </div>
 
-                        <!-- CORTINA DE TAGS (RETRÁCTIL) -->
+                        <!-- CORTINA DE TAGS (NÓMINAS SELECCIONADAS) -->
                         <div v-if="selectedAreas.length > 0" class="pt-1 border-t border-slate-100">
                             <div class="flex items-center justify-between px-1 mb-1">
                                 <span class="text-[8px] lg:text-[10px] font-black uppercase text-emerald-700 tracking-widest"><Tag class="h-2.5 w-2.5 inline mr-1 lg:h-3 lg:w-3" /> Filtros Activos ({{ selectedAreas.length }})</span>
@@ -394,7 +513,7 @@ const descargarExcel = () => {
                         </div>
                     </div>
 
-                    <!-- TABLA DE RESULTADOS (ESPACIO MAXIMIZADO) -->
+                    <!-- TABLA DE RESULTADOS -->
                     <div class="bg-white shadow-sm rounded-xl border border-gray-200 flex flex-col flex-1 min-h-0 relative overflow-hidden">
                         <div v-if="loading" class="absolute inset-0 z-30 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center">
                             <Loader2 class="h-8 w-8 lg:h-12 lg:w-12 animate-spin mb-2 text-emerald-500" /><p class="font-black uppercase tracking-widest text-[10px] lg:text-sm text-gray-800">Cargando...</p>
@@ -410,9 +529,9 @@ const descargarExcel = () => {
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 bg-white">
-                                    <tr v-for="(falta, idx) in (faltas as Falta[])" :key="idx" class="hover:bg-red-50/40 group transition-colors">
+                                    <tr v-for="(falta, idx) in (faltas as Falta[])" :key="idx" class="hover:bg-red-50/40 group transition-colors text-xs lg:text-sm">
                                         <td class="px-3 py-1.5 lg:py-3 font-mono font-black text-red-600 text-[10px] lg:text-xs">{{ falta.nomina }}</td>
-                                        <td class="px-3 py-1.5 lg:py-3 font-black text-gray-900 uppercase text-[9px] lg:text-xs leading-tight group-hover:text-red-700">{{ falta.nombre }}</td>
+                                        <td class="px-3 py-1.5 lg:py-3 font-black text-gray-900 uppercase leading-tight group-hover:text-red-700">{{ falta.nombre }}</td>
                                         <td class="px-3 py-1.5 lg:py-3 font-bold text-gray-500 uppercase text-[8.5px] lg:text-[11px]">{{ falta.departamento }}</td>
                                         <td class="px-3 py-1.5 lg:py-3 font-bold text-gray-500 uppercase text-[8.5px] lg:text-[11px]">{{ falta.area }}</td>
                                         <td class="px-3 py-1.5 lg:py-3 text-center font-bold text-gray-600 text-[9px] lg:text-xs">{{ falta.fecha }}</td>

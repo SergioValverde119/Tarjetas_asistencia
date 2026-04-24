@@ -18,34 +18,30 @@ class FaltaRepository
      * Obtiene los empleados para el monitoreo.
      * Modificado para incluir el nombre del departamento y soportar múltiples áreas (Nóminas).
      */
-    public function getEmpleadosParaMonitoreo($areaIds = null, $empId = null, $exclude = [], $departmentId = null)
+     public function getEmpleadosParaMonitoreo($areaIds = null, $empId = null, $exclude = [], $departmentId = null)
     {
         $query = DB::connection($this->connection)
             ->table('personnel_employee as e')
-            // JOIN fundamental para traer el nombre del departamento requerido por la vista
             ->leftJoin('personnel_department as d', 'e.department_id', '=', 'd.id')
             ->select(
                 'e.id', 
                 'e.emp_code', 
                 'e.first_name', 
                 'e.last_name',
-                'd.dept_name', // Campo vital para que no salga "N/A" en el monitor
-                // LÓGICA DE PRIORIDAD: Si tiene varias áreas, ordena poniendo SEDUVI al final (1) y el resto al principio (0)
+                'd.dept_name',
                 DB::raw("(SELECT a.area_name FROM personnel_area a 
                           JOIN personnel_employee_area pea ON a.id = pea.area_id 
                           WHERE pea.employee_id = e.id 
                           ORDER BY (CASE WHEN a.area_name = 'SEDUVI' THEN 1 ELSE 0 END) ASC, a.area_name ASC 
                           LIMIT 1) as area_name")
             )
-            ->where('e.status', 0); // Solo personal activo
+            ->where('e.status', 0);
 
-        // 1. Filtro de Exclusión (Lista negra local)
         if (!empty($exclude) && !$empId) {
             $excludeList = array_map(fn($item) => trim((string)$item), (array)$exclude);
             $query->whereNotIn('e.emp_code', $excludeList);
         }
 
-        // 2. Filtro por Nómina (Áreas en BioTime) - Soporta selección múltiple
         if (!empty($areaIds)) {
             $ids = is_array($areaIds) ? $areaIds : [$areaIds];
             $query->whereExists(function ($q) use ($ids) {
@@ -56,12 +52,20 @@ class FaltaRepository
             });
         }
 
-        // 3. Filtro por Departamento
+        // LÓGICA DE ÁRBOL: Si selecciona una Dirección, incluimos a todos los empleados de sus Subdirecciones y JUDs
         if ($departmentId) {
-            $query->where('e.department_id', $departmentId);
+            $query->whereIn('e.department_id', function($sub) use ($departmentId) {
+                $sub->select('id')->from(DB::raw("(
+                    WITH RECURSIVE sub_depts AS (
+                        SELECT id FROM personnel_department WHERE id = $departmentId
+                        UNION ALL
+                        SELECT d.id FROM personnel_department d 
+                        INNER JOIN sub_depts sd ON d.parent_dept_id = sd.id
+                    ) SELECT id FROM sub_depts
+                ) as jerarquia"));
+            });
         }
 
-        // 4. Filtro por Empleado específico
         if ($empId) {
             $query->where(function ($q) use ($empId) {
                 $q->where('e.id', is_numeric($empId) ? (int)$empId : 0)
@@ -78,7 +82,8 @@ class FaltaRepository
     {
         return DB::connection($this->connection)
             ->table('personnel_department')
-            ->select('id', 'dept_name')
+            // AGREGAMOS parent_dept_id para que Vue pueda armar el árbol
+            ->select('id', 'dept_name', 'parent_dept_id')
             ->orderBy('dept_name', 'asc')
             ->get();
     }
