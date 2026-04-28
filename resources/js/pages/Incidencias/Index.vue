@@ -4,7 +4,7 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AppSidebar from '@/components/AppSidebar.vue';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import ErrorModal from '@/components/ErrorModal.vue'; 
-import { PlusCircle, FileUp, ChartSpline, BookOpen, Users, Clock } from 'lucide-vue-next';
+import { PlusCircle, FileUp, ChartSpline, BookOpen, Users, Clock, Mars } from 'lucide-vue-next';
 import { debounce } from 'lodash';
 
 // COMPONENTES MODULARES (Ubicados en la carpeta 'components' al lado de este archivo)
@@ -105,9 +105,9 @@ const lanzarExito = (msg) => {
 
                         <Link 
                             href="/incidencias/por-genero" 
-                            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-xs font-black uppercase tracking-widest rounded-lg text-white bg-rose-600 hover:bg-rose-700 transition-all active:scale-95 shadow-rose-100"
+                            class="inline-flex items-center px-4 py-2 border border-transparent shadow-lg text-[10px] font-black uppercase tracking-widest rounded-lg text-white bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:to-pink-600 transition-all active:scale-95 shadow-purple-100"
                         >
-                            <UserRound class="h-4 w-4 mr-2" /> Nueva por Género
+                            <Mars class="h-4 w-4 mr-2" /> Por Género
                         </Link>
 
                         <button 

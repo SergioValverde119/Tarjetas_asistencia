@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, watch, computed, h, onMounted } from 'vue';
+import { ref, watch, computed,  onMounted } from 'vue';
 import { Head, useForm, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout.vue';
 import ErrorModal from '@/components/ErrorModal.vue'; 
 import { 
-    Save, Calendar, Clock, FileText, Users,
+     FileText, Users,
     Undo2, Loader2, CheckCircle, Search, Venus, Mars,
-    X, AlertCircle, Eye, Trash2
+    X,  Eye, Trash2
 } from 'lucide-vue-next';
 
 // --- DEFINICIÓN DE PROPIEDADES ---
@@ -75,7 +75,7 @@ const form = useForm({
     category_id: '',
     start_time: '',
     end_time: '',
-    reason: 'Incidencia masiva aplicada por género',
+    reason: 'SPOTMET/',
     selected_ids: [] as any[] // IDs finales a inyectar
 });
 
