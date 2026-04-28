@@ -27,7 +27,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/por-seccion', [IncidenciaController::class, 'createBySection'])->name('createBySection');
             Route::post('/por-seccion', [IncidenciaController::class, 'storeBySection'])->name('storeBySection');
             Route::post('/por-horario/previsualizar', [IncidenciaController::class, 'previewBySchedule'])->name('previewBySchedule');
-        
+            Route::get('/por-genero', [IncidenciaController::class, 'createByGender'])->name('createByGender');
+            Route::post('/por-genero', [IncidenciaController::class, 'storeByGender'])->name('storeByGender');
+            Route::post('/por-genero/preview', [IncidenciaController::class, 'previewByGender'])->name('previewByGender');
         });
     });
 

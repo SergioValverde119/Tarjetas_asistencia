@@ -425,5 +425,23 @@ class IncidenciaRepository
             ->orderBy('area_name', 'asc')
             ->get();
     }
+
+    public function getEmployeesByGender(string $gender)
+    {
+        // Realizamos la consulta a la conexión de BioTime definida en el constructor
+        return DB::connection($this->connection)
+            ->table('personnel_employee')
+            ->select([
+                'id',               // ID interno de BioTime (necesario para la inyección)
+                'emp_code',         // Número de nómina/expediente
+                'first_name',       // Nombre(s)
+                'last_name'         // Apellidos
+            ])
+            ->where('gender', $gender)
+            ->where('status', 0)     // Filtramos solo empleados activos (status 0 en BioTime)
+            ->orderBy('first_name', 'asc')
+            ->get();
+    }
+
     
 }

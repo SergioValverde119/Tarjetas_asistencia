@@ -7,8 +7,8 @@ import { SidebarProvider } from '@/components/ui/sidebar';
 // Iconografía técnica refinada
 import { 
     FileDown, Filter, Loader2, Search, RotateCw, Users, ShieldAlert, 
-    ChevronDown, X, Building2, Tag, CheckCircle, Clock, 
-    ChevronUp, ChevronRight, FolderTree, Building, Circle
+    ChevronDown, X,  Tag, CheckCircle, Clock, 
+    ChevronUp, ChevronRight, FolderTree,  Circle
 } from 'lucide-vue-next';
 
 /** * --- IMPORTACIÓN DE RUTAS (WAYFINDER) --- */

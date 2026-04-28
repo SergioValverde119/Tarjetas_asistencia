@@ -103,6 +103,13 @@ const lanzarExito = (msg) => {
                             <Users class="h-4 w-4 mr-2" /> Nueva por Área
                         </Link>
 
+                        <Link 
+                            href="/incidencias/por-genero" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-xs font-black uppercase tracking-widest rounded-lg text-white bg-rose-600 hover:bg-rose-700 transition-all active:scale-95 shadow-rose-100"
+                        >
+                            <UserRound class="h-4 w-4 mr-2" /> Nueva por Género
+                        </Link>
+
                         <button 
                             @click="mostrarImportar = true" 
                             class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-xs font-black uppercase tracking-widest rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95"

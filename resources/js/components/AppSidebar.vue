@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import NavFooter from '@/components/NavFooter.vue';
@@ -15,12 +15,12 @@ import {
     useSidebar, 
 } from '@/components/ui/sidebar';
 
-import { home } from '@/routes';
+
 import { general, mi_tarjeta, disponibilidad } from '@/routes/tarjetas';
 import { index as usersIndex } from '@/routes/users'; 
 import { index as logsIndex } from '@/routes/logs'; 
 import * as incidencias from '@/routes/incidencias';
-import { BookOpen, Folder, LayoutGrid, IdCard, ChartNoAxesCombined, Info, Command, FileClock, Archive, User, Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert, CalendarClock, TableProperties } from 'lucide-vue-next';
+import { IdCard, ChartNoAxesCombined, Info, Command, FileClock,  Users, TriangleAlert, CalendarCheck, Trophy, ClockCheck, FingerprintPattern, BookAlert, CalendarClock, TableProperties } from 'lucide-vue-next';
 import kardex from '@/routes/kardex';
 import buscar from '@/routes/asistencia_cruda';
 import faltas from '@/routes/faltas';
@@ -32,7 +32,7 @@ const page = usePage();
 const user = page.props.auth.user;
 
 // --- GESTIÓN DE ROLES ---
-const role = user ? user.role : 'empleado';
+const role = user? user.role : 'empleado';
 // const isAdmin = role === 'admin';
 // const isSupervisor = role === 'supervisor';
 // const isCapturista = role === 'capturista';

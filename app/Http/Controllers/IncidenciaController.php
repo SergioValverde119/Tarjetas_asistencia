@@ -545,4 +545,83 @@ use ConOperacionesExtras;
         return redirect()->back()->with('error', 'Fallo en proceso: ' . $e->getMessage());
     }
 }
+
+public function createByGender()
+{
+    return Inertia::render('Incidencias/CrearPorGenero', [
+        'categories' => $this->repository->getLeaveCategories()
+    ]);
+}
+
+public function previewByGender(Request $request)
+    {
+        // Validamos que el género sea M o F
+        $request->validate([
+            'gender' => 'required|string|in:M,F',
+        ]);
+
+        try {
+            // Llamamos al repositorio para obtener los empleados de ese género
+            $candidatos = $this->repository->getEmployeesByGender($request->gender);
+
+            // Devolvemos el JSON que espera el modal en Vue
+            return response()->json([
+                'status' => 'success',
+                'total' => $candidatos->count(),
+                'candidatos' => $candidatos
+            ]);
+            
+        } catch (Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No se pudo consultar el personal: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * PASO 2: Inyección final.
+     */
+    public function storeByGender(Request $request)
+    {
+        $validated = $request->validate([
+            'gender'         => 'required|string|in:M,F',
+            'category_id'    => 'required|integer',
+            'start_time'     => 'required|date',
+            'end_time'       => 'required|date|after_or_equal:start_time',
+            'reason'         => 'required|string|max:250',
+            'selected_ids'   => 'required|array', // IDs que quedaron tras tu limpieza en el modal
+            'selected_ids.*' => 'integer'
+        ]);
+
+        try {
+            $count = 0;
+            $overlap = 0;
+
+            foreach ($validated['selected_ids'] as $empId) {
+                // Verificamos traslape antes de inyectar
+                if ($this->repository->findOverlap($empId, $validated['start_time'], $validated['end_time'])) {
+                    $overlap++;
+                    continue;
+                }
+
+                // Preparamos datos para BioTime
+                $data = [
+                    'employee_id' => $empId,
+                    'category_id' => $validated['category_id'],
+                    'start_time'  => $validated['start_time'],
+                    'end_time'    => $validated['end_time'],
+                    'reason'      => $validated['reason']
+                ];
+
+                $this->repository->createIncidencia($data);
+                $count++;
+            }
+
+            return redirect()->route('incidencias.index')->with('success', "Proceso completado. Inyectados: $count | Omitidos por traslape: $overlap.");
+
+        } catch (Exception $e) {
+            return back()->with('error', 'Error en la inyección masiva: ' . $e->getMessage());
+        }
+    }
 }
