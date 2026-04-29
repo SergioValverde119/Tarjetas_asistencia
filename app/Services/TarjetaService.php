@@ -588,13 +588,15 @@ class TarjetaService
         $relojEntrada = [
             'id' => 20,
             'sn' => 'CQUG232460132',
-            'alias' => 'Entrada 1'
+            'alias' => 'Entrada 1',
+            'area' => 'SEDUVI'
         ];
 
         $relojSalida = [
             'id' => 19,
             'sn' => 'CQUG232460120',
-            'alias' => 'Salida 1'
+            'alias' => 'Salida 1',
+            'area' => 'SEDUVI'
         ];
 
         foreach ($rows as $row) {
@@ -655,7 +657,8 @@ class TarjetaService
                                 'punch_state'    => '0', // 0 = Entrada
                                 'terminal_sn'    => $relojEntrada['sn'],
                                 'terminal_id'    => $relojEntrada['id'],
-                                'terminal_alias' => $relojEntrada['alias']
+                                'terminal_alias' => $relojEntrada['alias'],
+                                'area_alias'     => $terminal['area']
                             ]);
 
                             if (!$apiResponse['success']) {
@@ -704,7 +707,8 @@ class TarjetaService
                                 'punch_state'    => '1', // 1 = Salida
                                 'terminal_sn'    => $relojSalida['sn'],
                                 'terminal_id'    => $relojSalida['id'],
-                                'terminal_alias' => $relojSalida['alias']
+                                'terminal_alias' => $relojSalida['alias'],
+                                'area_alias'     => $terminal['area']
                             ]);
 
                             if (!$apiResponse['success']) {

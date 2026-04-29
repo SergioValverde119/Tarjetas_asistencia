@@ -78,12 +78,12 @@ class BiotimeApiService
                 'punch_time'     => $data['punch_time'],
                 'upload_time'    => now()->format('Y-m-d H:i:s'),
                 'punch_state'    => (string) $data['punch_state'],
-                'verify_type'    => (int) ($data['verify_type'] ?? 1), // 1 = Huella por defecto
+                'verify_type'    => (int) ($data['verify_type'] ?? 1), 
                 'work_code'      => (string) ($data['work_code'] ?? '0'),
                 'terminal_sn'    => $data['terminal_sn'] ?? null,
                 'terminal'       => (int) ($data['terminal_id'] ?? null),
                 'terminal_alias' => $data['terminal_alias'] ?? null,
-                'area_alias'     => $data['area_alias'] ?? null, // Eliminado 'SISTEMA_WEB'
+                'area_alias'     => $data['area_alias'] ?? 'SEDUVI', 
                 'temperature'    => "0.0",
                 'source'         => 1,
                 'purpose'        => 9
