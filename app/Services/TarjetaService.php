@@ -658,7 +658,7 @@ class TarjetaService
                                 'terminal_sn'    => $relojEntrada['sn'],
                                 'terminal_id'    => $relojEntrada['id'],
                                 'terminal_alias' => $relojEntrada['alias'],
-                                'area_alias'     => $terminal['area']
+                                'area_alias'     => $relojEntrada['area']
                             ]);
 
                             if (!$apiResponse['success']) {
@@ -708,7 +708,7 @@ class TarjetaService
                                 'terminal_sn'    => $relojSalida['sn'],
                                 'terminal_id'    => $relojSalida['id'],
                                 'terminal_alias' => $relojSalida['alias'],
-                                'area_alias'     => $terminal['area']
+                                'area_alias'     => $relojSalida['area']
                             ]);
 
                             if (!$apiResponse['success']) {

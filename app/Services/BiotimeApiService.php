@@ -83,7 +83,7 @@ class BiotimeApiService
                 'terminal_sn'    => $data['terminal_sn'] ?? null,
                 'terminal'       => (int) ($data['terminal_id'] ?? null),
                 'terminal_alias' => $data['terminal_alias'] ?? null,
-                'area_alias'     => $data['area_alias'] ?? 'SEDUVI', 
+                'area_alias'     => (string) ($data['area_alias'] ?? 'SEDUVI'), 
                 'temperature'    => "0.0",
                 'source'         => 1,
                 'purpose'        => 9
